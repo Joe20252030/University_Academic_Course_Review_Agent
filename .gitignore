@@ -1,9 +1,15 @@
 # ===============================
 # Python
 # ===============================
+# Byte-compiled / optimized / DLL files (ignore everywhere)
 __pycache__/
+**/__pycache__/
 *.py[cod]
+*$py.class
+
+# Test / tooling caches
 .pytest_cache/
+**/.pytest_cache/
 
 # ===============================
 # Virtual environments
