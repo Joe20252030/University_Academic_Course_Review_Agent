@@ -26,6 +26,7 @@ Include:
 - definitions
 - common mistakes
 - exam-style tips
+- exam-style sample questions and corresponding full solutions
 
 Markdown format.
 """)

@@ -11,7 +11,7 @@ def generate_plan(docs: list[Document], user_prefs: dict, settings: Settings) ->
     outline_text = "\n".join(d.page_content[:500] for d in docs[:5])
 
     prompt = ChatPromptTemplate.from_template("""
-You are creating a final exam review summary.
+You are creating a final exam review summary for a specific university level course.
 
 Course outline:
 {outline}
@@ -21,7 +21,7 @@ Exam format: {exam_format}
 Return JSON matching this schema:
 - course_title
 - exam_format
-- sections: title, key_topics, importance (1-5)
+- sections: title, key_topics, importance (Use scale 1-5)
 """)
 
     response = llm.invoke(prompt.format_messages(
