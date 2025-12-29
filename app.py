@@ -11,6 +11,7 @@ from export.docx import save_docx
 from dotenv import load_dotenv
 
 FILE_PATHS = ["data/uploads/outline.pdf"]
+TEST_FILE_PATHS = ["tests/fixtures/outlines/MGTA01 Course Outline - MShibaeva (Fall 2025) - updated.pdf"]
 
 def main(file_paths: list[str], user_prefs: dict) -> None:
     settings = get_settings()
@@ -45,4 +46,4 @@ def main(file_paths: list[str], user_prefs: dict) -> None:
 
 if __name__ == "__main__":
     load_dotenv()
-    main(FILE_PATHS, {"exam_format": "written"})
+    main(TEST_FILE_PATHS, {"exam_format": "written"})
