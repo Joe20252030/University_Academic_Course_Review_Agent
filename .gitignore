@@ -34,6 +34,7 @@ venv/
 # ===============================
 data/chroma_db/
 data/outputs/
+data/uploads/
 
 # Optional: ignore PDFs / generated docs
 # *.pdf
