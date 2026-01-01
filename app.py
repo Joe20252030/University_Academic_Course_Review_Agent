@@ -45,7 +45,6 @@ def main(file_paths: list[str], user_prefs: dict) -> None:
 
     # 7. Export
     md_path = save_markdown(final_md, settings)
-    save_docx(final_md, settings)
 
     print(f"Review generated at {md_path}")
 

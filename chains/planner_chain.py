@@ -6,7 +6,9 @@ from config import Settings
 from schemas.plan import ReviewPlan
 
 def generate_plan(docs: list[Document], user_prefs: dict, settings: Settings) -> ReviewPlan:
-    llm = ChatGoogleGenerativeAI(model=settings.LLM_MODEL, response_format="json")
+    llm = ChatGoogleGenerativeAI(model=settings.LLM_MODEL, temperature=0)
+
+    structured_llm = llm.with_structured_output(ReviewPlan)
 
     outline_text = "\n".join(d.page_content[:500] for d in docs[:5])
 
@@ -24,9 +26,8 @@ Return a JSON format matching this schema:
 - sections: title, key_topics, importance (Use scale 1-5)
 """)
 
-    response = llm.invoke(prompt.format_messages(
-        outline=outline_text,
-        exam_format=user_prefs.get("exam_format", "unknown")
+    plan: ReviewPlan = structured_llm.invoke(prompt.format_messages(
+        outline=outline_text, exam_format=user_prefs.get("exam_format", "unknown")
     ))
 
-    return ReviewPlan.model_validate_json(response.content)
+    return plan
