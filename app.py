@@ -50,5 +50,5 @@ def main(file_paths: list[str], user_prefs: dict) -> None:
     print(f"Review generated at {md_path}")
 
 if __name__ == "__main__":
-    load_dotenv()
+    #load_dotenv()
     main(TEST_FILE_PATHS, {"exam_format": "written"})
