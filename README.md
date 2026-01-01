@@ -6,12 +6,14 @@ Generate a final-exam review document from a course outline (PDF/TXT/MD) using a
 - Chunk and embed into a local Chroma vector store
 - Ask an LLM to create a structured review plan (JSON)
 - For each planned section, retrieve relevant chunks and generate a Markdown section
-- Export to Markdown + DOCX
+- Export to Markdown (DOCX/PDF exporters are currently placeholders)
 
 ## Requirements
 
-- Python 3.9+ (3.10+ recommended)
-- A Google Gemini API key (used by default)
+- Python 3.10+ recommended
+- A Google Gemini API key (used by default for both planning + section writing, and embeddings)
+
+Important: running the pipeline will make paid model requests (LLM + embeddings) unless you replace/migrate the LLM/embeddings implementations.
 
 ## Install
 
@@ -48,22 +50,25 @@ Notes:
 
 ## Run
 
-1) Put your outline into [data/uploads](data/uploads) (default expected file is [data/uploads/outline.pdf](data/uploads/outline.pdf)).
+By default, the entrypoint is currently configured to run against the included PDF fixture:
 
-2) Run:
+- [tests/fixtures/outlines/MGTA01%20Course%20Outline%20-%20MShibaeva%20(Fall%202025)%20-%20updated.pdf](tests/fixtures/outlines/MGTA01%20Course%20Outline%20-%20MShibaeva%20(Fall%202025)%20-%20updated.pdf)
+
+To run on your own outline, put it under [data/uploads](data/uploads) (for example [data/uploads/outline.pdf](data/uploads/outline.pdf)) and update the `main(...)` call at the bottom of [app.py](app.py).
+
+Run:
 
 - `python app.py`
 
-The current entrypoint uses a hard-coded list in [app.py](app.py#L13):
+Notes:
 
-- `FILE_PATHS = ["data/uploads/outline.pdf"]`
-
-If your file has a different name/location, update that list.
+- [app.py](app.py) currently calls `main(TEST_FILE_PATHS, {"exam_format": "written"})`.
+- If you point it at your own file(s), it will embed + persist to Chroma under `data/chroma_db`.
 
 ## Output
 
 - Markdown: written to [data/outputs](data/outputs) as `review_<timestamp>.md`
-- DOCX: written to [data/outputs](data/outputs) as `review.docx`
+- DOCX/PDF: not implemented yet (see [export/docx.py](export/docx.py) and [export/pdf.py](export/pdf.py))
 - Vector DB: persisted under [data/chroma_db](data/chroma_db)
 
 ## Example input
@@ -76,6 +81,12 @@ There is a sample outline PDF here:
 
 - Missing API key: ensure `GOOGLE_API_KEY` is set (in your shell env or in `.env`).
 - Dependency install errors on macOS: upgrade packaging tools with `python -m pip install -U pip setuptools wheel`.
+
+## Tests (offline-safe)
+
+The test suite is written to avoid making any outbound network calls (and will hard-fail if a test tries).
+
+- `pytest`
 
 ## Project structure
 

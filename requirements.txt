@@ -18,3 +18,6 @@ pypdf
 
 # Export
 python-docx
+
+# Testing
+pytest
