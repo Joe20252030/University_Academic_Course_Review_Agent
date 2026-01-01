@@ -6,7 +6,7 @@ from config import Settings
 from schemas.plan import ReviewPlan
 
 def generate_plan(docs: list[Document], user_prefs: dict, settings: Settings) -> ReviewPlan:
-    llm = ChatGoogleGenerativeAI(model=settings.LLM_MODEL)
+    llm = ChatGoogleGenerativeAI(model=settings.LLM_MODEL, response_format="json")
 
     outline_text = "\n".join(d.page_content[:500] for d in docs[:5])
 
@@ -18,7 +18,7 @@ Course outline:
 
 Exam format: {exam_format}
 
-Return JSON matching this schema:
+Return a JSON format matching this schema:
 - course_title
 - exam_format
 - sections: title, key_topics, importance (Use scale 1-5)
