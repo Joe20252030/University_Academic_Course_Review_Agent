@@ -1,36 +1,37 @@
 # University Academic Course Review Agent (UACRAgent)
 
-Generate a final-exam review document from a course outline (PDF/TXT/MD) using a simple RAG pipeline:
+Generate a final-exam review document from a course outline (PDF/TXT/MD) using a RAG pipeline:
 
-- Ingest course outline files
-- Chunk + embed into a local Chroma vector store
+- Ingest course outline files (PDF, TXT, or Markdown)
+- Chunk and embed into a local Chroma vector store
 - Ask an LLM to create a structured review plan (JSON)
-- For each planned section, retrieve relevant chunks and generate Markdown
+- For each planned section, retrieve relevant chunks and generate content
 - Export to Markdown, DOCX, or PDF
 
 ## Requirements
 
-- Python 3.10+ recommended
-- A Google Gemini API key (used by default for planning + writing + embeddings)
+- Python 3.10+
+- A Google Gemini API key (used for planning, writing, and embeddings)
 
-Important: running the pipeline will make paid model requests (LLM + embeddings).
+Note: running the pipeline will make paid model requests (LLM + embeddings).
 
 ## Install
 
-1) Create/activate a virtual environment
+1) Create and activate a virtual environment
 
 - `python -m venv .venv`
-- `source .venv/bin/activate`
+- macOS/Linux: `source .venv/bin/activate`
+- Windows: `.venv\Scripts\activate`
 
 2) Install dependencies
 
-- `python -m pip install -r requirements.txt`
+- `pip install -r requirements.txt`
 
 ## Configure
 
 Create a `.env` file in the repo root:
 
-- `GOOGLE_API_KEY=...`
+- `GOOGLE_API_KEY=<your-key>`
 
 Optional overrides (see defaults in [src/uacragent/infra/settings.py](src/uacragent/infra/settings.py)):
 
@@ -44,21 +45,19 @@ Optional overrides (see defaults in [src/uacragent/infra/settings.py](src/uacrag
 ## Run (Desktop GUI)
 
 - `python -m uacragent --gui`
-
-or:
-
+- `python -m uacragent` (launches the GUI when no file arguments are given)
 - `python -m uacragent.ui.desktop.app`
 
-The GUI lets you select files, choose exam/export format, and generate a review with one click.
+The GUI lets you select files, choose exam format (written / mcq / mixed) and export format (Markdown / DOCX / PDF), and generate a review with one click. Works on macOS, Windows, and Linux.
 
 ## Run (CLI)
 
 - `python app.py`
-- `python -m uacragent outline.pdf --exam-format written`
+- `python -m uacragent outline.pdf --exam-format written --workspace-id default`
 
-By default, [app.py](app.py) is configured to run against the included PDF fixture under `tests/outlines/`.
+By default, [app.py](app.py) runs against the included PDF fixture under `tests/outlines/`.
 
-To run on your own outline, put it under [data/default/uploads](data/default/uploads) (for example [data/default/uploads/outline.pdf](data/default/uploads/outline.pdf)) and update the `main(...)` call at the bottom of [app.py](app.py).
+To run on your own outline, either pass the path as a CLI argument or place it under [data/default/uploads/](data/default/uploads/) and update the file list in [app.py](app.py).
 
 ## Run (API, optional)
 
@@ -68,21 +67,48 @@ Start the server:
 
 Endpoints:
 
-- `GET /health`
-- `POST /review` with JSON `{ "file_paths": [...], "exam_format": "written", "workspace_id": "default" }`
+- `GET /health` — health check
+- `POST /review` — generate a review; JSON body: `{ "file_paths": [...], "exam_format": "written", "workspace_id": "default" }`
 
 ## Output
 
-- Markdown: written to [data/default/outputs](data/default/outputs) as `review_<timestamp>.md`
-- Vector DB: persisted under [data/default/chroma_db](data/default/chroma_db)
+- Markdown / DOCX / PDF written to `data/<workspace_id>/outputs/` as `review_<timestamp>.<ext>`
+- Vector DB persisted under `data/<workspace_id>/chroma_db/`
 
 ## Project structure
 
-- Script entrypoint: [app.py](app.py)
-- API (optional): [src/uacragent/api/main.py](src/uacragent/api/main.py)
-- Agent pipeline: [src/uacragent/agent/pipeline.py](src/uacragent/agent/pipeline.py)
-- Configuration: [src/uacragent/infra/settings.py](src/uacragent/infra/settings.py)
-- Ingestion + chunking: [src/uacragent/infra/loaders.py](src/uacragent/infra/loaders.py)
-- Vector store + retrieval: [src/uacragent/infra/vectorstore.py](src/uacragent/infra/vectorstore.py)
-- Export: [src/uacragent/export/](src/uacragent/export/) (markdown, docx, pdf)
-- Desktop GUI: [src/uacragent/ui/desktop/app.py](src/uacragent/ui/desktop/app.py)
+```
+src/uacragent/
+  __main__.py            CLI + GUI entry point
+  agent/
+    service.py           High-level orchestrator (AgentService)
+    pipeline.py          RAG pipeline (plan -> retrieve -> write -> assemble)
+    prompts/
+      planner.md         Prompt template for review plan generation
+      reviewer.md        Prompt template for section writing
+  api/
+    main.py              FastAPI application factory
+    routes.py            API endpoints (/health, /review)
+    schemas.py           Request / response models
+    deps.py              Dependency injection (settings, service singletons)
+  domain/
+    models.py            Core data models (ReviewPlan, SectionSpec)
+    errors.py            Custom exception hierarchy
+    types.py             Enums (ExamFormat, ExportFormat)
+  infra/
+    settings.py          Pydantic-based configuration (.env)
+    loaders.py           Document loading and chunking
+    vectorstore.py       Chroma vector store with dedup
+    llm.py               LLM client wrapper (Google Gemini)
+    auth.py              API key validation
+    workspace.py         Workspace directory management
+  export/
+    markdown.py          Markdown export
+    docx.py              DOCX export (python-docx)
+    pdf.py               PDF export (fpdf2)
+  ui/
+    desktop/
+      app.py             Tkinter desktop GUI (cross-platform)
+    web/                  (placeholder for future web UI)
+app.py                   Script entry point (quick-start)
+```
