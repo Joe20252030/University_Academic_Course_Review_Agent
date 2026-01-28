@@ -12,12 +12,18 @@ langchain-google-genai
 
 # Vector store backend used by langchain_community.vectorstores.Chroma
 chromadb
+langchain-chroma
 
 # Document loaders / PDF parsing
 pypdf
 
 # Export
 python-docx
+fpdf2
 
 # Testing
 pytest
+
+# API (optional)
+fastapi
+uvicorn[standard]

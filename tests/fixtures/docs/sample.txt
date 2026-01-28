@@ -1,3 +1,0 @@
-This is a sample text fixture.
-It exists to support loader and splitter tests.
-

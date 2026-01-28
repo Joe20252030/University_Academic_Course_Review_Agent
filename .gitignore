@@ -32,9 +32,7 @@ venv/
 # ===============================
 # Project-generated data
 # ===============================
-data/chroma_db/
-data/outputs/
-data/uploads/
+data/default/
 
 # Optional: ignore PDFs / generated docs
 # *.pdf

@@ -1,3 +1,24 @@
+Metadata-Version: 2.4
+Name: uacragent
+Version: 0.1.0
+Summary: University Academic Course Review Agent
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: pydantic
+Requires-Dist: pydantic-settings
+Requires-Dist: python-dotenv
+Requires-Dist: langchain-core
+Requires-Dist: langchain-community
+Requires-Dist: langchain-text-splitters
+Requires-Dist: langchain-openai
+Requires-Dist: langchain-google-genai
+Requires-Dist: chromadb
+Requires-Dist: pypdf
+Requires-Dist: python-docx
+Requires-Dist: pytest
+Requires-Dist: fastapi
+Requires-Dist: uvicorn[standard]
+
 # University Academic Course Review Agent (UACRAgent)
 
 Generate a final-exam review document from a course outline (PDF/TXT/MD) using a simple RAG pipeline:
@@ -6,7 +27,7 @@ Generate a final-exam review document from a course outline (PDF/TXT/MD) using a
 - Chunk + embed into a local Chroma vector store
 - Ask an LLM to create a structured review plan (JSON)
 - For each planned section, retrieve relevant chunks and generate Markdown
-- Export to Markdown, DOCX, or PDF
+- Export to Markdown (DOCX/PDF exporters are placeholders)
 
 ## Requirements
 
@@ -41,22 +62,11 @@ Optional overrides (see defaults in [src/uacragent/infra/settings.py](src/uacrag
 - `RETRIEVER_K=8`
 - `WORKSPACE_ROOT=data`
 
-## Run (Desktop GUI)
-
-- `python -m uacragent --gui`
-
-or:
-
-- `python -m uacragent.ui.desktop.app`
-
-The GUI lets you select files, choose exam/export format, and generate a review with one click.
-
 ## Run (CLI)
 
 - `python app.py`
-- `python -m uacragent outline.pdf --exam-format written`
 
-By default, [app.py](app.py) is configured to run against the included PDF fixture under `tests/outlines/`.
+By default, [app.py](app.py) is configured to run against the included PDF fixture under `tests/fixtures/outlines/`.
 
 To run on your own outline, put it under [data/default/uploads](data/default/uploads) (for example [data/default/uploads/outline.pdf](data/default/uploads/outline.pdf)) and update the `main(...)` call at the bottom of [app.py](app.py).
 
@@ -84,5 +94,4 @@ Endpoints:
 - Configuration: [src/uacragent/infra/settings.py](src/uacragent/infra/settings.py)
 - Ingestion + chunking: [src/uacragent/infra/loaders.py](src/uacragent/infra/loaders.py)
 - Vector store + retrieval: [src/uacragent/infra/vectorstore.py](src/uacragent/infra/vectorstore.py)
-- Export: [src/uacragent/export/](src/uacragent/export/) (markdown, docx, pdf)
-- Desktop GUI: [src/uacragent/ui/desktop/app.py](src/uacragent/ui/desktop/app.py)
+- Export: [export/markdown.py](export/markdown.py), [export/docx.py](export/docx.py), [export/pdf.py](export/pdf.py)
