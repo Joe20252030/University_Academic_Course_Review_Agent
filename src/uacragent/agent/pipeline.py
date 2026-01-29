@@ -9,21 +9,25 @@ from langchain_core.retrievers import BaseRetriever
 from uacragent.export.markdown import save_markdown
 from uacragent.domain.models import ReviewPlan, SectionSpec
 from uacragent.domain.errors import LLMError
+from uacragent.domain.types import DocumentType
 from uacragent.infra.llm import LLMClient
 from uacragent.infra.loaders import DocumentLoader
 from uacragent.infra.settings import Settings
 from uacragent.infra.vectorstore import build_retriever, get_or_create_vectorstore
-from uacragent.infra.workspace import ensure_workspace_dirs, workspace_paths
+from uacragent.infra.workspace import ensure_workspace_dirs, workspace_paths, WorkspacePaths
+
 
 def load_prompt(name: str) -> str:
     prompt_path = Path(__file__).parent / "prompts" / name
     return prompt_path.read_text(encoding="utf-8")
+
 
 def build_outline(chunks: list[Document]) -> str:
     outline = ""
     for chunk in chunks:
         outline += chunk.page_content + "\n\n"
     return outline.strip()
+
 
 def generate_plan(docs: list[Document], user_prefs: dict, llm_client: LLMClient) -> ReviewPlan:
     structured_llm = llm_client.with_structured_output(ReviewPlan)
@@ -41,8 +45,9 @@ def generate_plan(docs: list[Document], user_prefs: dict, llm_client: LLMClient)
         )
     except Exception as exc:  # noqa: BLE001
         raise LLMError(f"Failed to generate plan: {exc}") from exc
-    
+
     return plan
+
 
 def write_section(section: SectionSpec, retriever: BaseRetriever, llm_client: LLMClient) -> str:
     query = section.title + " " + " ".join(section.key_topics)
@@ -54,6 +59,7 @@ def write_section(section: SectionSpec, retriever: BaseRetriever, llm_client: LL
 
     resp = llm_client.invoke(prompt.format_messages(title=section.title, context=context))
     return getattr(resp, "content", str(resp))
+
 
 def assemble_markdown(plan: ReviewPlan, sections: list[str]) -> str:
     md = f"# {plan.course_title} - Final Exam Review\n\n"
@@ -70,28 +76,73 @@ class AgentPipeline:
 
     def run_end_to_end(
         self,
-        file_paths: list[str],
+        classified_files: dict[DocumentType, list[str]],
         exam_format: str,
         workspace_id: str = "default",
+        copy_to_workspace: bool = True,
     ) -> tuple[ReviewPlan, str, str]:
+        """Run the full RAG pipeline with classified documents.
+
+        Args:
+            classified_files: Mapping of DocumentType to list of file paths
+            exam_format: The exam format (written, mcq, mixed, unknown)
+            workspace_id: Workspace identifier
+            copy_to_workspace: Whether to copy files to classified workspace folders
+
+        Returns:
+            Tuple of (ReviewPlan, markdown content, markdown file path)
+        """
         ws = workspace_paths(self.settings.workspace_root, workspace_id)
         ensure_workspace_dirs(ws)
 
-        docs = self.loader.load_documents(file_paths)
-        chunks = self.loader.split_documents(docs)
+        # Load and split documents with type-specific strategies
+        chunks = self.loader.load_and_split_classified(
+            classified_files,
+            workspace_paths=ws if copy_to_workspace else None,
+        )
 
+        if not chunks:
+            raise LLMError("No document chunks were created. Please check your input files.")
+
+        # Build vector store and retriever
         vectorstore = get_or_create_vectorstore(chunks, self.settings, ws)
         retriever = build_retriever(vectorstore, self.settings)
 
-        plan = generate_plan(docs, {"exam_format": exam_format}, self.llm_client)
+        # Load raw documents for plan generation (need full context)
+        all_docs: list[Document] = []
+        for paths in classified_files.values():
+            all_docs.extend(self.loader.load_documents(paths))
+
+        # Generate review plan
+        plan = generate_plan(all_docs, {"exam_format": exam_format}, self.llm_client)
 
         if not plan.sections:
             raise LLMError("Generated an empty review plan (no sections). Try again or adjust planner prompt.")
 
+        # Write each section
         section_texts: list[str] = []
         for section in plan.sections:
             section_texts.append(write_section(section, retriever, self.llm_client))
 
+        # Assemble and save
         final_md = assemble_markdown(plan, section_texts)
         md_path = save_markdown(final_md, ws)
         return plan, final_md, md_path
+
+    def run_simple(
+        self,
+        file_paths: list[str],
+        exam_format: str,
+        workspace_id: str = "default",
+    ) -> tuple[ReviewPlan, str, str]:
+        """Simplified run method that treats all files as 'other' type.
+
+        For backward compatibility with existing code.
+        """
+        classified_files = {DocumentType.other: file_paths}
+        return self.run_end_to_end(
+            classified_files=classified_files,
+            exam_format=exam_format,
+            workspace_id=workspace_id,
+            copy_to_workspace=False,
+        )

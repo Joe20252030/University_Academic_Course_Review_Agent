@@ -13,8 +13,9 @@ langchain-google-genai
 chromadb
 langchain-chroma
 
-# Document loaders / PDF parsing
+# Document loaders / parsing
 pypdf
+docx2txt
 
 # Export
 python-docx

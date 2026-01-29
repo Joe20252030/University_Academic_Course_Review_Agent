@@ -14,6 +14,7 @@ if str(SRC_DIR) not in sys.path:
 
 from uacragent.agent.service import AgentService
 from uacragent.domain.errors import UACRAgentError
+from uacragent.domain.types import DocumentType
 
 
 FILE_PATHS = ["data/default/uploads/outline.pdf"]
@@ -22,9 +23,26 @@ TEST_FILE_PATHS = [
 ]
 
 
-def main(file_paths: list[str], user_prefs: dict) -> None:
+def main(classified_files: dict[DocumentType, list[str]], user_prefs: dict) -> None:
+    """Run the review generation pipeline.
+
+    Args:
+        classified_files: Files organized by document type
+        user_prefs: User preferences (exam_format, workspace_id)
+    """
     service = AgentService()
     result = service.run_end_to_end(
+        classified_files=classified_files,
+        exam_format=str(user_prefs.get("exam_format", "unknown")),
+        workspace_id=str(user_prefs.get("workspace_id", "default")),
+    )
+    print(f"Review generated at {result.markdown_path}")
+
+
+def main_simple(file_paths: list[str], user_prefs: dict) -> None:
+    """Simplified run that treats all files as 'other' type."""
+    service = AgentService()
+    result = service.run_simple(
         file_paths=file_paths,
         exam_format=str(user_prefs.get("exam_format", "unknown")),
         workspace_id=str(user_prefs.get("workspace_id", "default")),
@@ -35,6 +53,10 @@ def main(file_paths: list[str], user_prefs: dict) -> None:
 if __name__ == "__main__":
     load_dotenv()
     try:
-        main(TEST_FILE_PATHS, {"exam_format": "written"})
+        # Example: classify the test file as a syllabus
+        classified = {
+            DocumentType.syllabus: TEST_FILE_PATHS,
+        }
+        main(classified, {"exam_format": "written"})
     except UACRAgentError as exc:
         raise SystemExit(f"Error: {exc}")

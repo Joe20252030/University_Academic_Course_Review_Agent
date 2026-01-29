@@ -1,12 +1,27 @@
 # University Academic Course Review Agent (UACRAgent)
 
-Generate a final-exam review document from a course outline (PDF/TXT/MD) using a RAG pipeline:
+Generate a comprehensive final-exam review document from course materials using a RAG pipeline:
 
-- Ingest course outline files (PDF, TXT, or Markdown)
-- Chunk and embed into a local Chroma vector store
-- Ask an LLM to create a structured review plan (JSON)
-- For each planned section, retrieve relevant chunks and generate content
+- Ingest course materials (PDF, TXT, Markdown, or DOCX)
+- Classify documents by type for optimized processing
+- Chunk documents using type-specific strategies
+- Embed into a local Chroma vector store
+- Ask an LLM to create a structured review plan
+- For each planned section, retrieve relevant content and generate review material
 - Export to Markdown, DOCX, or PDF
+
+## Document Types
+
+The system supports classifying course materials into these categories, each with optimized chunking:
+
+| Type | Description | Chunk Size |
+|------|-------------|------------|
+| **Syllabus** | Course outlines, policies, schedules | 800 |
+| **Lecture Notes** | Slides, class notes | 1000 |
+| **Textbook** | Textbook chapters, reference material | 1500 |
+| **Assignment** | Homework, problem sets | 600 |
+| **Past Exam** | Previous exams, practice tests | 500 |
+| **Other** | Miscellaneous materials | 1000 |
 
 ## Requirements
 
@@ -37,8 +52,6 @@ Optional overrides (see defaults in [src/uacragent/infra/settings.py](src/uacrag
 
 - `LLM_MODEL=gemini-2.5-flash`
 - `EMBEDDING_MODEL=gemini-embedding-001`
-- `CHUNK_SIZE=1000`
-- `CHUNK_OVERLAP=150`
 - `RETRIEVER_K=8`
 - `WORKSPACE_ROOT=data`
 
@@ -48,18 +61,28 @@ Optional overrides (see defaults in [src/uacragent/infra/settings.py](src/uacrag
 - `python -m uacragent` (launches the GUI when no file arguments are given)
 - `python -m uacragent.ui.desktop.app`
 
-The GUI lets you select files, choose exam format (written / mcq / mixed) and export format (Markdown / DOCX / PDF), and generate a review with one click. Works on macOS, Windows, and Linux.
+The GUI lets you:
+- Add files to different document type categories (Syllabus, Lecture Notes, etc.)
+- Choose exam format (written / mcq / mixed)
+- Choose export format (Markdown / DOCX / PDF)
+- Generate a review with one click
+
+Works on macOS, Windows, and Linux.
 
 ## Run (CLI)
 
+Simple mode (all files treated as "other"):
+- `python -m uacragent outline.pdf lecture.pdf --exam-format written`
+
+With document type classification:
+- `python -m uacragent syllabus.pdf --doc-type syllabus --exam-format written`
+
+Quick-start script:
 - `python app.py`
-- `python -m uacragent outline.pdf --exam-format written --workspace-id default`
 
 By default, [app.py](app.py) runs against the included PDF fixture under `tests/outlines/`.
 
-To run on your own outline, either pass the path as a CLI argument or place it under [data/default/uploads/](data/default/uploads/) and update the file list in [app.py](app.py).
-
-## Run (API, optional)
+## Run (API)
 
 Start the server:
 
@@ -68,11 +91,32 @@ Start the server:
 Endpoints:
 
 - `GET /health` — health check
-- `POST /review` — generate a review; JSON body: `{ "file_paths": [...], "exam_format": "written", "workspace_id": "default" }`
+- `POST /review` — generate a review with classified documents:
+  ```json
+  {
+    "classified_files": {
+      "syllabus": ["path/to/syllabus.pdf"],
+      "lecture_note": ["path/to/notes.pdf"],
+      "past_exam": ["path/to/exam1.pdf", "path/to/exam2.pdf"]
+    },
+    "exam_format": "written",
+    "workspace_id": "default",
+    "copy_to_workspace": true
+  }
+  ```
+- `POST /review/simple` — legacy endpoint (all files treated as "other"):
+  ```json
+  {
+    "file_paths": ["path/to/file.pdf"],
+    "exam_format": "written",
+    "workspace_id": "default"
+  }
+  ```
 
 ## Output
 
-- Markdown / DOCX / PDF written to `data/<workspace_id>/outputs/` as `review_<timestamp>.<ext>`
+- Review files written to `data/<workspace_id>/outputs/` as `review_<timestamp>.<ext>`
+- Uploaded files organized under `data/<workspace_id>/uploads/<doc_type>/`
 - Vector DB persisted under `data/<workspace_id>/chroma_db/`
 
 ## Project structure
@@ -82,33 +126,33 @@ src/uacragent/
   __main__.py            CLI + GUI entry point
   agent/
     service.py           High-level orchestrator (AgentService)
-    pipeline.py          RAG pipeline (plan -> retrieve -> write -> assemble)
+    pipeline.py          RAG pipeline (load -> chunk -> embed -> plan -> write)
     prompts/
       planner.md         Prompt template for review plan generation
       reviewer.md        Prompt template for section writing
   api/
     main.py              FastAPI application factory
-    routes.py            API endpoints (/health, /review)
-    schemas.py           Request / response models
+    routes.py            API endpoints (/health, /review, /review/simple)
+    schemas.py           Request / response models with ClassifiedFiles
     deps.py              Dependency injection (settings, service singletons)
   domain/
     models.py            Core data models (ReviewPlan, SectionSpec)
     errors.py            Custom exception hierarchy
-    types.py             Enums (ExamFormat, ExportFormat)
+    types.py             Enums (DocumentType, ExamFormat, ExportFormat)
   infra/
     settings.py          Pydantic-based configuration (.env)
-    loaders.py           Document loading and chunking
+    loaders.py           Document loading with type-specific splitting
     vectorstore.py       Chroma vector store with dedup
     llm.py               LLM client wrapper (Google Gemini)
     auth.py              API key validation
-    workspace.py         Workspace directory management
+    workspace.py         Workspace directory management with classified folders
   export/
     markdown.py          Markdown export
     docx.py              DOCX export (python-docx)
     pdf.py               PDF export (fpdf2)
   ui/
     desktop/
-      app.py             Tkinter desktop GUI (cross-platform)
+      app.py             Tkinter desktop GUI with document type tabs
     web/                  (placeholder for future web UI)
 app.py                   Script entry point (quick-start)
 ```
