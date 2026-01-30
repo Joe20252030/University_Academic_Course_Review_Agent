@@ -10,18 +10,23 @@ Generate a comprehensive final-exam review document from course materials using 
 - For each planned section, retrieve relevant content and generate review material
 - Export to Markdown, DOCX, or PDF
 
-## Document Types
+## Document Types & Splitting Strategies
 
-The system supports classifying course materials into these categories, each with optimized chunking:
+Each document type uses a multi-stage splitting pipeline optimized for its structure:
 
-| Type | Description | Chunk Size |
-|------|-------------|------------|
-| **Syllabus** | Course outlines, policies, schedules | 800 |
-| **Lecture Notes** | Slides, class notes | 1000 |
-| **Textbook** | Textbook chapters, reference material | 1500 |
-| **Assignment** | Homework, problem sets | 600 |
-| **Past Exam** | Previous exams, practice tests | 500 |
-| **Other** | Miscellaneous materials | 1000 |
+| Type | Splitting Strategy | Final Chunk Size |
+|------|-------------------|-----------------|
+| **Textbook** | Markdown header split (chapter/section/subsection) then recursive character split | 1500 |
+| **Syllabus** | Markdown header split (section/subsection) then recursive character split | 800 |
+| **Lecture Notes** | Sentence-aware recursive split (preserves slide bullet points) | 1000 |
+| **Past Exam** | Question-boundary regex split (Q1, 1., Part A, (a), etc.) then recursive split | 500 |
+| **Assignment** | Problem-boundary regex split (Problem/Exercise/Task headers) then recursive split | 600 |
+| **Other** | Standard recursive character split | 1000 |
+
+Multi-stage pipelines feed each stage's output into the next. For example, a textbook
+PDF is first split on `#`/`##`/`###` markdown headers to isolate chapters and sections,
+then each section is recursively split into retrieval-sized chunks. Header-based
+metadata (chapter, section, subsection) is preserved on every chunk.
 
 ## Requirements
 
@@ -141,7 +146,7 @@ src/uacragent/
     types.py             Enums (DocumentType, ExamFormat, ExportFormat)
   infra/
     settings.py          Pydantic-based configuration (.env)
-    loaders.py           Document loading with type-specific splitting
+    loaders.py           Document loading with multi-stage type-specific splitting
     vectorstore.py       Chroma vector store with dedup
     llm.py               LLM client wrapper (Google Gemini)
     auth.py              API key validation
