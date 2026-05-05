@@ -9,14 +9,23 @@ from uacragent.domain.types import DocumentType, ExamType, TaskType
 
 def _cli(args: argparse.Namespace) -> None:
     """Run CLI with optional document type classification."""
+    if not args.course_name:
+        raise SystemExit("error: --course-name is required when running the CLI pipeline")
+
     service = AgentService()
 
     common_kwargs = dict(
         exam_format=args.exam_format,
+        course_name=args.course_name,
         exam_type=args.exam_type,
         task_type=args.task_type,
         extra_instructions=args.extra_instructions or "",
         workspace_id=args.workspace_id,
+        university_name=args.university_name or "",
+        major=args.major or "",
+        course_code=args.course_code or "",
+        professor_name=args.professor_name or "",
+        semester=args.semester or "",
     )
 
     if args.doc_type:
@@ -65,6 +74,17 @@ def main() -> None:
         choices=[dt.value for dt in DocumentType],
         help="Document type for all input files: syllabus, lecture_note, textbook, assignment, past_exam, other"
     )
+    # Course information (course-name is required when running the CLI pipeline)
+    parser.add_argument(
+        "--course-name",
+        default="",
+        help="Full course name, e.g. 'Introduction to Algorithms' (required for CLI runs)",
+    )
+    parser.add_argument("--university-name", default="", help="University name (e.g. University of Toronto)")
+    parser.add_argument("--major", default="", help="Major or department (e.g. Computer Science)")
+    parser.add_argument("--course-code", default="", help="Course code (e.g. CS101)")
+    parser.add_argument("--professor-name", default="", help="Professor name")
+    parser.add_argument("--semester", default="", help="Semester/term (e.g. Fall 2024)")
     parser.add_argument("--gui", action="store_true", help="Launch the desktop GUI instead of CLI")
     args = parser.parse_args()
 

@@ -2,10 +2,21 @@
 Write an exam prediction analysis section for an upcoming university {exam_type}.
 
 # Input
+## Course Information
+- Course Name: {course_name}
+- University: {university_name}
+- Major / Department: {major}
+- Course Code: {course_code}
+- Professor: {professor_name}
+- Semester: {semester}
+
 ## Section Title
 {title}
 
-## Context
+## Key Topics to Cover
+{key_topics}
+
+## Context (from course materials)
 {context}
 
 ## Exam Type
@@ -13,6 +24,9 @@ Write an exam prediction analysis section for an upcoming university {exam_type}
 
 ## Exam Format
 {exam_format}
+
+## Additional Instructions
+{extra_instructions}
 
 # Output
 Return **valid Markdown** containing:

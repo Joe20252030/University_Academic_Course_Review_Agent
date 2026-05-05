@@ -1,29 +1,29 @@
-# Core configuration
-pydantic
-pydantic-settings
-python-dotenv
+# ── Core configuration ────────────────────────────────────────────────────────
+pydantic>=2.0
+pydantic-settings>=2.0
+python-dotenv>=1.0
 
-# LangChain + integrations
-langchain-core
-langchain-community
-langchain-text-splitters
-langchain-google-genai
+# ── LangChain ecosystem ───────────────────────────────────────────────────────
+langchain-core>=0.3
+langchain-community>=0.3
+langchain-text-splitters>=0.3
+langchain-google-genai>=2.0
 
-# Vector store
-chromadb
-langchain-chroma
+# ── Vector store ──────────────────────────────────────────────────────────────
+chromadb>=0.5
+langchain-chroma>=0.1
 
-# Document loaders / parsing
-pypdf
-docx2txt
+# ── Document loading / parsing ────────────────────────────────────────────────
+pypdf>=4.0
+docx2txt>=0.8        # used by langchain_community.document_loaders.Docx2txtLoader
 
-# Export
-python-docx
-fpdf2
+# ── Export ────────────────────────────────────────────────────────────────────
+python-docx>=1.0
+fpdf2>=2.7           # 2.7+ required for Unicode TTF font support
 
-# API (optional)
-fastapi
-uvicorn[standard]
+# ── REST API (optional — only needed when running the FastAPI server) ──────────
+fastapi>=0.100
+uvicorn[standard]>=0.23
 
-# Testing
-pytest
+# ── Development / testing ─────────────────────────────────────────────────────
+pytest>=8.0

@@ -27,8 +27,8 @@ from uacragent.infra.workspace import workspace_paths, ensure_workspace_dirs
 # Constants
 # ---------------------------------------------------------------------------
 _WINDOW_TITLE = "UACRAgent - Course Review Generator"
-_MIN_WIDTH = 900
-_MIN_HEIGHT = 800
+_MIN_WIDTH = 960
+_MIN_HEIGHT = 880
 _PAD = 10
 _SUPPORTED_FILETYPES = [
     ("All supported", "*.pdf *.txt *.md *.docx"),
@@ -38,7 +38,6 @@ _SUPPORTED_FILETYPES = [
     ("Markdown files", "*.md"),
 ]
 
-# Human-readable labels for document types
 _DOC_TYPE_LABELS = {
     DocumentType.syllabus: "Syllabus",
     DocumentType.lecture_note: "Lecture Notes",
@@ -48,7 +47,6 @@ _DOC_TYPE_LABELS = {
     DocumentType.other: "Other",
 }
 
-# Human-readable labels for exam types
 _EXAM_TYPE_LABELS = {
     ExamType.quiz: "Quiz",
     ExamType.midterm: "Midterm",
@@ -57,7 +55,6 @@ _EXAM_TYPE_LABELS = {
     ExamType.other: "Other",
 }
 
-# Human-readable labels for task types
 _TASK_TYPE_LABELS = {
     TaskType.review_summary: "Review Summary",
     TaskType.practice_booklet: "Practice Booklet",
@@ -65,23 +62,18 @@ _TASK_TYPE_LABELS = {
     TaskType.exam_prediction: "Exam Prediction",
 }
 
-# Placeholder hints per task type for the extra-instructions text box
 _TASK_HINTS: dict[TaskType, str] = {
     TaskType.review_summary: (
-        "Optional: e.g. \"Focus on chapters 5-8\" or "
-        "\"Emphasize calculation problems\""
+        'Optional: e.g. "Focus on chapters 5-8" or "Emphasize calculation problems"'
     ),
     TaskType.practice_booklet: (
-        "Optional: e.g. \"Include 10 problems per section\" or "
-        "\"Focus on problem-solving skills\""
+        'Optional: e.g. "Include 10 problems per section" or "Focus on problem-solving skills"'
     ),
     TaskType.mock_exam: (
-        "Optional: e.g. \"2 hours, 100 points total\" or "
-        "\"Include a formula sheet section\""
+        'Optional: e.g. "2 hours, 100 points total" or "Include a formula sheet section"'
     ),
     TaskType.exam_prediction: (
-        "Optional: e.g. \"Professor emphasized graph theory in class\" or "
-        "\"Last year's final focused on chapters 3-6\""
+        'Optional: e.g. "Professor emphasized graph theory" or "Last year\'s final focused on chapters 3-6"'
     ),
 }
 
@@ -90,7 +82,6 @@ _TASK_HINTS: dict[TaskType, str] = {
 # Helpers
 # ---------------------------------------------------------------------------
 def _open_file_in_os(path: str) -> None:
-    """Open a file with the default system application."""
     system = platform.system()
     try:
         if system == "Darwin":
@@ -104,7 +95,6 @@ def _open_file_in_os(path: str) -> None:
 
 
 def _open_folder_in_os(path: str) -> None:
-    """Open a folder in the system file manager."""
     system = platform.system()
     try:
         if system == "Darwin":
@@ -128,18 +118,24 @@ class UACRAgentApp(tk.Tk):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
 
-        # State: classified files
         self._classified_files: dict[DocumentType, list[str]] = {
             doc_type: [] for doc_type in DocumentType
         }
         self._result: ReviewResult | None = None
         self._last_output_path: str = ""
         self._is_running = False
+        self._service: AgentService | None = None  # lazy, cached
 
-        # UI element references for file lists
         self._file_listboxes: dict[DocumentType, tk.Listbox] = {}
 
         self._build_ui()
+
+    # ----- Service (cached) -----------------------------------------------
+
+    def _get_service(self) -> AgentService:
+        if self._service is None:
+            self._service = AgentService()
+        return self._service
 
     # ----- UI construction ------------------------------------------------
 
@@ -151,10 +147,58 @@ class UACRAgentApp(tk.Tk):
         row = 0
 
         # -- Title ---------------------------------------------------------
-        title_lbl = ttk.Label(
+        ttk.Label(
             main_frame, text="Course Review Generator", font=("TkDefaultFont", 16, "bold")
+        ).grid(row=row, column=0, sticky="w", pady=(0, _PAD))
+        row += 1
+
+        # -- Course Information --------------------------------------------
+        info_frame = ttk.LabelFrame(main_frame, text="Course Information", padding=_PAD)
+        info_frame.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
+        info_frame.columnconfigure(1, weight=2)
+        info_frame.columnconfigure(3, weight=1)
+        info_frame.columnconfigure(5, weight=1)
+
+        # Row 0: Course Name (required, spans full width)
+        ttk.Label(info_frame, text="Course Name *:", foreground="red").grid(
+            row=0, column=0, sticky="w", padx=(0, 4)
         )
-        title_lbl.grid(row=row, column=0, sticky="w", pady=(0, _PAD))
+        self._course_name_var = tk.StringVar()
+        self._course_name_entry = ttk.Entry(info_frame, textvariable=self._course_name_var)
+        self._course_name_entry.grid(row=0, column=1, columnspan=5, sticky="ew")
+
+        # Row 1: University | Major | Semester
+        ttk.Label(info_frame, text="University:").grid(row=1, column=0, sticky="w", padx=(0, 4), pady=(6, 0))
+        self._university_var = tk.StringVar()
+        ttk.Entry(info_frame, textvariable=self._university_var).grid(
+            row=1, column=1, sticky="ew", padx=(0, 12), pady=(6, 0)
+        )
+
+        ttk.Label(info_frame, text="Major / Dept:").grid(row=1, column=2, sticky="w", padx=(0, 4), pady=(6, 0))
+        self._major_var = tk.StringVar()
+        ttk.Entry(info_frame, textvariable=self._major_var).grid(
+            row=1, column=3, sticky="ew", padx=(0, 12), pady=(6, 0)
+        )
+
+        ttk.Label(info_frame, text="Semester:").grid(row=1, column=4, sticky="w", padx=(0, 4), pady=(6, 0))
+        self._semester_var = tk.StringVar()
+        ttk.Entry(info_frame, textvariable=self._semester_var).grid(
+            row=1, column=5, sticky="ew", pady=(6, 0)
+        )
+
+        # Row 2: Course Code | Professor
+        ttk.Label(info_frame, text="Course Code:").grid(row=2, column=0, sticky="w", padx=(0, 4), pady=(6, 0))
+        self._course_code_var = tk.StringVar()
+        ttk.Entry(info_frame, textvariable=self._course_code_var).grid(
+            row=2, column=1, sticky="ew", padx=(0, 12), pady=(6, 0)
+        )
+
+        ttk.Label(info_frame, text="Professor:").grid(row=2, column=2, sticky="w", padx=(0, 4), pady=(6, 0))
+        self._professor_var = tk.StringVar()
+        ttk.Entry(info_frame, textvariable=self._professor_var).grid(
+            row=2, column=3, columnspan=3, sticky="ew", pady=(6, 0)
+        )
+
         row += 1
 
         # -- Document Type Sections ----------------------------------------
@@ -177,7 +221,6 @@ class UACRAgentApp(tk.Tk):
         task_frame.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
         task_frame.columnconfigure(1, weight=1)
 
-        # Task type
         ttk.Label(task_frame, text="What to generate:").grid(row=0, column=0, sticky="w", padx=(0, 6))
         self._task_type_var = tk.StringVar(value=TaskType.review_summary.value)
         task_cb = ttk.Combobox(
@@ -190,17 +233,21 @@ class UACRAgentApp(tk.Tk):
         task_cb.grid(row=0, column=1, sticky="w", padx=(0, 20))
         task_cb.bind("<<ComboboxSelected>>", self._on_task_type_changed)
 
-        # Task description label (dynamic)
-        self._task_desc_var = tk.StringVar(value="Generate a comprehensive review summary for exam preparation.")
+        self._task_desc_var = tk.StringVar(
+            value="Generate a comprehensive review summary for exam preparation."
+        )
         ttk.Label(task_frame, textvariable=self._task_desc_var, foreground="gray").grid(
             row=0, column=2, sticky="w"
         )
 
-        # Extra instructions
-        ttk.Label(task_frame, text="Extra instructions:").grid(row=1, column=0, sticky="nw", padx=(0, 6), pady=(6, 0))
+        ttk.Label(task_frame, text="Extra instructions:").grid(
+            row=1, column=0, sticky="nw", padx=(0, 6), pady=(6, 0)
+        )
         self._extra_instructions_text = tk.Text(task_frame, height=2, width=60, wrap="word")
         self._extra_instructions_text.grid(row=1, column=1, columnspan=2, sticky="ew", pady=(6, 0))
-        self._update_extra_instructions_hint()
+        self._extra_instructions_text.bind("<FocusIn>", self._on_extra_focus_in)
+        self._extra_instructions_text.bind("<FocusOut>", self._on_extra_focus_out)
+        self._set_extra_hint()
 
         row += 1
 
@@ -208,43 +255,36 @@ class UACRAgentApp(tk.Tk):
         opts_frame = ttk.LabelFrame(main_frame, text="Exam & Export Options", padding=_PAD)
         opts_frame.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
 
-        # Exam type
         ttk.Label(opts_frame, text="Exam type:").grid(row=0, column=0, sticky="w", padx=(0, 6))
         self._exam_type_var = tk.StringVar(value=ExamType.final.value)
-        exam_type_cb = ttk.Combobox(
+        ttk.Combobox(
             opts_frame,
             textvariable=self._exam_type_var,
             values=[e.value for e in ExamType],
             state="readonly",
             width=12,
-        )
-        exam_type_cb.grid(row=0, column=1, sticky="w", padx=(0, 20))
+        ).grid(row=0, column=1, sticky="w", padx=(0, 20))
 
-        # Exam format
         ttk.Label(opts_frame, text="Exam format:").grid(row=0, column=2, sticky="w", padx=(0, 6))
         self._exam_format_var = tk.StringVar(value=ExamFormat.written.value)
-        exam_cb = ttk.Combobox(
+        ttk.Combobox(
             opts_frame,
             textvariable=self._exam_format_var,
             values=[e.value for e in ExamFormat],
             state="readonly",
             width=12,
-        )
-        exam_cb.grid(row=0, column=3, sticky="w", padx=(0, 20))
+        ).grid(row=0, column=3, sticky="w", padx=(0, 20))
 
-        # Export format
         ttk.Label(opts_frame, text="Export format:").grid(row=0, column=4, sticky="w", padx=(0, 6))
         self._export_format_var = tk.StringVar(value=ExportFormat.markdown.value)
-        export_cb = ttk.Combobox(
+        ttk.Combobox(
             opts_frame,
             textvariable=self._export_format_var,
             values=[e.value for e in ExportFormat],
             state="readonly",
             width=12,
-        )
-        export_cb.grid(row=0, column=5, sticky="w", padx=(0, 20))
+        ).grid(row=0, column=5, sticky="w", padx=(0, 20))
 
-        # Workspace ID
         ttk.Label(opts_frame, text="Workspace:").grid(row=0, column=6, sticky="w", padx=(0, 6))
         self._workspace_var = tk.StringVar(value="default")
         ttk.Entry(opts_frame, textvariable=self._workspace_var, width=12).grid(row=0, column=7, sticky="w")
@@ -262,8 +302,12 @@ class UACRAgentApp(tk.Tk):
         self._progress.grid(row=row, column=0, sticky="ew", pady=(0, 4))
         row += 1
 
-        self._status_var = tk.StringVar(value="Ready. Add course materials, choose a task, and click Generate.")
-        ttk.Label(main_frame, textvariable=self._status_var).grid(row=row, column=0, sticky="w", pady=(0, _PAD))
+        self._status_var = tk.StringVar(
+            value="Ready. Add course materials, choose a task, and click Generate."
+        )
+        ttk.Label(main_frame, textvariable=self._status_var).grid(
+            row=row, column=0, sticky="w", pady=(0, _PAD)
+        )
         row += 1
 
         # -- Output area ---------------------------------------------------
@@ -283,10 +327,14 @@ class UACRAgentApp(tk.Tk):
         bottom = ttk.Frame(main_frame)
         bottom.grid(row=row, column=0, sticky="e")
 
-        self._open_file_btn = ttk.Button(bottom, text="Open Output File", command=self._on_open_file, state="disabled")
+        self._open_file_btn = ttk.Button(
+            bottom, text="Open Output File", command=self._on_open_file, state="disabled"
+        )
         self._open_file_btn.pack(side="left", padx=(0, 6))
 
-        self._open_folder_btn = ttk.Button(bottom, text="Open Output Folder", command=self._on_open_folder, state="disabled")
+        self._open_folder_btn = ttk.Button(
+            bottom, text="Open Output Folder", command=self._on_open_folder, state="disabled"
+        )
         self._open_folder_btn.pack(side="left")
 
     def _create_doc_type_section(
@@ -296,7 +344,6 @@ class UACRAgentApp(tk.Tk):
         row: int,
         col: int,
     ) -> None:
-        """Create a labeled section for a document type with file list and buttons."""
         label = _DOC_TYPE_LABELS.get(doc_type, doc_type.value)
 
         frame = ttk.LabelFrame(parent, text=label, padding=5)
@@ -305,12 +352,10 @@ class UACRAgentApp(tk.Tk):
         frame.rowconfigure(0, weight=1)
         parent.rowconfigure(row, weight=1)
 
-        # File listbox
         listbox = tk.Listbox(frame, height=3, selectmode=tk.EXTENDED)
         listbox.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
         self._file_listboxes[doc_type] = listbox
 
-        # Buttons
         btn_frame = ttk.Frame(frame)
         btn_frame.grid(row=0, column=1, sticky="ns")
 
@@ -323,6 +368,41 @@ class UACRAgentApp(tk.Tk):
             command=lambda dt=doc_type: self._on_remove_files(dt)
         ).pack(fill="x")
 
+    # ----- Extra-instructions placeholder logic ---------------------------
+
+    def _current_hint(self) -> str:
+        try:
+            tt = TaskType(self._task_type_var.get())
+        except ValueError:
+            tt = TaskType.review_summary
+        return _TASK_HINTS.get(tt, "")
+
+    def _set_extra_hint(self) -> None:
+        """Replace the extra-instructions box content with the current hint."""
+        self._extra_instructions_text.configure(foreground="gray")
+        self._extra_instructions_text.delete("1.0", tk.END)
+        self._extra_instructions_text.insert("1.0", self._current_hint())
+
+    def _is_showing_hint(self) -> bool:
+        current = self._extra_instructions_text.get("1.0", tk.END).strip()
+        return current in _TASK_HINTS.values()
+
+    def _on_extra_focus_in(self, _event: object = None) -> None:
+        if self._is_showing_hint():
+            self._extra_instructions_text.delete("1.0", tk.END)
+            self._extra_instructions_text.configure(foreground="black")
+
+    def _on_extra_focus_out(self, _event: object = None) -> None:
+        current = self._extra_instructions_text.get("1.0", tk.END).strip()
+        if not current:
+            self._set_extra_hint()
+
+    def _get_extra_instructions(self) -> str:
+        text = self._extra_instructions_text.get("1.0", tk.END).strip()
+        if self._is_showing_hint():
+            return ""
+        return text
+
     # ----- Task type UI helpers -------------------------------------------
 
     _TASK_DESCRIPTIONS: dict[str, str] = {
@@ -334,56 +414,12 @@ class UACRAgentApp(tk.Tk):
 
     def _on_task_type_changed(self, _event: object = None) -> None:
         task = self._task_type_var.get()
-        desc = self._TASK_DESCRIPTIONS.get(task, "")
-        self._task_desc_var.set(desc)
-        self._update_extra_instructions_hint()
+        self._task_desc_var.set(self._TASK_DESCRIPTIONS.get(task, ""))
+        # Always replace the hint so it reflects the newly selected task
+        if self._is_showing_hint():
+            self._set_extra_hint()
 
-    def _update_extra_instructions_hint(self) -> None:
-        """Show a placeholder hint in the extra instructions box."""
-        try:
-            tt = TaskType(self._task_type_var.get())
-        except ValueError:
-            tt = TaskType.review_summary
-        hint = _TASK_HINTS.get(tt, "")
-        # Only set hint if box is empty
-        current = self._extra_instructions_text.get("1.0", tk.END).strip()
-        if not current:
-            self._extra_instructions_text.configure(foreground="gray")
-            self._extra_instructions_text.insert("1.0", hint)
-            self._extra_instructions_text.bind("<FocusIn>", self._on_extra_focus_in)
-            self._extra_instructions_text.bind("<FocusOut>", self._on_extra_focus_out)
-
-    def _on_extra_focus_in(self, _event: object = None) -> None:
-        """Clear placeholder when user clicks into the text box."""
-        current = self._extra_instructions_text.get("1.0", tk.END).strip()
-        try:
-            tt = TaskType(self._task_type_var.get())
-        except ValueError:
-            tt = TaskType.review_summary
-        hint = _TASK_HINTS.get(tt, "")
-        if current == hint:
-            self._extra_instructions_text.delete("1.0", tk.END)
-            self._extra_instructions_text.configure(foreground="black")
-
-    def _on_extra_focus_out(self, _event: object = None) -> None:
-        """Restore placeholder if box is empty."""
-        current = self._extra_instructions_text.get("1.0", tk.END).strip()
-        if not current:
-            self._update_extra_instructions_hint()
-
-    def _get_extra_instructions(self) -> str:
-        """Return extra instructions, ignoring the placeholder hint."""
-        text = self._extra_instructions_text.get("1.0", tk.END).strip()
-        try:
-            tt = TaskType(self._task_type_var.get())
-        except ValueError:
-            tt = TaskType.review_summary
-        hint = _TASK_HINTS.get(tt, "")
-        if text == hint:
-            return ""
-        return text
-
-    # ----- Callbacks ------------------------------------------------------
+    # ----- File management callbacks --------------------------------------
 
     def _on_add_files(self, doc_type: DocumentType) -> None:
         paths = filedialog.askopenfilenames(
@@ -406,8 +442,14 @@ class UACRAgentApp(tk.Tk):
     def _get_total_file_count(self) -> int:
         return sum(len(files) for files in self._classified_files.values())
 
+    # ----- Generation -----------------------------------------------------
+
     def _on_generate(self) -> None:
         if self._is_running:
+            return
+        if not self._course_name_var.get().strip():
+            messagebox.showwarning("Course Name Required", "Please enter a course name before generating.")
+            self._course_name_entry.focus_set()
             return
         if self._get_total_file_count() == 0:
             messagebox.showwarning("No files", "Please add at least one course material file.")
@@ -418,9 +460,7 @@ class UACRAgentApp(tk.Tk):
         self._open_file_btn.configure(state="disabled")
         self._open_folder_btn.configure(state="disabled")
         self._progress.start(15)
-        task_label = _TASK_TYPE_LABELS.get(
-            TaskType(self._task_type_var.get()), "output"
-        )
+        task_label = _TASK_TYPE_LABELS.get(TaskType(self._task_type_var.get()), "output")
         self._status_var.set(f"Generating {task_label.lower()}... This may take a minute.")
         self._set_output_text("")
 
@@ -429,34 +469,31 @@ class UACRAgentApp(tk.Tk):
 
     def _run_pipeline(self) -> None:
         try:
-            service = AgentService()
-            exam_format = self._exam_format_var.get()
-            exam_type = self._exam_type_var.get()
-            task_type = self._task_type_var.get()
-            extra_instructions = self._get_extra_instructions()
-            workspace_id = self._workspace_var.get() or "default"
-            export_fmt = self._export_format_var.get()
-
-            # Filter out empty document types
+            service = self._get_service()
             classified = {
-                dt: paths for dt, paths in self._classified_files.items()
-                if paths
+                dt: paths for dt, paths in self._classified_files.items() if paths
             }
 
             result = service.run_end_to_end(
                 classified_files=classified,
-                exam_format=exam_format,
-                exam_type=exam_type,
-                task_type=task_type,
-                extra_instructions=extra_instructions,
-                workspace_id=workspace_id,
+                exam_format=self._exam_format_var.get(),
+                course_name=self._course_name_var.get().strip(),
+                exam_type=self._exam_type_var.get(),
+                task_type=self._task_type_var.get(),
+                extra_instructions=self._get_extra_instructions(),
+                workspace_id=self._workspace_var.get() or "default",
                 copy_to_workspace=True,
+                university_name=self._university_var.get().strip(),
+                major=self._major_var.get().strip(),
+                course_code=self._course_code_var.get().strip(),
+                professor_name=self._professor_var.get().strip(),
+                semester=self._semester_var.get().strip(),
             )
 
-            # Export to the chosen format
-            ws = workspace_paths(service.settings.workspace_root, workspace_id)
+            ws = workspace_paths(service.settings.workspace_root, self._workspace_var.get() or "default")
             ensure_workspace_dirs(ws)
 
+            export_fmt = self._export_format_var.get()
             if export_fmt == ExportFormat.docx.value:
                 output_path = save_docx(result.markdown, ws)
             elif export_fmt == ExportFormat.pdf.value:
@@ -500,8 +537,7 @@ class UACRAgentApp(tk.Tk):
 
     def _on_open_folder(self) -> None:
         if self._last_output_path:
-            folder = str(Path(self._last_output_path).parent)
-            _open_folder_in_os(folder)
+            _open_folder_in_os(str(Path(self._last_output_path).parent))
 
     # ----- Utilities ------------------------------------------------------
 

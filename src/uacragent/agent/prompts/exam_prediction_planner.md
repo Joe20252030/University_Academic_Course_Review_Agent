@@ -2,6 +2,14 @@
 You are predicting the most likely topics and question types for an upcoming university {exam_type}. Analyze the course materials to identify high-probability exam content.
 
 # Input
+## Course Information
+- Course Name: {course_name}
+- University: {university_name}
+- Major / Department: {major}
+- Course Code: {course_code}
+- Professor: {professor_name}
+- Semester: {semester}
+
 ## Course outline
 {outline}
 
@@ -16,10 +24,16 @@ You are predicting the most likely topics and question types for an upcoming uni
 
 # Output
 Return **valid JSON only** that matches this schema:
-- course_title
+- course_title: use the provided Course Name exactly
 - exam_format
 - exam_type
 - task_type: "exam_prediction"
+- course_name: copy from the provided Course Name
+- university_name
+- major
+- course_code
+- professor_name
+- semester
 - sections: title, key_topics (array), importance (integer 1-5)
 
 Requirements:
@@ -34,6 +48,12 @@ e.g.
   "exam_format": string,
   "exam_type": string,
   "task_type": "exam_prediction",
+  "course_name": string,
+  "university_name": string,
+  "major": string,
+  "course_code": string,
+  "professor_name": string,
+  "semester": string,
   "sections": [
     {{
       "title": string,

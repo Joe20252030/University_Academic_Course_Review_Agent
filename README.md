@@ -7,7 +7,7 @@ Generate exam review materials from course documents using a RAG pipeline:
 - Chunk documents using type-specific multi-stage splitting strategies
 - Embed into a local Chroma vector store
 - Ask an LLM to create a structured plan tailored to the chosen task
-- For each planned section, retrieve relevant content and generate material
+- For each planned section, retrieve relevant content and generate material in parallel
 - Export to Markdown, DOCX, or PDF
 
 ## Task Types
@@ -36,6 +36,21 @@ Users specify the kind of exam they are preparing for:
 | **Other** | Custom or unspecified |
 
 The exam type influences prompt behavior — a quiz review is concise and focused while a final review is comprehensive.
+
+## Course Information Fields
+
+When generating output you can supply context about the course. The **Course Name is required**; all other fields are optional but improve the quality and relevance of the output.
+
+| Field | Required | Example |
+|-------|----------|---------|
+| **Course Name** | Yes | `Introduction to Algorithms` |
+| University | No | `University of Toronto` |
+| Major / Department | No | `Computer Science` |
+| Course Code | No | `CSC263` |
+| Professor | No | `Dr. Jane Smith` |
+| Semester | No | `Fall 2024` |
+
+These fields are passed to every planner and writer prompt, so the LLM can tailor content to the specific course and context.
 
 ## Document Types & Splitting Strategies
 
@@ -94,6 +109,7 @@ Optional overrides (see defaults in [src/uacragent/infra/settings.py](src/uacrag
 - `python -m uacragent.ui.desktop.app`
 
 The GUI lets you:
+- Enter a **course name** (required) and optional course details (university, major, course code, professor, semester)
 - Add files to different document type categories (Syllabus, Lecture Notes, etc.)
 - Choose a task (Review Summary, Practice Booklet, Mock Exam, Exam Prediction)
 - Choose exam type (Quiz, Midterm, Final, Term Test, Other)
@@ -106,22 +122,51 @@ Works on macOS, Windows, and Linux.
 
 ## Run (CLI)
 
+`--course-name` is **required** for all CLI runs.
+
 Simple review summary (all files treated as "other"):
-- `python -m uacragent outline.pdf lecture.pdf --exam-format written`
+```
+python -m uacragent outline.pdf lecture.pdf \
+  --course-name "Introduction to Algorithms" \
+  --exam-format written
+```
 
 With all options:
-- `python -m uacragent syllabus.pdf --doc-type syllabus --exam-type final --task-type mock_exam --exam-format mixed`
+```
+python -m uacragent syllabus.pdf \
+  --course-name "Data Structures" \
+  --doc-type syllabus \
+  --exam-type final \
+  --task-type mock_exam \
+  --exam-format mixed \
+  --university-name "University of Toronto" \
+  --major "Computer Science" \
+  --course-code "CSC263" \
+  --professor-name "Dr. Smith" \
+  --semester "Fall 2024"
+```
 
 Generate a practice booklet for a midterm:
-- `python -m uacragent notes.pdf --task-type practice_booklet --exam-type midterm --exam-format written`
+```
+python -m uacragent notes.pdf \
+  --course-name "Linear Algebra" \
+  --task-type practice_booklet \
+  --exam-type midterm \
+  --exam-format written
+```
 
 With extra instructions:
-- `python -m uacragent notes.pdf --task-type exam_prediction --extra-instructions "Professor emphasized graph theory"`
+```
+python -m uacragent notes.pdf \
+  --course-name "Graph Theory" \
+  --task-type exam_prediction \
+  --extra-instructions "Professor emphasized graph theory"
+```
 
 Quick-start script:
 - `python app.py`
 
-By default, [app.py](app.py) runs against the included PDF fixture under `tests/outlines/`.
+By default, [app.py](app.py) runs against the included PDF fixture under `test_materials/outlines/`.
 
 ## Run (API)
 
@@ -140,18 +185,25 @@ Endpoints:
       "lecture_note": ["path/to/notes.pdf"],
       "past_exam": ["path/to/exam1.pdf"]
     },
+    "course_name": "Introduction to Algorithms",
     "exam_format": "written",
     "exam_type": "final",
     "task_type": "review_summary",
     "extra_instructions": "",
     "workspace_id": "default",
-    "copy_to_workspace": true
+    "copy_to_workspace": true,
+    "university_name": "University of Toronto",
+    "major": "Computer Science",
+    "course_code": "CSC263",
+    "professor_name": "Dr. Smith",
+    "semester": "Fall 2024"
   }
   ```
 - `POST /review/simple` — legacy endpoint (all files treated as "other"):
   ```json
   {
     "file_paths": ["path/to/file.pdf"],
+    "course_name": "Introduction to Algorithms",
     "exam_format": "written",
     "exam_type": "other",
     "task_type": "review_summary",
@@ -159,11 +211,14 @@ Endpoints:
   }
   ```
 
+`course_name` is required in both endpoints. All other course information fields (`university_name`, `major`, `course_code`, `professor_name`, `semester`) are optional.
+
 ## Output
 
 - Output files written to `data/<workspace_id>/outputs/` as `review_<timestamp>.<ext>`
 - Uploaded files organized under `data/<workspace_id>/uploads/<doc_type>/`
 - Vector DB persisted under `data/<workspace_id>/chroma_db/`
+- The generated document header includes all provided course information fields
 
 ## Project structure
 
@@ -172,7 +227,7 @@ src/uacragent/
   __main__.py            CLI + GUI entry point
   agent/
     service.py           High-level orchestrator (AgentService)
-    pipeline.py          RAG pipeline with task-type dispatch
+    pipeline.py          RAG pipeline with task-type dispatch (parallel section writing)
     prompts/
       planner.md                   Generic planner (fallback)
       reviewer.md                  Generic writer (fallback)
@@ -187,7 +242,7 @@ src/uacragent/
   api/
     main.py              FastAPI application factory
     routes.py            API endpoints (/health, /review, /review/simple)
-    schemas.py           Request / response models
+    schemas.py           Request / response models (enum-validated fields)
     deps.py              Dependency injection (settings, service singletons)
   domain/
     models.py            Core data models (ReviewPlan, SectionSpec)
@@ -203,10 +258,16 @@ src/uacragent/
   export/
     markdown.py          Markdown export
     docx.py              DOCX export (python-docx)
-    pdf.py               PDF export (fpdf2)
+    pdf.py               PDF export (fpdf2, Unicode font auto-detection)
   ui/
     desktop/
       app.py             Tkinter desktop GUI
     web/                  (placeholder for future web UI)
+tests/
+  test_domain.py         Domain model and enum tests
+  test_export.py         Markdown / DOCX / PDF export tests
+  test_loaders.py        Document loading and splitting tests
+  test_pipeline_utils.py Pipeline utility function tests
+  test_workspace.py      Workspace path and directory tests
 app.py                   Script entry point (quick-start)
 ```

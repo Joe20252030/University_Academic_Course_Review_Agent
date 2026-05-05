@@ -18,7 +18,8 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("LLM_MODEL", "llm_model"),
     )
     google_api_key: str = Field(
-        validation_alias=AliasChoices("GOOGLE_API_KEY", "google_api_key")
+        default="",
+        validation_alias=AliasChoices("GOOGLE_API_KEY", "google_api_key"),
     )
 
     embedding_model: str = Field(

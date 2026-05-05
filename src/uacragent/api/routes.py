@@ -26,12 +26,18 @@ def generate_review(
 
     result = service.run_end_to_end(
         classified_files=req.classified_files.to_dict(),
-        exam_format=req.exam_format,
-        exam_type=req.exam_type,
-        task_type=req.task_type,
+        exam_format=req.exam_format.value,
+        course_name=req.course_name,
+        exam_type=req.exam_type.value,
+        task_type=req.task_type.value,
         extra_instructions=req.extra_instructions,
         workspace_id=req.workspace_id,
         copy_to_workspace=req.copy_to_workspace,
+        university_name=req.university_name,
+        major=req.major,
+        course_code=req.course_code,
+        professor_name=req.professor_name,
+        semester=req.semester,
     )
     return ReviewResponse(markdown_path=result.markdown_path, plan=result.plan)
 
@@ -47,10 +53,16 @@ def generate_review_simple(
     """
     result = service.run_simple(
         file_paths=req.file_paths,
-        exam_format=req.exam_format,
-        exam_type=req.exam_type,
-        task_type=req.task_type,
+        exam_format=req.exam_format.value,
+        course_name=req.course_name,
+        exam_type=req.exam_type.value,
+        task_type=req.task_type.value,
         extra_instructions=req.extra_instructions,
         workspace_id=req.workspace_id,
+        university_name=req.university_name,
+        major=req.major,
+        course_code=req.course_code,
+        professor_name=req.professor_name,
+        semester=req.semester,
     )
     return ReviewResponse(markdown_path=result.markdown_path, plan=result.plan)

@@ -5,9 +5,23 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "uacragent"
 version = "0.1.0"
-description = "University Academic Course Review Agent"
+description = "University Academic Course Review Agent — generate exam review materials from course documents using a RAG pipeline"
 readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["rag", "llm", "gemini", "exam", "education", "langchain"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Education",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Education",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dynamic = ["dependencies"]
 
 [tool.setuptools]
@@ -18,3 +32,6 @@ where = ["src"]
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

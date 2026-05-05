@@ -3,7 +3,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from uacragent.domain.models import ReviewPlan
-from uacragent.domain.types import DocumentType
+from uacragent.domain.types import DocumentType, ExamFormat, ExamType, TaskType
 
 
 class ClassifiedFiles(BaseModel):
@@ -43,22 +43,36 @@ class ClassifiedFiles(BaseModel):
 class ReviewRequest(BaseModel):
     """Request to generate course material."""
     classified_files: ClassifiedFiles = Field(...)
-    exam_format: str = "written"
-    exam_type: str = "other"
-    task_type: str = "review_summary"
+    course_name: str = Field(..., min_length=1, description="Full course name (required)")
+    exam_format: ExamFormat = ExamFormat.written
+    exam_type: ExamType = ExamType.other
+    task_type: TaskType = TaskType.review_summary
     extra_instructions: str = ""
     workspace_id: str = "default"
     copy_to_workspace: bool = True
+    # Optional course information
+    university_name: str = ""
+    major: str = ""
+    course_code: str = ""
+    professor_name: str = ""
+    semester: str = ""
 
 
 class SimpleReviewRequest(BaseModel):
     """Simplified request (backward compatible) - all files treated as 'other'."""
     file_paths: list[str] = Field(..., min_length=1)
-    exam_format: str = "written"
-    exam_type: str = "other"
-    task_type: str = "review_summary"
+    course_name: str = Field(..., min_length=1, description="Full course name (required)")
+    exam_format: ExamFormat = ExamFormat.written
+    exam_type: ExamType = ExamType.other
+    task_type: TaskType = TaskType.review_summary
     extra_instructions: str = ""
     workspace_id: str = "default"
+    # Optional course information
+    university_name: str = ""
+    major: str = ""
+    course_code: str = ""
+    professor_name: str = ""
+    semester: str = ""
 
 
 class ReviewResponse(BaseModel):

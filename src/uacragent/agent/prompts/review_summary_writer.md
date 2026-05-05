@@ -2,10 +2,21 @@
 Write a {exam_type} review section for a university course.
 
 # Input
+## Course Information
+- Course Name: {course_name}
+- University: {university_name}
+- Major / Department: {major}
+- Course Code: {course_code}
+- Professor: {professor_name}
+- Semester: {semester}
+
 ## Section Title
 {title}
 
-## Context
+## Key Topics to Cover
+{key_topics}
+
+## Context (from course materials)
 {context}
 
 ## Exam Type
@@ -13,6 +24,9 @@ Write a {exam_type} review section for a university course.
 
 ## Exam Format
 {exam_format}
+
+## Additional Instructions
+{extra_instructions}
 
 # Output
 Return **valid Markdown** that includes:
