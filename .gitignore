@@ -37,3 +37,8 @@ data/default/
 # Optional: ignore PDFs / generated docs
 # *.pdf
 # *.docx
+
+# ===============================
+# Draft files
+# ===============================
+drafts/
