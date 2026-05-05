@@ -42,3 +42,8 @@ data/default/
 # Draft files
 # ===============================
 drafts/
+
+# ===============================
+# Test materials
+# ===============================
+test_materials/
