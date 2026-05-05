@@ -17,7 +17,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from uacragent.agent.service import AgentService, ReviewResult
 from uacragent.domain.errors import UACRAgentError
-from uacragent.domain.types import DocumentType, ExamFormat, ExportFormat
+from uacragent.domain.types import DocumentType, ExamFormat, ExamType, ExportFormat, TaskType
 from uacragent.export.docx import save_docx
 from uacragent.export.pdf import save_pdf
 from uacragent.infra.workspace import workspace_paths, ensure_workspace_dirs
@@ -27,8 +27,8 @@ from uacragent.infra.workspace import workspace_paths, ensure_workspace_dirs
 # Constants
 # ---------------------------------------------------------------------------
 _WINDOW_TITLE = "UACRAgent - Course Review Generator"
-_MIN_WIDTH = 800
-_MIN_HEIGHT = 700
+_MIN_WIDTH = 900
+_MIN_HEIGHT = 800
 _PAD = 10
 _SUPPORTED_FILETYPES = [
     ("All supported", "*.pdf *.txt *.md *.docx"),
@@ -46,6 +46,43 @@ _DOC_TYPE_LABELS = {
     DocumentType.assignment: "Assignments",
     DocumentType.past_exam: "Past Exams",
     DocumentType.other: "Other",
+}
+
+# Human-readable labels for exam types
+_EXAM_TYPE_LABELS = {
+    ExamType.quiz: "Quiz",
+    ExamType.midterm: "Midterm",
+    ExamType.final: "Final Exam",
+    ExamType.term_test: "Term Test",
+    ExamType.other: "Other",
+}
+
+# Human-readable labels for task types
+_TASK_TYPE_LABELS = {
+    TaskType.review_summary: "Review Summary",
+    TaskType.practice_booklet: "Practice Booklet",
+    TaskType.mock_exam: "Mock Exam",
+    TaskType.exam_prediction: "Exam Prediction",
+}
+
+# Placeholder hints per task type for the extra-instructions text box
+_TASK_HINTS: dict[TaskType, str] = {
+    TaskType.review_summary: (
+        "Optional: e.g. \"Focus on chapters 5-8\" or "
+        "\"Emphasize calculation problems\""
+    ),
+    TaskType.practice_booklet: (
+        "Optional: e.g. \"Include 10 problems per section\" or "
+        "\"Focus on problem-solving skills\""
+    ),
+    TaskType.mock_exam: (
+        "Optional: e.g. \"2 hours, 100 points total\" or "
+        "\"Include a formula sheet section\""
+    ),
+    TaskType.exam_prediction: (
+        "Optional: e.g. \"Professor emphasized graph theory in class\" or "
+        "\"Last year's final focused on chapters 3-6\""
+    ),
 }
 
 
@@ -113,21 +150,20 @@ class UACRAgentApp(tk.Tk):
 
         row = 0
 
-        # ── Title ─────────────────────────────────────────────
+        # -- Title ---------------------------------------------------------
         title_lbl = ttk.Label(
             main_frame, text="Course Review Generator", font=("TkDefaultFont", 16, "bold")
         )
         title_lbl.grid(row=row, column=0, sticky="w", pady=(0, _PAD))
         row += 1
 
-        # ── Document Type Sections ────────────────────────────
+        # -- Document Type Sections ----------------------------------------
         docs_frame = ttk.LabelFrame(main_frame, text="Course Materials (by type)", padding=_PAD)
         docs_frame.grid(row=row, column=0, sticky="nsew", pady=(0, _PAD))
         docs_frame.columnconfigure(0, weight=1)
         docs_frame.columnconfigure(1, weight=1)
         main_frame.rowconfigure(row, weight=1)
 
-        # Create a 2-column grid of document type sections
         doc_types = list(DocumentType)
         for i, doc_type in enumerate(doc_types):
             col = i % 2
@@ -136,12 +172,56 @@ class UACRAgentApp(tk.Tk):
 
         row += 1
 
-        # ── Options ───────────────────────────────────────────
-        opts_frame = ttk.LabelFrame(main_frame, text="Options", padding=_PAD)
+        # -- Task selection ------------------------------------------------
+        task_frame = ttk.LabelFrame(main_frame, text="Task", padding=_PAD)
+        task_frame.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
+        task_frame.columnconfigure(1, weight=1)
+
+        # Task type
+        ttk.Label(task_frame, text="What to generate:").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        self._task_type_var = tk.StringVar(value=TaskType.review_summary.value)
+        task_cb = ttk.Combobox(
+            task_frame,
+            textvariable=self._task_type_var,
+            values=[t.value for t in TaskType],
+            state="readonly",
+            width=20,
+        )
+        task_cb.grid(row=0, column=1, sticky="w", padx=(0, 20))
+        task_cb.bind("<<ComboboxSelected>>", self._on_task_type_changed)
+
+        # Task description label (dynamic)
+        self._task_desc_var = tk.StringVar(value="Generate a comprehensive review summary for exam preparation.")
+        ttk.Label(task_frame, textvariable=self._task_desc_var, foreground="gray").grid(
+            row=0, column=2, sticky="w"
+        )
+
+        # Extra instructions
+        ttk.Label(task_frame, text="Extra instructions:").grid(row=1, column=0, sticky="nw", padx=(0, 6), pady=(6, 0))
+        self._extra_instructions_text = tk.Text(task_frame, height=2, width=60, wrap="word")
+        self._extra_instructions_text.grid(row=1, column=1, columnspan=2, sticky="ew", pady=(6, 0))
+        self._update_extra_instructions_hint()
+
+        row += 1
+
+        # -- Exam & Export Options -----------------------------------------
+        opts_frame = ttk.LabelFrame(main_frame, text="Exam & Export Options", padding=_PAD)
         opts_frame.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
 
+        # Exam type
+        ttk.Label(opts_frame, text="Exam type:").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        self._exam_type_var = tk.StringVar(value=ExamType.final.value)
+        exam_type_cb = ttk.Combobox(
+            opts_frame,
+            textvariable=self._exam_type_var,
+            values=[e.value for e in ExamType],
+            state="readonly",
+            width=12,
+        )
+        exam_type_cb.grid(row=0, column=1, sticky="w", padx=(0, 20))
+
         # Exam format
-        ttk.Label(opts_frame, text="Exam format:").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        ttk.Label(opts_frame, text="Exam format:").grid(row=0, column=2, sticky="w", padx=(0, 6))
         self._exam_format_var = tk.StringVar(value=ExamFormat.written.value)
         exam_cb = ttk.Combobox(
             opts_frame,
@@ -150,10 +230,10 @@ class UACRAgentApp(tk.Tk):
             state="readonly",
             width=12,
         )
-        exam_cb.grid(row=0, column=1, sticky="w", padx=(0, 20))
+        exam_cb.grid(row=0, column=3, sticky="w", padx=(0, 20))
 
         # Export format
-        ttk.Label(opts_frame, text="Export format:").grid(row=0, column=2, sticky="w", padx=(0, 6))
+        ttk.Label(opts_frame, text="Export format:").grid(row=0, column=4, sticky="w", padx=(0, 6))
         self._export_format_var = tk.StringVar(value=ExportFormat.markdown.value)
         export_cb = ttk.Combobox(
             opts_frame,
@@ -162,31 +242,31 @@ class UACRAgentApp(tk.Tk):
             state="readonly",
             width=12,
         )
-        export_cb.grid(row=0, column=3, sticky="w", padx=(0, 20))
+        export_cb.grid(row=0, column=5, sticky="w", padx=(0, 20))
 
         # Workspace ID
-        ttk.Label(opts_frame, text="Workspace:").grid(row=0, column=4, sticky="w", padx=(0, 6))
+        ttk.Label(opts_frame, text="Workspace:").grid(row=0, column=6, sticky="w", padx=(0, 6))
         self._workspace_var = tk.StringVar(value="default")
-        ttk.Entry(opts_frame, textvariable=self._workspace_var, width=12).grid(row=0, column=5, sticky="w")
+        ttk.Entry(opts_frame, textvariable=self._workspace_var, width=12).grid(row=0, column=7, sticky="w")
         row += 1
 
-        # ── Generate button ───────────────────────────────────
+        # -- Generate button -----------------------------------------------
         self._generate_btn = ttk.Button(
-            main_frame, text="Generate Review", command=self._on_generate
+            main_frame, text="Generate", command=self._on_generate
         )
         self._generate_btn.grid(row=row, column=0, pady=(0, _PAD))
         row += 1
 
-        # ── Progress ──────────────────────────────────────────
+        # -- Progress ------------------------------------------------------
         self._progress = ttk.Progressbar(main_frame, mode="indeterminate")
         self._progress.grid(row=row, column=0, sticky="ew", pady=(0, 4))
         row += 1
 
-        self._status_var = tk.StringVar(value="Ready. Add course materials by type and click Generate.")
+        self._status_var = tk.StringVar(value="Ready. Add course materials, choose a task, and click Generate.")
         ttk.Label(main_frame, textvariable=self._status_var).grid(row=row, column=0, sticky="w", pady=(0, _PAD))
         row += 1
 
-        # ── Output area ───────────────────────────────────────
+        # -- Output area ---------------------------------------------------
         output_frame = ttk.LabelFrame(main_frame, text="Output Preview", padding=_PAD)
         output_frame.grid(row=row, column=0, sticky="nsew", pady=(0, _PAD))
         output_frame.columnconfigure(0, weight=1)
@@ -199,7 +279,7 @@ class UACRAgentApp(tk.Tk):
         scrollbar.grid(row=0, column=1, sticky="ns")
         row += 1
 
-        # ── Bottom buttons ────────────────────────────────────
+        # -- Bottom buttons ------------------------------------------------
         bottom = ttk.Frame(main_frame)
         bottom.grid(row=row, column=0, sticky="e")
 
@@ -243,6 +323,66 @@ class UACRAgentApp(tk.Tk):
             command=lambda dt=doc_type: self._on_remove_files(dt)
         ).pack(fill="x")
 
+    # ----- Task type UI helpers -------------------------------------------
+
+    _TASK_DESCRIPTIONS: dict[str, str] = {
+        TaskType.review_summary.value: "Generate a comprehensive review summary for exam preparation.",
+        TaskType.practice_booklet.value: "Generate a booklet of practice problems organized by topic.",
+        TaskType.mock_exam.value: "Generate a realistic mock exam with answer key.",
+        TaskType.exam_prediction.value: "Predict likely exam topics and question types.",
+    }
+
+    def _on_task_type_changed(self, _event: object = None) -> None:
+        task = self._task_type_var.get()
+        desc = self._TASK_DESCRIPTIONS.get(task, "")
+        self._task_desc_var.set(desc)
+        self._update_extra_instructions_hint()
+
+    def _update_extra_instructions_hint(self) -> None:
+        """Show a placeholder hint in the extra instructions box."""
+        try:
+            tt = TaskType(self._task_type_var.get())
+        except ValueError:
+            tt = TaskType.review_summary
+        hint = _TASK_HINTS.get(tt, "")
+        # Only set hint if box is empty
+        current = self._extra_instructions_text.get("1.0", tk.END).strip()
+        if not current:
+            self._extra_instructions_text.configure(foreground="gray")
+            self._extra_instructions_text.insert("1.0", hint)
+            self._extra_instructions_text.bind("<FocusIn>", self._on_extra_focus_in)
+            self._extra_instructions_text.bind("<FocusOut>", self._on_extra_focus_out)
+
+    def _on_extra_focus_in(self, _event: object = None) -> None:
+        """Clear placeholder when user clicks into the text box."""
+        current = self._extra_instructions_text.get("1.0", tk.END).strip()
+        try:
+            tt = TaskType(self._task_type_var.get())
+        except ValueError:
+            tt = TaskType.review_summary
+        hint = _TASK_HINTS.get(tt, "")
+        if current == hint:
+            self._extra_instructions_text.delete("1.0", tk.END)
+            self._extra_instructions_text.configure(foreground="black")
+
+    def _on_extra_focus_out(self, _event: object = None) -> None:
+        """Restore placeholder if box is empty."""
+        current = self._extra_instructions_text.get("1.0", tk.END).strip()
+        if not current:
+            self._update_extra_instructions_hint()
+
+    def _get_extra_instructions(self) -> str:
+        """Return extra instructions, ignoring the placeholder hint."""
+        text = self._extra_instructions_text.get("1.0", tk.END).strip()
+        try:
+            tt = TaskType(self._task_type_var.get())
+        except ValueError:
+            tt = TaskType.review_summary
+        hint = _TASK_HINTS.get(tt, "")
+        if text == hint:
+            return ""
+        return text
+
     # ----- Callbacks ------------------------------------------------------
 
     def _on_add_files(self, doc_type: DocumentType) -> None:
@@ -254,7 +394,6 @@ class UACRAgentApp(tk.Tk):
         for p in paths:
             if p not in self._classified_files[doc_type]:
                 self._classified_files[doc_type].append(p)
-                # Show just the filename in the listbox
                 listbox.insert(tk.END, Path(p).name)
 
     def _on_remove_files(self, doc_type: DocumentType) -> None:
@@ -279,7 +418,10 @@ class UACRAgentApp(tk.Tk):
         self._open_file_btn.configure(state="disabled")
         self._open_folder_btn.configure(state="disabled")
         self._progress.start(15)
-        self._status_var.set("Generating review... This may take a minute.")
+        task_label = _TASK_TYPE_LABELS.get(
+            TaskType(self._task_type_var.get()), "output"
+        )
+        self._status_var.set(f"Generating {task_label.lower()}... This may take a minute.")
         self._set_output_text("")
 
         thread = threading.Thread(target=self._run_pipeline, daemon=True)
@@ -289,6 +431,9 @@ class UACRAgentApp(tk.Tk):
         try:
             service = AgentService()
             exam_format = self._exam_format_var.get()
+            exam_type = self._exam_type_var.get()
+            task_type = self._task_type_var.get()
+            extra_instructions = self._get_extra_instructions()
             workspace_id = self._workspace_var.get() or "default"
             export_fmt = self._export_format_var.get()
 
@@ -301,6 +446,9 @@ class UACRAgentApp(tk.Tk):
             result = service.run_end_to_end(
                 classified_files=classified,
                 exam_format=exam_format,
+                exam_type=exam_type,
+                task_type=task_type,
+                extra_instructions=extra_instructions,
                 workspace_id=workspace_id,
                 copy_to_workspace=True,
             )

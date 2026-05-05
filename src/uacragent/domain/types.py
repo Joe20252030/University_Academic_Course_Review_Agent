@@ -10,6 +10,23 @@ class ExamFormat(str, Enum):
     unknown = "unknown"
 
 
+class ExamType(str, Enum):
+    """The kind of exam the student is preparing for."""
+    quiz = "quiz"
+    midterm = "midterm"
+    final = "final"
+    term_test = "term_test"
+    other = "other"
+
+
+class TaskType(str, Enum):
+    """What the user wants the agent to produce."""
+    review_summary = "review_summary"
+    practice_booklet = "practice_booklet"
+    mock_exam = "mock_exam"
+    exam_prediction = "exam_prediction"
+
+
 class ExportFormat(str, Enum):
     markdown = "markdown"
     docx = "docx"

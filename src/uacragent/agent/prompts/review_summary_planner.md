@@ -19,13 +19,14 @@ Return **valid JSON only** that matches this schema:
 - course_title
 - exam_format
 - exam_type
-- task_type
+- task_type: "review_summary"
 - sections: title, key_topics (array), importance (integer 1-5)
 
 Requirements:
 - Produce 8-12 sections.
 - Each section must have 3-7 key_topics.
 - Do not return an empty sections list.
+- Tailor the depth and scope to the exam type ({exam_type}). For example, a quiz review should be more focused and concise, while a final exam review should be comprehensive.
 e.g.
 {{
   "course_title": string,

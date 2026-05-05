@@ -41,9 +41,12 @@ class ClassifiedFiles(BaseModel):
 
 
 class ReviewRequest(BaseModel):
-    """Request to generate a course review."""
+    """Request to generate course material."""
     classified_files: ClassifiedFiles = Field(...)
     exam_format: str = "written"
+    exam_type: str = "other"
+    task_type: str = "review_summary"
+    extra_instructions: str = ""
     workspace_id: str = "default"
     copy_to_workspace: bool = True
 
@@ -52,6 +55,9 @@ class SimpleReviewRequest(BaseModel):
     """Simplified request (backward compatible) - all files treated as 'other'."""
     file_paths: list[str] = Field(..., min_length=1)
     exam_format: str = "written"
+    exam_type: str = "other"
+    task_type: str = "review_summary"
+    extra_instructions: str = ""
     workspace_id: str = "default"
 
 

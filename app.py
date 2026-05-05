@@ -24,19 +24,23 @@ TEST_FILE_PATHS = [
 
 
 def main(classified_files: dict[DocumentType, list[str]], user_prefs: dict) -> None:
-    """Run the review generation pipeline.
+    """Run the generation pipeline.
 
     Args:
         classified_files: Files organized by document type
-        user_prefs: User preferences (exam_format, workspace_id)
+        user_prefs: User preferences including:
+            exam_format, exam_type, task_type, extra_instructions, workspace_id
     """
     service = AgentService()
     result = service.run_end_to_end(
         classified_files=classified_files,
         exam_format=str(user_prefs.get("exam_format", "unknown")),
+        exam_type=str(user_prefs.get("exam_type", "other")),
+        task_type=str(user_prefs.get("task_type", "review_summary")),
+        extra_instructions=str(user_prefs.get("extra_instructions", "")),
         workspace_id=str(user_prefs.get("workspace_id", "default")),
     )
-    print(f"Review generated at {result.markdown_path}")
+    print(f"Output generated at {result.markdown_path}")
 
 
 def main_simple(file_paths: list[str], user_prefs: dict) -> None:
@@ -45,18 +49,20 @@ def main_simple(file_paths: list[str], user_prefs: dict) -> None:
     result = service.run_simple(
         file_paths=file_paths,
         exam_format=str(user_prefs.get("exam_format", "unknown")),
+        exam_type=str(user_prefs.get("exam_type", "other")),
+        task_type=str(user_prefs.get("task_type", "review_summary")),
+        extra_instructions=str(user_prefs.get("extra_instructions", "")),
         workspace_id=str(user_prefs.get("workspace_id", "default")),
     )
-    print(f"Review generated at {result.markdown_path}")
+    print(f"Output generated at {result.markdown_path}")
 
 
 if __name__ == "__main__":
     load_dotenv()
     try:
-        # Example: classify the test file as a syllabus
         classified = {
             DocumentType.syllabus: TEST_FILE_PATHS,
         }
-        main(classified, {"exam_format": "written"})
+        main(classified, {"exam_format": "written", "exam_type": "final", "task_type": "review_summary"})
     except UACRAgentError as exc:
         raise SystemExit(f"Error: {exc}")

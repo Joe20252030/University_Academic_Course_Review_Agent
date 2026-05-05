@@ -1,14 +1,41 @@
 # University Academic Course Review Agent (UACRAgent)
 
-Generate a comprehensive final-exam review document from course materials using a RAG pipeline:
+Generate exam review materials from course documents using a RAG pipeline:
 
 - Ingest course materials (PDF, TXT, Markdown, or DOCX)
 - Classify documents by type for optimized processing
-- Chunk documents using type-specific strategies
+- Chunk documents using type-specific multi-stage splitting strategies
 - Embed into a local Chroma vector store
-- Ask an LLM to create a structured review plan
-- For each planned section, retrieve relevant content and generate review material
+- Ask an LLM to create a structured plan tailored to the chosen task
+- For each planned section, retrieve relevant content and generate material
 - Export to Markdown, DOCX, or PDF
+
+## Task Types
+
+The agent supports four distinct output modes:
+
+| Task | Description |
+|------|-------------|
+| **Review Summary** | Comprehensive review with key concepts, definitions, tips, and sample questions |
+| **Practice Booklet** | Structured collection of practice problems (easy/medium/hard) with solution key |
+| **Mock Exam** | Realistic exam paper with point allocations and a separate answer key |
+| **Exam Prediction** | Analysis of likely exam topics with confidence levels and study strategies |
+
+Each task uses dedicated planner and writer prompts tuned for its output format.
+
+## Exam Types
+
+Users specify the kind of exam they are preparing for:
+
+| Exam Type | Description |
+|-----------|-------------|
+| **Quiz** | Short, focused assessment |
+| **Midterm** | Mid-semester examination |
+| **Final** | End-of-semester comprehensive exam |
+| **Term Test** | In-term test |
+| **Other** | Custom or unspecified |
+
+The exam type influences prompt behavior — a quiz review is concise and focused while a final review is comprehensive.
 
 ## Document Types & Splitting Strategies
 
@@ -68,19 +95,28 @@ Optional overrides (see defaults in [src/uacragent/infra/settings.py](src/uacrag
 
 The GUI lets you:
 - Add files to different document type categories (Syllabus, Lecture Notes, etc.)
+- Choose a task (Review Summary, Practice Booklet, Mock Exam, Exam Prediction)
+- Choose exam type (Quiz, Midterm, Final, Term Test, Other)
 - Choose exam format (written / mcq / mixed)
+- Provide extra instructions per task
 - Choose export format (Markdown / DOCX / PDF)
-- Generate a review with one click
+- Generate output with one click
 
 Works on macOS, Windows, and Linux.
 
 ## Run (CLI)
 
-Simple mode (all files treated as "other"):
+Simple review summary (all files treated as "other"):
 - `python -m uacragent outline.pdf lecture.pdf --exam-format written`
 
-With document type classification:
-- `python -m uacragent syllabus.pdf --doc-type syllabus --exam-format written`
+With all options:
+- `python -m uacragent syllabus.pdf --doc-type syllabus --exam-type final --task-type mock_exam --exam-format mixed`
+
+Generate a practice booklet for a midterm:
+- `python -m uacragent notes.pdf --task-type practice_booklet --exam-type midterm --exam-format written`
+
+With extra instructions:
+- `python -m uacragent notes.pdf --task-type exam_prediction --extra-instructions "Professor emphasized graph theory"`
 
 Quick-start script:
 - `python app.py`
@@ -96,15 +132,18 @@ Start the server:
 Endpoints:
 
 - `GET /health` — health check
-- `POST /review` — generate a review with classified documents:
+- `POST /review` — generate output with classified documents:
   ```json
   {
     "classified_files": {
       "syllabus": ["path/to/syllabus.pdf"],
       "lecture_note": ["path/to/notes.pdf"],
-      "past_exam": ["path/to/exam1.pdf", "path/to/exam2.pdf"]
+      "past_exam": ["path/to/exam1.pdf"]
     },
     "exam_format": "written",
+    "exam_type": "final",
+    "task_type": "review_summary",
+    "extra_instructions": "",
     "workspace_id": "default",
     "copy_to_workspace": true
   }
@@ -114,13 +153,15 @@ Endpoints:
   {
     "file_paths": ["path/to/file.pdf"],
     "exam_format": "written",
+    "exam_type": "other",
+    "task_type": "review_summary",
     "workspace_id": "default"
   }
   ```
 
 ## Output
 
-- Review files written to `data/<workspace_id>/outputs/` as `review_<timestamp>.<ext>`
+- Output files written to `data/<workspace_id>/outputs/` as `review_<timestamp>.<ext>`
 - Uploaded files organized under `data/<workspace_id>/uploads/<doc_type>/`
 - Vector DB persisted under `data/<workspace_id>/chroma_db/`
 
@@ -131,19 +172,27 @@ src/uacragent/
   __main__.py            CLI + GUI entry point
   agent/
     service.py           High-level orchestrator (AgentService)
-    pipeline.py          RAG pipeline (load -> chunk -> embed -> plan -> write)
+    pipeline.py          RAG pipeline with task-type dispatch
     prompts/
-      planner.md         Prompt template for review plan generation
-      reviewer.md        Prompt template for section writing
+      planner.md                   Generic planner (fallback)
+      reviewer.md                  Generic writer (fallback)
+      review_summary_planner.md    Review summary planner
+      review_summary_writer.md     Review summary writer
+      practice_booklet_planner.md  Practice booklet planner
+      practice_booklet_writer.md   Practice booklet writer
+      mock_exam_planner.md         Mock exam planner
+      mock_exam_writer.md          Mock exam writer
+      exam_prediction_planner.md   Exam prediction planner
+      exam_prediction_writer.md    Exam prediction writer
   api/
     main.py              FastAPI application factory
     routes.py            API endpoints (/health, /review, /review/simple)
-    schemas.py           Request / response models with ClassifiedFiles
+    schemas.py           Request / response models
     deps.py              Dependency injection (settings, service singletons)
   domain/
     models.py            Core data models (ReviewPlan, SectionSpec)
     errors.py            Custom exception hierarchy
-    types.py             Enums (DocumentType, ExamFormat, ExportFormat)
+    types.py             Enums (DocumentType, ExamFormat, ExamType, TaskType, ExportFormat)
   infra/
     settings.py          Pydantic-based configuration (.env)
     loaders.py           Document loading with multi-stage type-specific splitting
@@ -157,7 +206,7 @@ src/uacragent/
     pdf.py               PDF export (fpdf2)
   ui/
     desktop/
-      app.py             Tkinter desktop GUI with document type tabs
+      app.py             Tkinter desktop GUI
     web/                  (placeholder for future web UI)
 app.py                   Script entry point (quick-start)
 ```

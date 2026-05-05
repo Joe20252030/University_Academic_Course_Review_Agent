@@ -4,14 +4,21 @@ import argparse
 
 from uacragent.agent.service import AgentService
 from uacragent.domain.errors import UACRAgentError
-from uacragent.domain.types import DocumentType
+from uacragent.domain.types import DocumentType, ExamType, TaskType
 
 
 def _cli(args: argparse.Namespace) -> None:
     """Run CLI with optional document type classification."""
     service = AgentService()
 
-    # If doc-type is specified, use classified mode; otherwise use simple mode
+    common_kwargs = dict(
+        exam_format=args.exam_format,
+        exam_type=args.exam_type,
+        task_type=args.task_type,
+        extra_instructions=args.extra_instructions or "",
+        workspace_id=args.workspace_id,
+    )
+
     if args.doc_type:
         try:
             doc_type = DocumentType(args.doc_type)
@@ -22,15 +29,12 @@ def _cli(args: argparse.Namespace) -> None:
         classified_files = {doc_type: list(args.paths)}
         result = service.run_end_to_end(
             classified_files=classified_files,
-            exam_format=args.exam_format,
-            workspace_id=args.workspace_id,
+            **common_kwargs,
         )
     else:
-        # Simple mode - treat all files as 'other'
         result = service.run_simple(
             file_paths=list(args.paths),
-            exam_format=args.exam_format,
-            workspace_id=args.workspace_id,
+            **common_kwargs,
         )
 
     print(result.markdown_path)
@@ -38,10 +42,23 @@ def _cli(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="UACRAgent: generate exam review from course materials"
+        description="UACRAgent: generate exam review materials from course documents"
     )
     parser.add_argument("paths", nargs="*", help="File paths (.pdf/.txt/.md/.docx)")
     parser.add_argument("--exam-format", default="written", help="Exam format: written, mcq, mixed, unknown")
+    parser.add_argument(
+        "--exam-type",
+        choices=[et.value for et in ExamType],
+        default="other",
+        help="Exam type: quiz, midterm, final, term_test, other",
+    )
+    parser.add_argument(
+        "--task-type",
+        choices=[tt.value for tt in TaskType],
+        default="review_summary",
+        help="Task: review_summary, practice_booklet, mock_exam, exam_prediction",
+    )
+    parser.add_argument("--extra-instructions", default="", help="Additional instructions for the LLM")
     parser.add_argument("--workspace-id", default="default", help="Workspace ID under WORKSPACE_ROOT")
     parser.add_argument(
         "--doc-type",

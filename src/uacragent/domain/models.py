@@ -10,4 +10,6 @@ class SectionSpec(BaseModel):
 class ReviewPlan(BaseModel):
     course_title: str
     exam_format: str
+    exam_type: str = "other"
+    task_type: str = "review_summary"
     sections: list[SectionSpec] = Field(..., min_length=1)

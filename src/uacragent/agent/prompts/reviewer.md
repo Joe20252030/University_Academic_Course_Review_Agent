@@ -1,5 +1,5 @@
 # Task
-Write a final-exam review section.
+Write a {exam_type} review section for a university course.
 
 # Input
 ## Section Title
@@ -8,10 +8,15 @@ Write a final-exam review section.
 ## Context
 {context}
 
+## Exam Type
+{exam_type}
+
+## Exam Format
+{exam_format}
+
 # Output
-Return a **valid Markdown format** that includes:
-- key concepts
-- definitions
-- common mistakes
-- exam-style tips
-- exam-style sample questions and corresponding full solutions
+Return **valid Markdown** that includes:
+- Key concepts and definitions
+- Common mistakes
+- Exam-style tips for a {exam_type} ({exam_format} format)
+- Sample questions with full solutions

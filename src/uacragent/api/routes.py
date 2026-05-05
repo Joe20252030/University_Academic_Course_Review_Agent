@@ -27,6 +27,9 @@ def generate_review(
     result = service.run_end_to_end(
         classified_files=req.classified_files.to_dict(),
         exam_format=req.exam_format,
+        exam_type=req.exam_type,
+        task_type=req.task_type,
+        extra_instructions=req.extra_instructions,
         workspace_id=req.workspace_id,
         copy_to_workspace=req.copy_to_workspace,
     )
@@ -45,6 +48,9 @@ def generate_review_simple(
     result = service.run_simple(
         file_paths=req.file_paths,
         exam_format=req.exam_format,
+        exam_type=req.exam_type,
+        task_type=req.task_type,
+        extra_instructions=req.extra_instructions,
         workspace_id=req.workspace_id,
     )
     return ReviewResponse(markdown_path=result.markdown_path, plan=result.plan)
