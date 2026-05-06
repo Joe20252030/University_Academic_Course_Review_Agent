@@ -19,7 +19,7 @@ The agent supports four distinct output modes:
 | **Review Summary**   | Comprehensive review with key concepts, definitions, tips, and sample questions |
 | **Practice Booklet** | Structured collection of practice problems (easy/medium/hard) with solution key |
 | **Mock Exam**        | Realistic exam paper with point allocations and a separate answer key           |
-| **Exam Prediction**  | Analysis of likely exam topics with confidence levels and study strategies      |
+| **Exam Prediction**  | **Two-part output:** Part A — topic-by-topic prediction analysis (confidence level, reasoning, study approach, sample questions); Part B — a complete predicted exam paper with realistic questions, mark allocations, and a full answer key / marking guide |
 
 Each task uses dedicated planner and writer prompts tuned for its output format.
 

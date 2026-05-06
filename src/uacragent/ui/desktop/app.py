@@ -73,7 +73,8 @@ _TASK_HINTS: dict[TaskType, str] = {
         'Optional: e.g. "2 hours, 100 points total" or "Include a formula sheet section"'
     ),
     TaskType.exam_prediction: (
-        'Optional: e.g. "Professor emphasized graph theory" or "Last year\'s final focused on chapters 3-6"'
+        'Optional: e.g. "Professor emphasized graph theory" or "Last year\'s final focused on chapters 3-6". '
+        'Output includes a topic analysis (Part A) and a full predicted exam paper with answer key (Part B).'
     ),
 }
 
@@ -526,7 +527,7 @@ class UACRAgentApp(tk.Tk):
         TaskType.review_summary.value: "Generate a comprehensive review summary for exam preparation.",
         TaskType.practice_booklet.value: "Generate a booklet of practice problems organized by topic.",
         TaskType.mock_exam.value: "Generate a realistic mock exam with answer key.",
-        TaskType.exam_prediction.value: "Predict likely exam topics and question types.",
+        TaskType.exam_prediction.value: "Predict exam topics (Part A) + generate a full predicted exam paper with answer key (Part B).",
     }
 
     def _on_task_type_changed(self, _event: object = None) -> None:

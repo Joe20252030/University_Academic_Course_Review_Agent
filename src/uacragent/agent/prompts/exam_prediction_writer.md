@@ -1,5 +1,6 @@
 # Task
-Write an exam prediction analysis section for an upcoming university {exam_type}.
+Write a **Part A prediction analysis section** for one high-priority topic area of an upcoming university {exam_type}.
+This section is part of a two-part document: Part A is the topic-by-topic prediction analysis; Part B is the full predicted exam paper.
 
 # Input
 ## Course Information
@@ -35,12 +36,12 @@ Write an exam prediction analysis section for an upcoming university {exam_type}
 {extra_instructions}
 
 # Output
-Return **valid Markdown** containing:
-- **Prediction confidence**: High / Medium / Low
-- **Why this topic is likely to appear**: brief reasoning based on course materials
+Return **valid Markdown** for this single analysis section, containing:
+- **Prediction confidence**: High / Medium / Low with a one-line rationale
+- **Why this topic is likely to appear**: brief reasoning grounded in the course materials
 - **Key concepts to master**: bullet list of the most critical points
-- **Predicted question styles**: what types of questions to expect ({exam_format} format)
+- **Predicted question styles**: types of questions to expect given the {exam_format} format
 - **Suggested study approach**: how to prepare for this topic efficiently
-- **Example predicted questions** (2-3) with outline answers
+- **Sample predicted questions** (2-3) with brief outline answers
 
-Focus on actionable predictions — help the student allocate their study time effectively for the {exam_type}.
+Be concise and actionable — help the student allocate their study time effectively for the {exam_type}.

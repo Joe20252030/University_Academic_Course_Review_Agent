@@ -183,7 +183,61 @@ def write_sections_parallel(
     return results
 
 
-def assemble_markdown(plan: ReviewPlan, sections: list[str], task_type: str = "review_summary") -> str:
+def write_predicted_exam_paper(
+    plan: ReviewPlan,
+    retriever: BaseRetriever,
+    llm_client: LLMClient,
+    user_prefs: dict | None = None,
+) -> str:
+    """Generate Part B (predicted exam paper) for the exam_prediction task type."""
+    user_prefs = user_prefs or {}
+
+    # Build a ranked summary of all predicted sections
+    sorted_sections = sorted(plan.sections, key=lambda s: s.importance, reverse=True)
+    lines = []
+    for i, sec in enumerate(sorted_sections, 1):
+        topics_str = ", ".join(sec.key_topics)
+        lines.append(
+            f"{i}. **{sec.title}** (importance: {sec.importance}/5)\n"
+            f"   Key topics: {topics_str}"
+        )
+    predicted_sections_text = "\n".join(lines)
+
+    # Broad retrieval using top-importance section titles
+    top_titles = " ".join(s.title for s in sorted_sections[:5])
+    query = f"{plan.course_title} {top_titles}"
+    docs: list[Document] = retriever.invoke(query)
+    context = "\n\n".join(d.page_content for d in docs)
+
+    prompt = ChatPromptTemplate.from_template(
+        load_prompt("exam_prediction_paper_writer.md")
+    )
+    resp = llm_client.invoke(
+        prompt.format_messages(
+            course_name=user_prefs.get("course_name", ""),
+            university_name=user_prefs.get("university_name", "") or "Not specified",
+            major=user_prefs.get("major", "") or "Not specified",
+            course_code=user_prefs.get("course_code", "") or "Not specified",
+            professor_name=user_prefs.get("professor_name", "") or "Not specified",
+            semester=user_prefs.get("semester", "") or "Not specified",
+            exam_type=user_prefs.get("exam_type", "other"),
+            exam_format=user_prefs.get("exam_format", "unknown"),
+            exam_duration=user_prefs.get("exam_duration", "") or "Not specified",
+            exam_info=user_prefs.get("exam_info", "") or "None provided",
+            extra_instructions=user_prefs.get("extra_instructions", "") or "None",
+            predicted_sections=predicted_sections_text,
+            context=context,
+        )
+    )
+    return getattr(resp, "content", str(resp))
+
+
+def assemble_markdown(
+    plan: ReviewPlan,
+    sections: list[str],
+    task_type: str = "review_summary",
+    paper_text: str = "",
+) -> str:
     try:
         tt = TaskType(task_type)
     except ValueError:
@@ -208,8 +262,19 @@ def assemble_markdown(plan: ReviewPlan, sections: list[str], task_type: str = "r
     header_lines.append("")
 
     md = "\n".join(header_lines) + "\n"
+
+    # For exam_prediction: wrap analysis sections under Part A heading
+    if tt == TaskType.exam_prediction and paper_text:
+        md += "## Part A: Prediction Analysis\n\n"
+
     for s in sections:
         md += s + "\n\n"
+
+    # Append the predicted exam paper as Part B
+    if tt == TaskType.exam_prediction and paper_text:
+        md += "\n---\n\n## Part B: Predicted Exam Paper\n\n"
+        md += paper_text + "\n\n"
+
     return md
 
 
@@ -288,7 +353,14 @@ class AgentPipeline:
             plan.sections, retriever, self.llm_client, user_prefs
         )
 
-        final_md = assemble_markdown(plan, section_texts, task_type)
+        # For exam_prediction, generate the full predicted exam paper (Part B)
+        paper_text = ""
+        if task_type == TaskType.exam_prediction.value:
+            paper_text = write_predicted_exam_paper(
+                plan, retriever, self.llm_client, user_prefs
+            )
+
+        final_md = assemble_markdown(plan, section_texts, task_type, paper_text=paper_text)
         md_path = save_markdown(final_md, ws)
         return plan, final_md, md_path
 
