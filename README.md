@@ -14,12 +14,12 @@ Generate exam review materials from course documents using a RAG pipeline:
 
 The agent supports four distinct output modes:
 
-| Task | Description |
-|------|-------------|
-| **Review Summary** | Comprehensive review with key concepts, definitions, tips, and sample questions |
+| Task                 | Description                                                                     |
+|----------------------|---------------------------------------------------------------------------------|
+| **Review Summary**   | Comprehensive review with key concepts, definitions, tips, and sample questions |
 | **Practice Booklet** | Structured collection of practice problems (easy/medium/hard) with solution key |
-| **Mock Exam** | Realistic exam paper with point allocations and a separate answer key |
-| **Exam Prediction** | Analysis of likely exam topics with confidence levels and study strategies |
+| **Mock Exam**        | Realistic exam paper with point allocations and a separate answer key           |
+| **Exam Prediction**  | Analysis of likely exam topics with confidence levels and study strategies      |
 
 Each task uses dedicated planner and writer prompts tuned for its output format.
 
@@ -27,13 +27,13 @@ Each task uses dedicated planner and writer prompts tuned for its output format.
 
 Users specify the kind of exam they are preparing for:
 
-| Exam Type | Description |
-|-----------|-------------|
-| **Quiz** | Short, focused assessment |
-| **Midterm** | Mid-semester examination |
-| **Final** | End-of-semester comprehensive exam |
-| **Term Test** | In-term test |
-| **Other** | Custom or unspecified |
+| Exam Type     | Description                        |
+|---------------|------------------------------------|
+| **Quiz**      | Short, focused assessment          |
+| **Midterm**   | Mid-semester examination           |
+| **Final**     | End-of-semester comprehensive exam |
+| **Term Test** | In-term test                       |
+| **Other**     | Custom or unspecified              |
 
 The exam type influences prompt behavior — a quiz review is concise and focused while a final review is comprehensive.
 
@@ -41,29 +41,31 @@ The exam type influences prompt behavior — a quiz review is concise and focuse
 
 When generating output you can supply context about the course. The **Course Name is required**; all other fields are optional but improve the quality and relevance of the output.
 
-| Field | Required | Example |
-|-------|----------|---------|
-| **Course Name** | Yes | `Introduction to Algorithms` |
-| University | No | `University of Toronto` |
-| Major / Department | No | `Computer Science` |
-| Course Code | No | `CSC263` |
-| Professor | No | `Dr. Jane Smith` |
-| Semester | No | `Fall 2024` |
+| Field              | Required | Example                                                         |
+|--------------------|----------|-----------------------------------------------------------------|
+| **Course Name**    | Yes      | `Introduction to Algorithms`                                    |
+| University         | No       | `University of Toronto`                                         |
+| Major / Department | No       | `Computer Science`                                              |
+| Course Code        | No       | `CSC263`                                                        |
+| Professor          | No       | `Dr. Jane Smith`                                                |
+| Semester           | No       | `Fall 2024`                                                     |
+| Exam Duration      | No       | `2 hours` or `90 minutes`                                       |
+| Exam Info Sheet    | No       | `Closed book. One formula sheet allowed. Topics: chapters 1-6.` |
 
-These fields are passed to every planner and writer prompt, so the LLM can tailor content to the specific course and context.
+All fields are passed to every planner and writer prompt, so the LLM can tailor content to the specific course and context. The **Exam Duration** and **Exam Info Sheet** fields are especially useful for generating realistic mock exams and practice booklets that match the actual exam constraints.
 
 ## Document Types & Splitting Strategies
 
 Each document type uses a multi-stage splitting pipeline optimized for its structure:
 
-| Type | Splitting Strategy | Final Chunk Size |
-|------|-------------------|-----------------|
-| **Textbook** | Markdown header split (chapter/section/subsection) then recursive character split | 1500 |
-| **Syllabus** | Markdown header split (section/subsection) then recursive character split | 800 |
-| **Lecture Notes** | Sentence-aware recursive split (preserves slide bullet points) | 1000 |
-| **Past Exam** | Question-boundary regex split (Q1, 1., Part A, (a), etc.) then recursive split | 500 |
-| **Assignment** | Problem-boundary regex split (Problem/Exercise/Task headers) then recursive split | 600 |
-| **Other** | Standard recursive character split | 1000 |
+| Type              | Splitting Strategy                                                                | Final Chunk Size |
+|-------------------|-----------------------------------------------------------------------------------|------------------|
+| **Textbook**      | Markdown header split (chapter/section/subsection) then recursive character split | 1500             |
+| **Syllabus**      | Markdown header split (section/subsection) then recursive character split         | 800              |
+| **Lecture Notes** | Sentence-aware recursive split (preserves slide bullet points)                    | 1000             |
+| **Past Exam**     | Question-boundary regex split (Q1, 1., Part A, (a), etc.) then recursive split    | 500              |
+| **Assignment**    | Problem-boundary regex split (Problem/Exercise/Task headers) then recursive split | 600              |
+| **Other**         | Standard recursive character split                                                | 1000             |
 
 Multi-stage pipelines feed each stage's output into the next. For example, a textbook
 PDF is first split on `#`/`##`/`###` markdown headers to isolate chapters and sections,
@@ -115,6 +117,7 @@ The GUI lets you:
 - Choose exam type (Quiz, Midterm, Final, Term Test, Other)
 - Choose exam format (written / mcq / mixed)
 - Provide extra instructions per task
+- Enter optional **exam duration** (e.g. "2 hours") and **exam info sheet** text (allowed materials, covered topics, rules)
 - Choose export format (Markdown / DOCX / PDF)
 - Generate output with one click
 
@@ -143,7 +146,9 @@ python -m uacragent syllabus.pdf \
   --major "Computer Science" \
   --course-code "CSC263" \
   --professor-name "Dr. Smith" \
-  --semester "Fall 2024"
+  --semester "Fall 2024" \
+  --exam-duration "2 hours" \
+  --exam-info "Closed book. One double-sided formula sheet allowed. Topics: chapters 1-6."
 ```
 
 Generate a practice booklet for a midterm:
@@ -196,7 +201,9 @@ Endpoints:
     "major": "Computer Science",
     "course_code": "CSC263",
     "professor_name": "Dr. Smith",
-    "semester": "Fall 2024"
+    "semester": "Fall 2024",
+    "exam_duration": "2 hours",
+    "exam_info": "Closed book. One formula sheet allowed."
   }
   ```
 - `POST /review/simple` — legacy endpoint (all files treated as "other"):
@@ -207,11 +214,13 @@ Endpoints:
     "exam_format": "written",
     "exam_type": "other",
     "task_type": "review_summary",
-    "workspace_id": "default"
+    "workspace_id": "default",
+    "exam_duration": "90 minutes",
+    "exam_info": "Open book. Topics: chapters 1-4."
   }
   ```
 
-`course_name` is required in both endpoints. All other course information fields (`university_name`, `major`, `course_code`, `professor_name`, `semester`) are optional.
+`course_name` is required in both endpoints. All other fields (`university_name`, `major`, `course_code`, `professor_name`, `semester`, `exam_duration`, `exam_info`) are optional.
 
 ## Output
 

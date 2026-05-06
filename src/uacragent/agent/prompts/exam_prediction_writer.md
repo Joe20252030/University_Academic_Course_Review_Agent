@@ -25,6 +25,12 @@ Write an exam prediction analysis section for an upcoming university {exam_type}
 ## Exam Format
 {exam_format}
 
+## Exam Duration
+{exam_duration}
+
+## Exam Information Sheet
+{exam_info}
+
 ## Additional Instructions
 {extra_instructions}
 

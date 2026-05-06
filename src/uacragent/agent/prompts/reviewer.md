@@ -25,6 +25,12 @@ Write a {exam_type} review section for a university course.
 ## Exam Format
 {exam_format}
 
+## Exam Duration
+{exam_duration}
+
+## Exam Information Sheet
+{exam_info}
+
 ## Additional Instructions
 {extra_instructions}
 

@@ -19,6 +19,12 @@ You are creating a realistic mock {exam_type} for a university course. The mock 
 ## Exam Type
 {exam_type}
 
+## Exam Duration
+{exam_duration}
+
+## Exam Information Sheet
+{exam_info}
+
 ## Additional Instructions
 {extra_instructions}
 
@@ -34,6 +40,8 @@ Return **valid JSON only** that matches this schema:
 - course_code
 - professor_name
 - semester
+- exam_duration
+- exam_info
 - sections: title, key_topics (array), importance (integer 1-5)
 
 Requirements:
@@ -54,6 +62,8 @@ e.g.
   "course_code": string,
   "professor_name": string,
   "semester": string,
+  "exam_duration": string,
+  "exam_info": string,
   "sections": [
     {{
       "title": string,

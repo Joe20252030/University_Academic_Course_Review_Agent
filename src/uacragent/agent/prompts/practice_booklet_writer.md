@@ -25,6 +25,12 @@ Write a practice problem set for a university {exam_type} review booklet.
 ## Exam Format
 {exam_format}
 
+## Exam Duration
+{exam_duration}
+
+## Exam Information Sheet
+{exam_info}
+
 ## Additional Instructions
 {extra_instructions}
 

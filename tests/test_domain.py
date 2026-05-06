@@ -64,6 +64,8 @@ def test_review_plan_new_info_fields_default_empty():
     assert plan.course_code == ""
     assert plan.professor_name == ""
     assert plan.semester == ""
+    assert plan.exam_duration == ""
+    assert plan.exam_info == ""
 
 
 def test_review_plan_new_info_fields_set():
@@ -77,11 +79,15 @@ def test_review_plan_new_info_fields_set():
         course_code="CSC148",
         professor_name="Dr. Smith",
         semester="Fall 2024",
+        exam_duration="2 hours",
+        exam_info="Closed book. Formula sheet allowed.",
     )
     assert plan.course_name == "Introduction to Computer Science"
     assert plan.university_name == "UofT"
     assert plan.course_code == "CSC148"
     assert plan.semester == "Fall 2024"
+    assert plan.exam_duration == "2 hours"
+    assert plan.exam_info == "Closed book. Formula sheet allowed."
 
 
 def test_review_plan_sections_min_length():

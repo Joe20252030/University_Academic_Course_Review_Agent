@@ -56,6 +56,9 @@ class ReviewRequest(BaseModel):
     course_code: str = ""
     professor_name: str = ""
     semester: str = ""
+    # Optional exam details
+    exam_duration: str = ""
+    exam_info: str = ""
 
 
 class SimpleReviewRequest(BaseModel):
@@ -73,6 +76,9 @@ class SimpleReviewRequest(BaseModel):
     course_code: str = ""
     professor_name: str = ""
     semester: str = ""
+    # Optional exam details
+    exam_duration: str = ""
+    exam_info: str = ""
 
 
 class ReviewResponse(BaseModel):

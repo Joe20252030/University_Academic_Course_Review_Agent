@@ -112,6 +112,8 @@ def generate_plan(
                 course_code=user_prefs.get("course_code", "") or "Not specified",
                 professor_name=user_prefs.get("professor_name", "") or "Not specified",
                 semester=user_prefs.get("semester", "") or "Not specified",
+                exam_duration=user_prefs.get("exam_duration", "") or "Not specified",
+                exam_info=user_prefs.get("exam_info", "") or "None provided",
             )
         )
     except Exception as exc:  # noqa: BLE001
@@ -152,6 +154,8 @@ def write_section(
             course_code=user_prefs.get("course_code", "") or "Not specified",
             professor_name=user_prefs.get("professor_name", "") or "Not specified",
             semester=user_prefs.get("semester", "") or "Not specified",
+            exam_duration=user_prefs.get("exam_duration", "") or "Not specified",
+            exam_info=user_prefs.get("exam_info", "") or "None provided",
         )
     )
     return getattr(resp, "content", str(resp))
@@ -234,6 +238,8 @@ class AgentPipeline:
         course_code: str = "",
         professor_name: str = "",
         semester: str = "",
+        exam_duration: str = "",
+        exam_info: str = "",
     ) -> tuple[ReviewPlan, str, str]:
         """Run the full RAG pipeline with classified documents.
 
@@ -269,6 +275,8 @@ class AgentPipeline:
             "course_code": course_code,
             "professor_name": professor_name,
             "semester": semester,
+            "exam_duration": exam_duration,
+            "exam_info": exam_info,
         }
 
         plan = generate_plan(all_docs, user_prefs, self.llm_client)
@@ -298,6 +306,8 @@ class AgentPipeline:
         course_code: str = "",
         professor_name: str = "",
         semester: str = "",
+        exam_duration: str = "",
+        exam_info: str = "",
     ) -> tuple[ReviewPlan, str, str]:
         """Simplified run method that treats all files as 'other' type."""
         classified_files = {DocumentType.other: file_paths}
@@ -315,4 +325,6 @@ class AgentPipeline:
             course_code=course_code,
             professor_name=professor_name,
             semester=semester,
+            exam_duration=exam_duration,
+            exam_info=exam_info,
         )

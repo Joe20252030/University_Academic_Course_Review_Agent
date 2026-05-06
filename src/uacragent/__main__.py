@@ -26,6 +26,8 @@ def _cli(args: argparse.Namespace) -> None:
         course_code=args.course_code or "",
         professor_name=args.professor_name or "",
         semester=args.semester or "",
+        exam_duration=args.exam_duration or "",
+        exam_info=args.exam_info or "",
     )
 
     if args.doc_type:
@@ -85,6 +87,8 @@ def main() -> None:
     parser.add_argument("--course-code", default="", help="Course code (e.g. CS101)")
     parser.add_argument("--professor-name", default="", help="Professor name")
     parser.add_argument("--semester", default="", help="Semester/term (e.g. Fall 2024)")
+    parser.add_argument("--exam-duration", default="", help="Exam duration (e.g. '2 hours', '90 minutes')")
+    parser.add_argument("--exam-info", default="", help="Exam information sheet text (allowed materials, topics, rules, etc.)")
     parser.add_argument("--gui", action="store_true", help="Launch the desktop GUI instead of CLI")
     args = parser.parse_args()
 

@@ -35,6 +35,8 @@ class AgentService:
         course_code: str = "",
         professor_name: str = "",
         semester: str = "",
+        exam_duration: str = "",
+        exam_info: str = "",
     ) -> ReviewResult:
         plan, markdown, markdown_path = self.pipeline.run_end_to_end(
             classified_files=classified_files,
@@ -50,6 +52,8 @@ class AgentService:
             course_code=course_code,
             professor_name=professor_name,
             semester=semester,
+            exam_duration=exam_duration,
+            exam_info=exam_info,
         )
         return ReviewResult(plan=plan, markdown=markdown, markdown_path=markdown_path)
 
@@ -67,6 +71,8 @@ class AgentService:
         course_code: str = "",
         professor_name: str = "",
         semester: str = "",
+        exam_duration: str = "",
+        exam_info: str = "",
     ) -> ReviewResult:
         """Simplified interface that treats all files as 'other' type."""
         plan, markdown, markdown_path = self.pipeline.run_simple(
@@ -82,5 +88,7 @@ class AgentService:
             course_code=course_code,
             professor_name=professor_name,
             semester=semester,
+            exam_duration=exam_duration,
+            exam_info=exam_info,
         )
         return ReviewResult(plan=plan, markdown=markdown, markdown_path=markdown_path)

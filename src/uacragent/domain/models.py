@@ -18,4 +18,6 @@ class ReviewPlan(BaseModel):
     course_code: str = ""
     professor_name: str = ""
     semester: str = ""
+    exam_duration: str = ""
+    exam_info: str = ""
     sections: list[SectionSpec] = Field(..., min_length=1)

@@ -34,7 +34,7 @@ def main(
         user_prefs: User preferences. Keys:
             course_name (required), exam_format, exam_type, task_type,
             extra_instructions, workspace_id, university_name, major,
-            course_code, professor_name, semester.
+            course_code, professor_name, semester, exam_duration, exam_info.
     """
     service = AgentService()
     result = service.run_end_to_end(
@@ -50,6 +50,8 @@ def main(
         course_code=str(user_prefs.get("course_code", "")),
         professor_name=str(user_prefs.get("professor_name", "")),
         semester=str(user_prefs.get("semester", "")),
+        exam_duration=str(user_prefs.get("exam_duration", "")),
+        exam_info=str(user_prefs.get("exam_info", "")),
     )
     print(f"Output generated at {result.markdown_path}")
 

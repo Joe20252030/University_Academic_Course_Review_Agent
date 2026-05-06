@@ -28,7 +28,7 @@ from uacragent.infra.workspace import workspace_paths, ensure_workspace_dirs
 # ---------------------------------------------------------------------------
 _WINDOW_TITLE = "UACRAgent - Course Review Generator"
 _MIN_WIDTH = 960
-_MIN_HEIGHT = 880
+_MIN_HEIGHT = 1100
 _PAD = 10
 _SUPPORTED_FILETYPES = [
     ("All supported", "*.pdf *.txt *.md *.docx"),
@@ -206,7 +206,7 @@ class UACRAgentApp(tk.Tk):
         docs_frame.grid(row=row, column=0, sticky="nsew", pady=(0, _PAD))
         docs_frame.columnconfigure(0, weight=1)
         docs_frame.columnconfigure(1, weight=1)
-        main_frame.rowconfigure(row, weight=1)
+        main_frame.rowconfigure(row, weight=1, minsize=420)
 
         doc_types = list(DocumentType)
         for i, doc_type in enumerate(doc_types):
@@ -288,6 +288,33 @@ class UACRAgentApp(tk.Tk):
         ttk.Label(opts_frame, text="Workspace:").grid(row=0, column=6, sticky="w", padx=(0, 6))
         self._workspace_var = tk.StringVar(value="default")
         ttk.Entry(opts_frame, textvariable=self._workspace_var, width=12).grid(row=0, column=7, sticky="w")
+
+        # Row 1: Exam duration
+        ttk.Label(opts_frame, text="Exam duration:").grid(row=1, column=0, sticky="w", padx=(0, 6), pady=(6, 0))
+        self._exam_duration_var = tk.StringVar()
+        ttk.Entry(opts_frame, textvariable=self._exam_duration_var, width=20).grid(
+            row=1, column=1, columnspan=3, sticky="w", pady=(6, 0)
+        )
+        ttk.Label(opts_frame, text='e.g. "2 hours" or "90 minutes"', foreground="gray").grid(
+            row=1, column=4, columnspan=4, sticky="w", padx=(4, 0), pady=(6, 0)
+        )
+
+        # Row 2: Exam information sheet (file)
+        ttk.Label(opts_frame, text="Exam info sheet:").grid(row=2, column=0, sticky="w", padx=(0, 6), pady=(6, 0))
+        self._exam_info_path_var = tk.StringVar(value="")
+        self._exam_info_path_label = ttk.Label(
+            opts_frame, textvariable=self._exam_info_path_var,
+            foreground="gray", text="No file selected", anchor="w"
+        )
+        self._exam_info_path_label.grid(row=2, column=1, columnspan=5, sticky="ew", padx=(0, 6), pady=(6, 0))
+        opts_frame.columnconfigure(1, weight=1)
+        ttk.Button(opts_frame, text="Browse...", command=self._on_pick_exam_info).grid(
+            row=2, column=6, sticky="w", pady=(6, 0)
+        )
+        ttk.Button(opts_frame, text="Clear", command=self._on_clear_exam_info).grid(
+            row=2, column=7, sticky="w", padx=(4, 0), pady=(6, 0)
+        )
+
         row += 1
 
         # -- Generate button -----------------------------------------------
@@ -349,24 +376,28 @@ class UACRAgentApp(tk.Tk):
         frame = ttk.LabelFrame(parent, text=label, padding=5)
         frame.grid(row=row, column=col, sticky="nsew", padx=5, pady=5)
         frame.columnconfigure(0, weight=1)
-        frame.rowconfigure(0, weight=1)
-        parent.rowconfigure(row, weight=1)
+        frame.rowconfigure(0, weight=1, minsize=60)
+        frame.rowconfigure(1, weight=0, minsize=30)
+        parent.rowconfigure(row, weight=1, minsize=130)
 
-        listbox = tk.Listbox(frame, height=3, selectmode=tk.EXTENDED)
-        listbox.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+        listbox = tk.Listbox(frame, height=4, selectmode=tk.EXTENDED)
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=listbox.yview)
+        listbox.configure(yscrollcommand=scrollbar.set)
+        listbox.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
         self._file_listboxes[doc_type] = listbox
 
         btn_frame = ttk.Frame(frame)
-        btn_frame.grid(row=0, column=1, sticky="ns")
+        btn_frame.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 8))
 
         ttk.Button(
             btn_frame, text="Add...", width=8,
             command=lambda dt=doc_type: self._on_add_files(dt)
-        ).pack(fill="x", pady=(0, 2))
+        ).pack(side="left", padx=(0, 4))
         ttk.Button(
             btn_frame, text="Remove", width=8,
             command=lambda dt=doc_type: self._on_remove_files(dt)
-        ).pack(fill="x")
+        ).pack(side="left")
 
     # ----- Extra-instructions placeholder logic ---------------------------
 
@@ -402,6 +433,48 @@ class UACRAgentApp(tk.Tk):
         if self._is_showing_hint():
             return ""
         return text
+
+    # ----- Exam info file picker ------------------------------------------
+
+    _EXAM_INFO_FILETYPES = [
+        ("All supported", "*.pdf *.txt *.md *.docx"),
+        ("PDF files", "*.pdf"),
+        ("Text files", "*.txt"),
+        ("Markdown files", "*.md"),
+        ("Word documents", "*.docx"),
+    ]
+
+    def _on_pick_exam_info(self) -> None:
+        path = filedialog.askopenfilename(
+            title="Select exam information sheet file",
+            filetypes=self._EXAM_INFO_FILETYPES,
+        )
+        if path:
+            self._exam_info_path_var.set(path)
+            self._exam_info_path_label.configure(foreground="black")
+
+    def _on_clear_exam_info(self) -> None:
+        self._exam_info_path_var.set("")
+        self._exam_info_path_label.configure(foreground="gray")
+
+    def _get_exam_info(self) -> str:
+        path = self._exam_info_path_var.get()
+        if not path:
+            return ""
+        try:
+            p = Path(path)
+            if p.suffix.lower() == ".pdf":
+                from langchain_community.document_loaders import PyPDFLoader
+                docs = PyPDFLoader(path).load()
+                return "\n".join(d.page_content for d in docs).strip()
+            elif p.suffix.lower() == ".docx":
+                import docx2txt
+                return docx2txt.process(path).strip()
+            else:
+                return p.read_text(encoding="utf-8", errors="replace").strip()
+        except Exception as exc:
+            messagebox.showwarning("Exam Info Sheet", f"Could not read file: {exc}")
+            return ""
 
     # ----- Task type UI helpers -------------------------------------------
 
@@ -488,6 +561,8 @@ class UACRAgentApp(tk.Tk):
                 course_code=self._course_code_var.get().strip(),
                 professor_name=self._professor_var.get().strip(),
                 semester=self._semester_var.get().strip(),
+                exam_duration=self._exam_duration_var.get().strip(),
+                exam_info=self._get_exam_info(),
             )
 
             ws = workspace_paths(service.settings.workspace_root, self._workspace_var.get() or "default")

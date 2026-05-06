@@ -38,6 +38,8 @@ def generate_review(
         course_code=req.course_code,
         professor_name=req.professor_name,
         semester=req.semester,
+        exam_duration=req.exam_duration,
+        exam_info=req.exam_info,
     )
     return ReviewResponse(markdown_path=result.markdown_path, plan=result.plan)
 
@@ -64,5 +66,7 @@ def generate_review_simple(
         course_code=req.course_code,
         professor_name=req.professor_name,
         semester=req.semester,
+        exam_duration=req.exam_duration,
+        exam_info=req.exam_info,
     )
     return ReviewResponse(markdown_path=result.markdown_path, plan=result.plan)
