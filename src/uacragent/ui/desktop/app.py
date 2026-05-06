@@ -28,7 +28,7 @@ from uacragent.infra.workspace import workspace_paths, ensure_workspace_dirs
 # ---------------------------------------------------------------------------
 _WINDOW_TITLE = "UACRAgent - Course Review Generator"
 _MIN_WIDTH = 960
-_MIN_HEIGHT = 1100
+_MIN_HEIGHT = 600
 _PAD = 10
 _SUPPORTED_FILETYPES = [
     ("All supported", "*.pdf *.txt *.md *.docx"),
@@ -116,8 +116,6 @@ class UACRAgentApp(tk.Tk):
         super().__init__()
         self.title(_WINDOW_TITLE)
         self.minsize(_MIN_WIDTH, _MIN_HEIGHT)
-        self.columnconfigure(0, weight=1)
-        self.rowconfigure(0, weight=1)
 
         self._classified_files: dict[DocumentType, list[str]] = {
             doc_type: [] for doc_type in DocumentType
@@ -155,8 +153,37 @@ class UACRAgentApp(tk.Tk):
     # ----- UI construction ------------------------------------------------
 
     def _build_ui(self) -> None:
-        main_frame = ttk.Frame(self, padding=_PAD)
-        main_frame.grid(row=0, column=0, sticky="nsew")
+        # --- Scrollable canvas wrapper ------------------------------------
+        self._canvas = tk.Canvas(self, borderwidth=0, highlightthickness=0)
+        vscroll = ttk.Scrollbar(self, orient="vertical", command=self._canvas.yview)
+        self._canvas.configure(yscrollcommand=vscroll.set)
+        vscroll.pack(side="right", fill="y")
+        self._canvas.pack(side="left", fill="both", expand=True)
+
+        main_frame = ttk.Frame(self._canvas, padding=_PAD)
+        _win = self._canvas.create_window((0, 0), window=main_frame, anchor="nw")
+
+        def _on_frame_resize(event):
+            self._canvas.configure(scrollregion=self._canvas.bbox("all"))
+
+        def _on_canvas_resize(event):
+            self._canvas.itemconfig(_win, width=event.width)
+
+        main_frame.bind("<Configure>", _on_frame_resize)
+        self._canvas.bind("<Configure>", _on_canvas_resize)
+
+        # Cross-platform mouse-wheel scroll
+        def _on_mousewheel(event):
+            self._canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        def _on_mousewheel_linux(event):
+            self._canvas.yview_scroll(-1 if event.num == 4 else 1, "units")
+
+        self._canvas.bind_all("<MouseWheel>", _on_mousewheel)       # Windows / macOS
+        self._canvas.bind_all("<Button-4>", _on_mousewheel_linux)    # Linux scroll up
+        self._canvas.bind_all("<Button-5>", _on_mousewheel_linux)    # Linux scroll down
+        # -----------------------------------------------------------------
+
         main_frame.columnconfigure(0, weight=1)
 
         row = 0
@@ -189,7 +216,7 @@ class UACRAgentApp(tk.Tk):
             row=1, column=1, sticky="ew", padx=(0, 12), pady=(6, 0)
         )
 
-        ttk.Label(info_frame, text="Major / Dept:").grid(row=1, column=2, sticky="w", padx=(0, 4), pady=(6, 0))
+        ttk.Label(info_frame, text="Course Dept:").grid(row=1, column=2, sticky="w", padx=(0, 4), pady=(6, 0))
         self._major_var = tk.StringVar()
         ttk.Entry(info_frame, textvariable=self._major_var).grid(
             row=1, column=3, sticky="ew", padx=(0, 12), pady=(6, 0)
@@ -251,7 +278,7 @@ class UACRAgentApp(tk.Tk):
         docs_frame.grid(row=row, column=0, sticky="nsew", pady=(0, _PAD))
         docs_frame.columnconfigure(0, weight=1)
         docs_frame.columnconfigure(1, weight=1)
-        main_frame.rowconfigure(row, weight=1, minsize=420)
+        main_frame.rowconfigure(row, minsize=420)
 
         doc_types = list(DocumentType)
         for i, doc_type in enumerate(doc_types):

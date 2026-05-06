@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 from pathlib import Path
 
 from langchain_core.documents import Document
@@ -91,34 +91,28 @@ def generate_plan(
     user_prefs: dict,
     llm_client: LLMClient,
 ) -> ReviewPlan:
-    structured_llm = llm_client.with_structured_output(ReviewPlan)
-
     outline_text = build_outline(docs)
 
     task_type = TaskType(user_prefs.get("task_type", "review_summary"))
     planner_file, _ = _get_prompt_files(task_type)
     prompt = ChatPromptTemplate.from_template(load_prompt(planner_file))
 
-    try:
-        plan: ReviewPlan = structured_llm.invoke(
-            prompt.format_messages(
-                outline=outline_text,
-                exam_format=user_prefs.get("exam_format", "unknown"),
-                exam_type=user_prefs.get("exam_type", "other"),
-                extra_instructions=user_prefs.get("extra_instructions", "None"),
-                course_name=user_prefs.get("course_name", ""),
-                university_name=user_prefs.get("university_name", "") or "Not specified",
-                major=user_prefs.get("major", "") or "Not specified",
-                course_code=user_prefs.get("course_code", "") or "Not specified",
-                professor_name=user_prefs.get("professor_name", "") or "Not specified",
-                semester=user_prefs.get("semester", "") or "Not specified",
-                exam_duration=user_prefs.get("exam_duration", "") or "Not specified",
-                exam_info=user_prefs.get("exam_info", "") or "None provided",
-            )
-        )
-    except Exception as exc:  # noqa: BLE001
-        raise LLMError(f"Failed to generate plan: {exc}") from exc
+    messages = prompt.format_messages(
+        outline=outline_text,
+        exam_format=user_prefs.get("exam_format", "unknown"),
+        exam_type=user_prefs.get("exam_type", "other"),
+        extra_instructions=user_prefs.get("extra_instructions", "None"),
+        course_name=user_prefs.get("course_name", ""),
+        university_name=user_prefs.get("university_name", "") or "Not specified",
+        major=user_prefs.get("major", "") or "Not specified",
+        course_code=user_prefs.get("course_code", "") or "Not specified",
+        professor_name=user_prefs.get("professor_name", "") or "Not specified",
+        semester=user_prefs.get("semester", "") or "Not specified",
+        exam_duration=user_prefs.get("exam_duration", "") or "Not specified",
+        exam_info=user_prefs.get("exam_info", "") or "None provided",
+    )
 
+    plan: ReviewPlan = llm_client.generate_structured(ReviewPlan, messages)
     return plan
 
 
@@ -161,25 +155,25 @@ def write_section(
     return getattr(resp, "content", str(resp))
 
 
-def write_sections_parallel(
+def write_sections_sequential(
     sections: list[SectionSpec],
     retriever: BaseRetriever,
     llm_client: LLMClient,
     user_prefs: dict | None = None,
-    max_workers: int = 4,
+    request_delay: float = 3.0,
 ) -> list[str]:
-    """Write all sections concurrently, preserving their original order."""
-    results: list[str] = [""] * len(sections)
+    """Write sections one at a time with a delay between each LLM call.
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_index = {
-            executor.submit(write_section, section, retriever, llm_client, user_prefs): i
-            for i, section in enumerate(sections)
-        }
-        for future in as_completed(future_to_index):
-            idx = future_to_index[future]
-            results[idx] = future.result()
-
+    Sequential execution guarantees that only one request is in-flight at any
+    moment. The delay is inserted *after* each completed call (not before the
+    next submission), so it is always respected regardless of how long the
+    previous call took.
+    """
+    results: list[str] = []
+    for i, section in enumerate(sections):
+        results.append(write_section(section, retriever, llm_client, user_prefs))
+        if i < len(sections) - 1:          # no delay after the last section
+            time.sleep(request_delay)
     return results
 
 
@@ -349,8 +343,12 @@ class AgentPipeline:
         if not plan.sections:
             raise LLMError("Generated an empty plan (no sections). Try again or adjust the prompt.")
 
-        section_texts = write_sections_parallel(
-            plan.sections, retriever, self.llm_client, user_prefs
+        section_texts = write_sections_sequential(
+            plan.sections,
+            retriever,
+            self.llm_client,
+            user_prefs,
+            request_delay=self.settings.llm_request_delay,
         )
 
         # For exam_prediction, generate the full predicted exam paper (Part B)

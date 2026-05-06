@@ -14,12 +14,13 @@ Generate exam review materials from course documents using a RAG pipeline:
 
 The agent supports four distinct output modes:
 
-| Task                 | Description                                                                     |
-|----------------------|---------------------------------------------------------------------------------|
-| **Review Summary**   | Comprehensive review with key concepts, definitions, tips, and sample questions |
-| **Practice Booklet** | Structured collection of practice problems (easy/medium/hard) with solution key |
-| **Mock Exam**        | Realistic exam paper with point allocations and a separate answer key           |
-| **Exam Prediction**  | **Two-part output:** Part A — topic-by-topic prediction analysis (confidence level, reasoning, study approach, sample questions); Part B — a complete predicted exam paper with realistic questions, mark allocations, and a full answer key / marking guide |
+| Task                 | Description                                                                                                                      |
+|----------------------|----------------------------------------------------------------------------------------------------------------------------------|
+| **Review Summary**   | Comprehensive review with key concepts, definitions, tips, and sample questions                                                  |
+| **Practice Booklet** | Structured collection of practice problems (easy/medium/hard) with solution key                                                  |
+| **Mock Exam**        | Realistic exam paper with point allocations and a separate answer key                                                            |
+| **Exam Prediction**  | **Two-part output:** Part A — topic-by-topic prediction analysis (confidence level, reasoning, study approach, sample questions);|
+|                      | Part B — a complete predicted exam paper with realistic questions, mark allocations, and a full answer key / marking guide       |
 
 Each task uses dedicated planner and writer prompts tuned for its output format.
 
@@ -45,7 +46,7 @@ When generating output you can supply context about the course. The **Course Nam
 |--------------------|----------|-----------------------------------------------------------------|
 | **Course Name**    | Yes      | `Introduction to Algorithms`                                    |
 | University         | No       | `University of Toronto`                                         |
-| Major / Department | No       | `Computer Science`                                              |
+| Course Department  | No       | `Computer Science`                                              |
 | Course Code        | No       | `CSC263`                                                        |
 | Professor          | No       | `Dr. Jane Smith`                                                |
 | Semester           | No       | `Fall 2024`                                                     |
@@ -123,6 +124,18 @@ EMBEDDING_MODEL=gemini-embedding-001
 RETRIEVER_K=8
 WORKSPACE_ROOT=data
 ```
+
+#### Rate limiting
+
+Sections are written **sequentially** (one at a time) to avoid overwhelming the API. A configurable pause is inserted between each call.
+
+If you still see `503 ServiceUnavailable` or `429 Too Many Requests` errors, increase `LLM_REQUEST_DELAY`:
+
+| Variable | Default | Description |
+|---|---|---|
+| `LLM_REQUEST_DELAY` | `3.0` | Seconds to wait after each LLM call completes before starting the next |
+| `LLM_MAX_RETRIES` | `2` | Max retry attempts on transient 503/429/quota errors (keep low — retries generate more requests) |
+| `LLM_RETRY_BASE_DELAY` | `10.0` | Initial backoff delay in seconds before the first retry (doubles each attempt, capped at 60 s) |
 
 ## Run (Desktop GUI)
 

@@ -46,6 +46,26 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("WORKSPACE_ROOT", "workspace_root"),
     )
 
+    # ── Rate limiting ──────────────────────────────────────────────────────────
+    # Seconds to wait between consecutive LLM section calls (after each
+    # completes, before the next begins). Increase if you hit 503/429 errors.
+    llm_request_delay: float = Field(
+        default=3.0,
+        validation_alias=AliasChoices("LLM_REQUEST_DELAY", "llm_request_delay"),
+    )
+    # Max retry attempts on transient 503 / 429 / quota errors.
+    # Keep low: retrying a rate-limited API increases total request count.
+    llm_max_retries: int = Field(
+        default=2,
+        validation_alias=AliasChoices("LLM_MAX_RETRIES", "llm_max_retries"),
+    )
+    # Initial backoff delay in seconds before the first retry (doubles each
+    # attempt, capped at 60 s).
+    llm_retry_base_delay: float = Field(
+        default=10.0,
+        validation_alias=AliasChoices("LLM_RETRY_BASE_DELAY", "llm_retry_base_delay"),
+    )
+
 
 def get_settings() -> Settings:
     return Settings()
