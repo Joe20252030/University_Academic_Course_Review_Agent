@@ -1,18 +1,29 @@
 # University Academic Course Review Agent (UACRAgent)
 
-Generate exam review materials from course documents using a RAG pipeline:
+Generate exam review materials from course documents using a RAG pipeline, and
+interact with those materials through a persistent desktop chat assistant.
 
 - Ingest course materials (PDF, TXT, Markdown, or DOCX)
 - Classify documents by type for optimized processing
 - Chunk documents using type-specific multi-stage splitting strategies
 - Embed into a local Chroma vector store
-- Ask an LLM to create a structured plan tailored to the chosen task
-- For each planned section, retrieve relevant content and generate material
+- Ask an LLM to answer questions in a session-aware chat workflow
+- Ask an LLM to create a structured plan tailored to the chosen study-document task
+- For each planned section, retrieve relevant content and generate material sequentially
 - Save the canonical output as Markdown, with optional DOCX/PDF export in the desktop GUI
+- Persist desktop sessions, settings, and chat history across app restarts
 
 ## License
 
 This project is released under the **MIT License**. See [LICENSE](LICENSE).
+
+## Interfaces
+
+The project currently has three user-facing interfaces:
+
+- **Desktop GUI**: the primary interface, now built as a persistent conversational assistant with session management
+- **CLI**: direct one-shot document generation
+- **FastAPI API**: programmatic one-shot document generation
 
 ## Task Types
 
@@ -27,6 +38,18 @@ The agent supports four distinct output modes:
 |                      | Part B — a complete predicted exam paper with realistic questions, mark allocations, and a full answer key / marking guide       |
 
 Each task uses dedicated planner and writer prompts tuned for its output format.
+
+## Model Providers
+
+The project supports multiple LLM providers for chat, planning, and writing:
+
+| Provider | Use Cases | Required Key |
+|----------|-----------|--------------|
+| Gemini   | Chat, planning, writing, embeddings | `GOOGLE_API_KEY` |
+| OpenAI   | Chat, planning, writing, embeddings | `OPENAI_API_KEY` |
+| DeepSeek | Chat, planning, writing | `DEEPSEEK_API_KEY` |
+
+Embeddings currently come from Gemini when available, otherwise OpenAI.
 
 ## Exam Types
 
@@ -80,9 +103,19 @@ metadata (chapter, section, subsection) is preserved on every chunk.
 ## Requirements
 
 - Python 3.10+
-- A Google Gemini API key (used for planning, writing, and embeddings)
+- At least one LLM API key for generation:
+  - Google Gemini, or
+  - OpenAI, or
+  - DeepSeek
+- An embedding-capable API key for retrieval:
+  - Google Gemini embeddings are used when `GOOGLE_API_KEY` is available
+  - otherwise OpenAI embeddings are used when `OPENAI_API_KEY` is available
 
-Note: running the pipeline will make paid model requests (LLM + embeddings).
+Notes:
+
+- Running the pipeline will make paid model requests (LLM + embeddings).
+- DeepSeek can be used for chat/planning/writing, but embeddings still require
+  either Gemini or OpenAI credentials.
 
 ## Install
 
@@ -103,31 +136,44 @@ manually set `PYTHONPATH=src`.
 
 ## Configure
 
-### API Key
+### API Keys
 
-UACRAgent needs a [Google Gemini API key](https://aistudio.google.com/apikey). There are two ways to provide it:
+Create a `.env` file in the repo root (copy from `.env.sample`) and set the
+provider key(s) you want to use:
 
-**Option A — `.env` file (recommended for CLI / repeated use)**
-
-Create a `.env` file in the repo root (copy from `.env.sample`):
-
-```
+```env
 GOOGLE_API_KEY=your-google-api-key-here
+# OPENAI_API_KEY=your-openai-api-key-here
+# DEEPSEEK_API_KEY=your-deepseek-api-key-here
 ```
 
-**Option B — Desktop GUI field**
+Desktop GUI users can also enter keys directly in the settings window at
+runtime. Keys entered there are kept in process memory only and are not written
+to session files.
 
-Enter the key directly in the *Google API Key* field inside the GUI at runtime. The key is kept in process memory only and is never written to disk.
+Provider behavior:
 
-**Precedence:** if you supply a key in the GUI field it overrides any key loaded from `.env`. If no `.env` key is found, the GUI field becomes required.
+- `gemini` uses `GOOGLE_API_KEY`
+- `openai` uses `OPENAI_API_KEY`
+- `deepseek` uses `DEEPSEEK_API_KEY`
 
-> **Security note:** the key is intentionally excluded from all log output and `repr()` calls (`repr=False` on the field). It exists only in runtime memory for the duration of the process.
+Embedding behavior:
+
+- Gemini embeddings are used when `GOOGLE_API_KEY` is available
+- otherwise OpenAI embeddings are used when `OPENAI_API_KEY` is available
+
+That means a DeepSeek-only setup is not enough for retrieval; you still need
+either Gemini or OpenAI credentials for embeddings.
+
+> Security note: API key fields are excluded from `Settings` repr output, and
+> the desktop session persistence layer intentionally does not write API keys to disk.
 
 ### Other settings
 
 Optional overrides (see defaults in [src/uacragent/infra/settings.py](src/uacragent/infra/settings.py)):
 
 ```
+LLM_PROVIDER=gemini
 LLM_MODEL=gemini-2.5-flash
 EMBEDDING_MODEL=gemini-embedding-001
 RETRIEVER_K=8
@@ -153,24 +199,38 @@ If you still see `503 ServiceUnavailable` or `429 Too Many Requests` errors, inc
 - `python -m uacragent.ui.desktop.app`
 
 The GUI lets you:
-- Enter your **Google API Key** (required if not set in `.env`; kept in memory only, never written to disk)
-- Enter a **course name** (required) and optional course details (university, major, course code, professor, semester)
+- Create, rename, delete, and reopen persistent study sessions
+- Choose an LLM provider (`gemini`, `openai`, or `deepseek`) and model per session
+- Enter provider API keys in the settings dialog when they are not already set in `.env`
+- Enter a **course name** and optional course details
 - Add files to different document type categories (Syllabus, Lecture Notes, etc.)
-- Choose a task (Review Summary, Practice Booklet, Mock Exam, Exam Prediction)
-- Choose exam type (Quiz, Midterm, Final, Term Test, Other)
-- Choose exam format (written / mcq / mixed)
-- Provide extra instructions per task
-- Enter optional **exam duration** (e.g. "2 hours") and **exam info sheet** file (PDF/TXT/MD/DOCX)
-- Choose export format (Markdown / DOCX / PDF)
-- Generate output with one click
+- Choose exam settings and export format
+- Pick a custom workspace folder or use the default session workspace
+- Click **Load Session** to index documents into the session retriever
+- Chat with the assistant about the course material
+- Use quick actions to generate a Review Summary, Practice Booklet, Mock Exam, or Exam Prediction
+- Open generated outputs directly from the chat transcript
 
 Works on macOS, Windows, and Linux.
+
+### Desktop Session Persistence
+
+The desktop app persists session state so you can return to previous work.
+
+- Session index: `~/.uacragent/index.json`
+- Default desktop workspaces: `~/.uacragent/workspaces/<workspace_id>/`
+- Per-session state file: `<workspace>/session.json`
+
+Persisted data includes course settings, selected files, chosen provider/model,
+chat history, and UI extras such as export format. API keys are not saved.
 
 ## Run (CLI)
 
 `--course-name` is **required** for all CLI runs.
 
 The CLI examples below assume you completed `pip install -e .` during setup.
+The CLI uses the provider configured through `LLM_PROVIDER`/`LLM_MODEL` and the
+matching API key from your environment.
 
 Simple review summary (all files treated as "other"):
 ```
@@ -224,6 +284,9 @@ Start the server:
 
 - `PYTHONPATH=src uvicorn uacragent.api.main:app --reload`
 
+The API also uses the provider configured through `LLM_PROVIDER`/`LLM_MODEL`
+and the matching API key from the environment.
+
 Endpoints:
 
 - `GET /health` — health check
@@ -275,6 +338,9 @@ Endpoints:
 - Vector DB persisted under `data/<workspace_id>/chroma_db/`
 - The generated document header includes all provided course information fields
 
+When using the desktop GUI with a custom workspace folder, the same
+`uploads/`, `outputs/`, and `chroma_db/` layout is created inside that folder.
+
 ## Project structure
 
 ```
@@ -282,8 +348,11 @@ src/uacragent/
   __main__.py            CLI + GUI entry point
   agent/
     service.py           High-level orchestrator (AgentService)
+    conversation.py      Conversational agent for session-based chat + task triggering
+    session.py           Session state container for chat, files, and preferences
     pipeline.py          RAG pipeline with task-type dispatch
     prompts/
+      conversation_system.md       System prompt for desktop chat sessions
       planner.md                   Generic planner (fallback)
       reviewer.md                  Generic writer (fallback)
       review_summary_planner.md    Review summary planner
@@ -308,8 +377,9 @@ src/uacragent/
     settings.py          Pydantic-based configuration (.env)
     loaders.py           Document loading with multi-stage type-specific splitting
     vectorstore.py       Chroma vector store with dedup
-    llm.py               LLM client wrapper (Google Gemini)
-    auth.py              API key validation
+    llm.py               Provider-aware LLM client wrapper (Gemini / OpenAI / DeepSeek)
+    auth.py              Provider-specific API key validation
+    persistence.py       Desktop session persistence and index management
     workspace.py         Workspace directory management with classified folders
   export/
     markdown.py          Markdown export
@@ -317,7 +387,7 @@ src/uacragent/
     pdf.py               PDF export (fpdf2, Unicode font auto-detection)
   ui/
     desktop/
-      app.py             Tkinter desktop GUI
+      app.py             Tkinter conversational desktop GUI with session manager
 tests/
   test_domain.py         Domain model and enum tests
   test_export.py         Markdown / DOCX / PDF export tests
