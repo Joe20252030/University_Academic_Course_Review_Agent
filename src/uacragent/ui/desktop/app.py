@@ -137,6 +137,20 @@ class UACRAgentApp(tk.Tk):
             self._service = AgentService()
         return self._service
 
+    # ----- API key helpers ------------------------------------------------
+
+    def _toggle_api_key_visibility(self) -> None:
+        if self._api_key_entry.cget("show") == "*":
+            self._api_key_entry.configure(show="")
+            self._api_key_show_btn.configure(text="Hide")
+        else:
+            self._api_key_entry.configure(show="*")
+            self._api_key_show_btn.configure(text="Show")
+
+    def _get_effective_api_key(self) -> str:
+        """Return GUI key if provided, else fall back to the .env key."""
+        return self._api_key_var.get().strip() or os.environ.get("GOOGLE_API_KEY", "")
+
     # ----- UI construction ------------------------------------------------
 
     def _build_ui(self) -> None:
@@ -198,6 +212,36 @@ class UACRAgentApp(tk.Tk):
         ttk.Entry(info_frame, textvariable=self._professor_var).grid(
             row=2, column=3, columnspan=3, sticky="ew", pady=(6, 0)
         )
+
+        # Row 3: Google API Key
+        self._env_has_key = bool(os.environ.get("GOOGLE_API_KEY", "").strip())
+        key_label_text = "Google API Key:" if self._env_has_key else "Google API Key *:"
+        key_label_fg = "black" if self._env_has_key else "red"
+        ttk.Label(info_frame, text=key_label_text, foreground=key_label_fg).grid(
+            row=3, column=0, sticky="w", padx=(0, 4), pady=(8, 0)
+        )
+        self._api_key_var = tk.StringVar()
+        self._api_key_entry = ttk.Entry(
+            info_frame, textvariable=self._api_key_var, show="*", width=40
+        )
+        self._api_key_entry.grid(row=3, column=1, columnspan=3, sticky="ew", padx=(0, 6), pady=(8, 0))
+
+        self._api_key_show_btn = ttk.Button(
+            info_frame, text="Show", width=6, command=self._toggle_api_key_visibility
+        )
+        self._api_key_show_btn.grid(row=3, column=4, sticky="w", padx=(0, 8), pady=(8, 0))
+
+        if self._env_has_key:
+            status_text = "Key loaded from .env  (enter here to override)"
+            status_fg = "gray"
+        else:
+            status_text = "Required — not found in .env"
+            status_fg = "#cc4400"
+        self._api_key_status_var = tk.StringVar(value=status_text)
+        ttk.Label(
+            info_frame, textvariable=self._api_key_status_var,
+            foreground=status_fg, font=("TkDefaultFont", 9)
+        ).grid(row=3, column=5, sticky="w", pady=(8, 0))
 
         row += 1
 
@@ -520,6 +564,14 @@ class UACRAgentApp(tk.Tk):
     def _on_generate(self) -> None:
         if self._is_running:
             return
+        if not self._get_effective_api_key():
+            messagebox.showwarning(
+                "API Key Required",
+                "No Google API key found.\n\nPlease enter your key in the 'Google API Key' field "
+                "or set GOOGLE_API_KEY in a .env file in the project root.",
+            )
+            self._api_key_entry.focus_set()
+            return
         if not self._course_name_var.get().strip():
             messagebox.showwarning("Course Name Required", "Please enter a course name before generating.")
             self._course_name_entry.focus_set()
@@ -542,6 +594,16 @@ class UACRAgentApp(tk.Tk):
 
     def _run_pipeline(self) -> None:
         try:
+            # If the user supplied a key in the GUI, inject it into the environment
+            # so Settings() picks it up.  Invalidate the cached service when the
+            # active key differs from whatever was used last time.
+            gui_key = self._api_key_var.get().strip()
+            if gui_key:
+                current_env_key = os.environ.get("GOOGLE_API_KEY", "")
+                if gui_key != current_env_key:
+                    os.environ["GOOGLE_API_KEY"] = gui_key
+                    self._service = None  # force re-creation with the new key
+
             service = self._get_service()
             classified = {
                 dt: paths for dt, paths in self._classified_files.items() if paths

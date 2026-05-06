@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     google_api_key: str = Field(
         default="",
         validation_alias=AliasChoices("GOOGLE_API_KEY", "google_api_key"),
+        repr=False,  # never appear in repr()/str() to prevent accidental logging
     )
 
     embedding_model: str = Field(

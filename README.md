@@ -93,16 +93,36 @@ Note: running the pipeline will make paid model requests (LLM + embeddings).
 
 ## Configure
 
-Create a `.env` file in the repo root:
+### API Key
 
-- `GOOGLE_API_KEY=<your-key>`
+UACRAgent needs a [Google Gemini API key](https://aistudio.google.com/apikey). There are two ways to provide it:
+
+**Option A — `.env` file (recommended for CLI / repeated use)**
+
+Create a `.env` file in the repo root (copy from `.env.sample`):
+
+```
+GOOGLE_API_KEY=your-google-api-key-here
+```
+
+**Option B — Desktop GUI field**
+
+Enter the key directly in the *Google API Key* field inside the GUI at runtime. The key is kept in process memory only and is never written to disk.
+
+**Precedence:** if you supply a key in the GUI field it overrides any key loaded from `.env`. If no `.env` key is found, the GUI field becomes required.
+
+> **Security note:** the key is intentionally excluded from all log output and `repr()` calls (`repr=False` on the field). It exists only in runtime memory for the duration of the process.
+
+### Other settings
 
 Optional overrides (see defaults in [src/uacragent/infra/settings.py](src/uacragent/infra/settings.py)):
 
-- `LLM_MODEL=gemini-2.5-flash`
-- `EMBEDDING_MODEL=gemini-embedding-001`
-- `RETRIEVER_K=8`
-- `WORKSPACE_ROOT=data`
+```
+LLM_MODEL=gemini-2.5-flash
+EMBEDDING_MODEL=gemini-embedding-001
+RETRIEVER_K=8
+WORKSPACE_ROOT=data
+```
 
 ## Run (Desktop GUI)
 
@@ -111,13 +131,14 @@ Optional overrides (see defaults in [src/uacragent/infra/settings.py](src/uacrag
 - `python -m uacragent.ui.desktop.app`
 
 The GUI lets you:
+- Enter your **Google API Key** (required if not set in `.env`; kept in memory only, never written to disk)
 - Enter a **course name** (required) and optional course details (university, major, course code, professor, semester)
 - Add files to different document type categories (Syllabus, Lecture Notes, etc.)
 - Choose a task (Review Summary, Practice Booklet, Mock Exam, Exam Prediction)
 - Choose exam type (Quiz, Midterm, Final, Term Test, Other)
 - Choose exam format (written / mcq / mixed)
 - Provide extra instructions per task
-- Enter optional **exam duration** (e.g. "2 hours") and **exam info sheet** text (allowed materials, covered topics, rules)
+- Enter optional **exam duration** (e.g. "2 hours") and **exam info sheet** file (PDF/TXT/MD/DOCX)
 - Choose export format (Markdown / DOCX / PDF)
 - Generate output with one click
 
