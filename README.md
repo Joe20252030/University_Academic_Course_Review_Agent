@@ -7,8 +7,12 @@ Generate exam review materials from course documents using a RAG pipeline:
 - Chunk documents using type-specific multi-stage splitting strategies
 - Embed into a local Chroma vector store
 - Ask an LLM to create a structured plan tailored to the chosen task
-- For each planned section, retrieve relevant content and generate material in parallel
-- Export to Markdown, DOCX, or PDF
+- For each planned section, retrieve relevant content and generate material
+- Save the canonical output as Markdown, with optional DOCX/PDF export in the desktop GUI
+
+## License
+
+This project is released under the **MIT License**. See [LICENSE](LICENSE).
 
 ## Task Types
 
@@ -84,13 +88,18 @@ Note: running the pipeline will make paid model requests (LLM + embeddings).
 
 1) Create and activate a virtual environment
 
-- `python -m venv .venv`
+- `python3 -m venv .venv`
 - macOS/Linux: `source .venv/bin/activate`
 - Windows: `.venv\Scripts\activate`
 
-2) Install dependencies
+2) Install dependencies and the package
 
 - `pip install -r requirements.txt`
+- `pip install -e .`
+
+The editable install is recommended because this repository uses a `src/`
+layout. Without it, `python -m uacragent` will not resolve unless you
+manually set `PYTHONPATH=src`.
 
 ## Configure
 
@@ -160,6 +169,8 @@ Works on macOS, Windows, and Linux.
 ## Run (CLI)
 
 `--course-name` is **required** for all CLI runs.
+
+The CLI examples below assume you completed `pip install -e .` during setup.
 
 Simple review summary (all files treated as "other"):
 ```
@@ -258,7 +269,8 @@ Endpoints:
 
 ## Output
 
-- Output files written to `data/<workspace_id>/outputs/` as `review_<timestamp>.<ext>`
+- Canonical output is written to `data/<workspace_id>/outputs/` as `review_<timestamp>.md`
+- When using the desktop GUI, optional DOCX/PDF exports are written to the same output folder
 - Uploaded files organized under `data/<workspace_id>/uploads/<doc_type>/`
 - Vector DB persisted under `data/<workspace_id>/chroma_db/`
 - The generated document header includes all provided course information fields
@@ -270,7 +282,7 @@ src/uacragent/
   __main__.py            CLI + GUI entry point
   agent/
     service.py           High-level orchestrator (AgentService)
-    pipeline.py          RAG pipeline with task-type dispatch (parallel section writing)
+    pipeline.py          RAG pipeline with task-type dispatch
     prompts/
       planner.md                   Generic planner (fallback)
       reviewer.md                  Generic writer (fallback)
@@ -282,6 +294,7 @@ src/uacragent/
       mock_exam_writer.md          Mock exam writer
       exam_prediction_planner.md   Exam prediction planner
       exam_prediction_writer.md    Exam prediction writer
+      exam_prediction_paper_writer.md Predicted exam paper writer (Part B)
   api/
     main.py              FastAPI application factory
     routes.py            API endpoints (/health, /review, /review/simple)
@@ -305,7 +318,6 @@ src/uacragent/
   ui/
     desktop/
       app.py             Tkinter desktop GUI
-    web/                  (placeholder for future web UI)
 tests/
   test_domain.py         Domain model and enum tests
   test_export.py         Markdown / DOCX / PDF export tests
@@ -313,4 +325,6 @@ tests/
   test_pipeline_utils.py Pipeline utility function tests
   test_workspace.py      Workspace path and directory tests
 app.py                   Script entry point (quick-start)
+.env.sample              Example environment configuration
+LICENSE                  MIT license text
 ```
