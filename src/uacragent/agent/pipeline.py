@@ -299,13 +299,18 @@ class AgentPipeline:
         semester: str = "",
         exam_duration: str = "",
         exam_info: str = "",
+        workspace_folder: "Path | None" = None,
     ) -> tuple[ReviewPlan, str, str]:
         """Run the full RAG pipeline with classified documents.
+
+        *workspace_folder*, if supplied, is used as the workspace root
+        directly instead of ``settings.workspace_root / workspace_id``.
 
         Returns:
             Tuple of (ReviewPlan, markdown content, markdown file path)
         """
-        ws = workspace_paths(self.settings.workspace_root, workspace_id)
+        ws = workspace_paths(self.settings.workspace_root, workspace_id,
+                             workspace_folder=workspace_folder)
         ensure_workspace_dirs(ws)
 
         chunks = self.loader.load_and_split_classified(
@@ -361,6 +366,37 @@ class AgentPipeline:
         final_md = assemble_markdown(plan, section_texts, task_type, paper_text=paper_text)
         md_path = save_markdown(final_md, ws)
         return plan, final_md, md_path
+
+    def prepare_session(self, session: "AgentSession") -> "BaseRetriever":  # type: ignore[name-defined]
+        """Index session documents and return a ready-to-use retriever.
+
+        Called by :class:`ConversationAgent` when the user initialises or
+        reloads the session.  The retriever is stored on *session* by the
+        caller.
+        """
+        from uacragent.agent.session import AgentSession  # local import to avoid cycle
+        from langchain_core.retrievers import BaseRetriever
+
+        ws = workspace_paths(
+            self.settings.workspace_root,
+            session.workspace_id,
+            workspace_folder=session.workspace_folder,
+        )
+        ensure_workspace_dirs(ws)
+
+        chunks = self.loader.load_and_split_classified(
+            session.classified_files,
+            workspace_paths=ws,
+        )
+
+        if not chunks:
+            raise ValueError(
+                "No document chunks were created from the provided files. "
+                "Please check that the files are readable."
+            )
+
+        vectorstore = get_or_create_vectorstore(chunks, self.settings, ws)
+        return build_retriever(vectorstore, self.settings)
 
     def run_simple(
         self,

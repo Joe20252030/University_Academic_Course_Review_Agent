@@ -1,0 +1,290 @@
+"""Session persistence.
+
+Each session's full state is stored as ``session.json`` inside its own
+workspace folder.  A lightweight index at ``~/.uacragent/index.json`` maps
+every known workspace path to a small metadata record so the session-list
+sidebar can be populated without reading every session file.
+
+Layout
+------
+~/.uacragent/
+    index.json          ← list of {workspace, course_name, last_modified}
+
+<workspace_folder>/
+    session.json        ← full session state (no API key)
+    uploads/
+    outputs/
+    chroma_db/
+
+The API key is intentionally excluded from all saved data.
+"""
+from __future__ import annotations
+
+import json
+import logging
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+
+from uacragent.domain.types import DocumentType
+
+logger = logging.getLogger(__name__)
+
+_UAR_DIR = Path.home() / ".uacragent"
+_INDEX_FILE = _UAR_DIR / "index.json"
+_SESSION_FILENAME = "session.json"
+_VERSION = 1
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _now_iso() -> str:
+    return datetime.now(tz=timezone.utc).isoformat()
+
+
+def _serialise_history(history: list[BaseMessage]) -> list[dict]:
+    out = []
+    for msg in history:
+        if isinstance(msg, HumanMessage):
+            out.append({"role": "human", "content": msg.content})
+        elif isinstance(msg, AIMessage):
+            out.append({"role": "ai", "content": msg.content})
+    return out
+
+
+def _deserialise_history(data: list[dict]) -> list[BaseMessage]:
+    msgs: list[BaseMessage] = []
+    for item in data:
+        role = item.get("role", "")
+        content = item.get("content", "")
+        if role == "human":
+            msgs.append(HumanMessage(content=content))
+        elif role == "ai":
+            msgs.append(AIMessage(content=content))
+    return msgs
+
+
+def _serialise_files(classified: dict[DocumentType, list[str]]) -> dict[str, list[str]]:
+    return {dt.value: paths for dt, paths in classified.items()}
+
+
+def _deserialise_files(data: dict[str, list[str]]) -> dict[DocumentType, list[str]]:
+    result: dict[DocumentType, list[str]] = {}
+    for key, paths in data.items():
+        try:
+            dt = DocumentType(key)
+        except ValueError:
+            continue
+        valid = [p for p in paths if Path(p).exists()]
+        result[dt] = valid
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Index helpers
+# ---------------------------------------------------------------------------
+
+def _load_index() -> list[dict]:
+    """Return the list of session metadata records."""
+    if not _INDEX_FILE.exists():
+        return []
+    try:
+        return json.loads(_INDEX_FILE.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.warning("Could not read session index: %s", exc)
+        return []
+
+
+def _save_index(records: list[dict]) -> None:
+    try:
+        _UAR_DIR.mkdir(parents=True, exist_ok=True)
+        _INDEX_FILE.write_text(
+            json.dumps(records, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        logger.warning("Could not write session index: %s", exc)
+
+
+def _upsert_index(workspace: Path, course_name: str) -> None:
+    """Insert or update the index entry for *workspace*."""
+    records = _load_index()
+    ws_str = str(workspace.resolve())
+    for rec in records:
+        if rec.get("workspace") == ws_str:
+            rec["course_name"] = course_name
+            rec["last_modified"] = _now_iso()
+            break
+    else:
+        records.append({
+            "workspace": ws_str,
+            "course_name": course_name,
+            "last_modified": _now_iso(),
+        })
+    _save_index(records)
+
+
+def rename_session(workspace: Path, new_name: str) -> None:
+    """Set a custom display name for the session at *workspace*.
+
+    The display_name is stored in the index only and is purely cosmetic —
+    it does not affect the course_name used in prompts.
+    """
+    records = _load_index()
+    ws_str = str(workspace.resolve())
+    for rec in records:
+        if rec.get("workspace") == ws_str:
+            rec["display_name"] = new_name.strip()
+            rec["last_modified"] = _now_iso()
+            break
+    _save_index(records)
+
+
+def _remove_from_index(workspace: Path) -> None:
+    ws_str = str(workspace.resolve())
+    records = [r for r in _load_index() if r.get("workspace") != ws_str]
+    _save_index(records)
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def list_sessions() -> list[dict]:
+    """Return session metadata records sorted newest-first.
+
+    Each record: ``{workspace, course_name, last_modified}``
+    Workspace paths in the records are always the resolved (canonical) form.
+    """
+    records = _load_index()
+    # Filter out entries whose workspace no longer exists
+    valid = [r for r in records if Path(r.get("workspace", "")).exists()]
+    if len(valid) != len(records):
+        _save_index(valid)
+    return sorted(valid, key=lambda r: r.get("last_modified", ""), reverse=True)
+
+
+def save_session(
+    session: "AgentSession",  # type: ignore[name-defined]
+    ui_extras: dict | None = None,
+) -> None:
+    """Serialise *session* to ``<workspace>/session.json`` and update the index.
+
+    *ui_extras* holds UI-only state (e.g. ``export_format``) that lives
+    outside AgentSession but should be persisted.
+    The API key is never written.
+    """
+    workspace = _resolve_workspace(session)
+    workspace.mkdir(parents=True, exist_ok=True)
+
+    payload: dict[str, Any] = {
+        "version": _VERSION,
+        "llm_provider": session.llm_provider,
+        "llm_model": session.llm_model,
+        "course_name": session.course_name,
+        "university_name": session.university_name,
+        "major": session.major,
+        "course_code": session.course_code,
+        "professor_name": session.professor_name,
+        "semester": session.semester,
+        "exam_type": session.exam_type,
+        "exam_format": session.exam_format,
+        "exam_duration": session.exam_duration,
+        "exam_info_path": session.exam_info_path,
+        "workspace_id": session.workspace_id,
+        "workspace_folder": str(workspace),
+        "extra_instructions": session.extra_instructions,
+        "classified_files": _serialise_files(session.classified_files),
+        "chat_history": _serialise_history(session.chat_history),
+    }
+    if ui_extras:
+        payload.update({k: v for k, v in ui_extras.items()
+                        if k not in ("api_key", "google_api_key")})
+
+    try:
+        session_file = workspace / _SESSION_FILENAME
+        session_file.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        _upsert_index(workspace, session.course_name or str(workspace.name))
+    except Exception as exc:
+        logger.warning("Could not save session to %s: %s", workspace, exc)
+
+
+def load_session(workspace: Path) -> dict[str, Any] | None:
+    """Load session state from ``<workspace>/session.json``."""
+    session_file = workspace / _SESSION_FILENAME
+    if not session_file.exists():
+        return None
+    try:
+        raw = json.loads(session_file.read_text(encoding="utf-8"))
+        if raw.get("version") != _VERSION:
+            logger.warning("Session version mismatch in %s — ignoring.", workspace)
+            return None
+        return raw
+    except Exception as exc:
+        logger.warning("Could not load session from %s: %s", workspace, exc)
+        return None
+
+
+def delete_session(workspace: Path) -> None:
+    """Delete ``<workspace>/session.json`` and remove from index.
+
+    The workspace folder itself (uploads, outputs, chroma_db) is left intact.
+    """
+    session_file = workspace / _SESSION_FILENAME
+    try:
+        if session_file.exists():
+            session_file.unlink()
+    except Exception as exc:
+        logger.warning("Could not delete session file: %s", exc)
+    _remove_from_index(workspace)
+
+
+def dict_to_session(data: dict[str, Any]) -> "AgentSession":  # type: ignore[name-defined]
+    """Reconstruct an AgentSession from a persisted dict."""
+    from uacragent.agent.session import AgentSession
+
+    wf_str = data.get("workspace_folder", "")
+    workspace_folder = Path(wf_str) if wf_str else None
+
+    return AgentSession(
+        llm_provider=data.get("llm_provider", "gemini"),
+        llm_model=data.get("llm_model", "gemini-2.5-flash"),
+        course_name=data.get("course_name", ""),
+        university_name=data.get("university_name", ""),
+        major=data.get("major", ""),
+        course_code=data.get("course_code", ""),
+        professor_name=data.get("professor_name", ""),
+        semester=data.get("semester", ""),
+        exam_type=data.get("exam_type", "final"),
+        exam_format=data.get("exam_format", "written"),
+        exam_duration=data.get("exam_duration", ""),
+        exam_info_path=data.get("exam_info_path", ""),
+        workspace_id=data.get("workspace_id", "default"),
+        workspace_folder=workspace_folder,
+        extra_instructions=data.get("extra_instructions", ""),
+        classified_files=_deserialise_files(data.get("classified_files", {})),
+        chat_history=_deserialise_history(data.get("chat_history", [])),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Internal utility
+# ---------------------------------------------------------------------------
+
+def _resolve_workspace(session: "AgentSession") -> Path:  # type: ignore[name-defined]
+    """Return the absolute workspace folder for *session*.
+
+    Priority:
+    1. session.workspace_folder (user-chosen absolute path)
+    2. ~/.uacragent/workspaces/<workspace_id>  (fallback)
+    """
+    if session.workspace_folder:
+        return session.workspace_folder.resolve()
+    return (_UAR_DIR / "workspaces" / (session.workspace_id or "default")).resolve()

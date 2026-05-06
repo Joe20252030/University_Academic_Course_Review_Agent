@@ -13,6 +13,10 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    llm_provider: str = Field(
+        default="gemini",
+        validation_alias=AliasChoices("LLM_PROVIDER", "llm_provider"),
+    )
     llm_model: str = Field(
         default="gemini-2.5-flash",
         validation_alias=AliasChoices("LLM_MODEL", "llm_model"),
@@ -20,7 +24,17 @@ class Settings(BaseSettings):
     google_api_key: str = Field(
         default="",
         validation_alias=AliasChoices("GOOGLE_API_KEY", "google_api_key"),
-        repr=False,  # never appear in repr()/str() to prevent accidental logging
+        repr=False,
+    )
+    openai_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("OPENAI_API_KEY", "openai_api_key"),
+        repr=False,
+    )
+    deepseek_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("DEEPSEEK_API_KEY", "deepseek_api_key"),
+        repr=False,
     )
 
     embedding_model: str = Field(

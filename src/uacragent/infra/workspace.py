@@ -30,11 +30,21 @@ def ensure_workspace_dirs(paths: WorkspacePaths) -> None:
 def workspace_paths(
     workspace_root: Path,
     workspace_id: str | None = "default",
+    *,
+    workspace_folder: Path | None = None,
 ) -> WorkspacePaths:
-    """Build workspace path structure with classified document folders."""
-    if not workspace_id:
-        workspace_id = "default"
-    ws = workspace_root / workspace_id
+    """Build workspace path structure with classified document folders.
+
+    If *workspace_folder* is provided it is used as the workspace root
+    directly (ignoring *workspace_root* and *workspace_id*).  This lets
+    the GUI offer a folder-picker instead of a plain text ID field.
+    """
+    if workspace_folder is not None:
+        ws = workspace_folder
+    else:
+        if not workspace_id:
+            workspace_id = "default"
+        ws = workspace_root / workspace_id
     uploads = ws / "uploads"
 
     # Create a folder for each document type
