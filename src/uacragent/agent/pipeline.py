@@ -101,7 +101,7 @@ def generate_plan(
         outline=outline_text,
         exam_format=user_prefs.get("exam_format", "unknown"),
         exam_type=user_prefs.get("exam_type", "other"),
-        extra_instructions=user_prefs.get("extra_instructions", "None"),
+        extra_instructions=user_prefs.get("extra_instructions", "") or "None",
         course_name=user_prefs.get("course_name", ""),
         university_name=user_prefs.get("university_name", "") or "Not specified",
         major=user_prefs.get("major", "") or "Not specified",

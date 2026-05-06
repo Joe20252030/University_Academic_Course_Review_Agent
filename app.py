@@ -77,6 +77,8 @@ def main_simple(file_paths: list[str], user_prefs: dict) -> None:
         course_code=str(user_prefs.get("course_code", "")),
         professor_name=str(user_prefs.get("professor_name", "")),
         semester=str(user_prefs.get("semester", "")),
+        exam_duration=str(user_prefs.get("exam_duration", "")),
+        exam_info=str(user_prefs.get("exam_info", "")),
     )
     print(f"Output generated at {result.markdown_path}")
 
