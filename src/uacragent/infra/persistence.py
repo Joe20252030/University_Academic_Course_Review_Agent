@@ -10,20 +10,24 @@ Layout
     models/                         ← HuggingFace model cache (HF_HUB_CACHE)
     sessions/                       ← auto-created workspaces (no user pick)
         <workspace_id>/
-            session.json
-            chroma_db/
-            outputs/
-            uploads/
+            .uacragent/             ← all agent artefacts in one bundle
+                session.json
+                chroma_db/
+                outputs/
+                uploads/
 
 <user-chosen workspace>/            ← explicit workspace picked by the user
-    session.json                    ← full session state (no API key)
-    chroma_db/
-    outputs/
-    uploads/
+    .uacragent/                     ← all agent artefacts in one bundle
+        session.json                ← full session state (no API key)
+        chroma_db/
+        outputs/
+        uploads/
 
 Rule: the global data folder root contains ONLY index.json and config.json.
-All session working data lives inside a workspace folder — either one the
-user chose explicitly or one auto-created under <app_data_dir>/sessions/.
+All session working data lives inside a workspace's ``.uacragent/`` subdir —
+either one the user chose explicitly or one auto-created under
+<app_data_dir>/sessions/.  This keeps agent files clearly separated from
+any pre-existing files in user-chosen folders.
 
 The API key is intentionally excluded from all saved data.
 """
@@ -44,7 +48,7 @@ logger = logging.getLogger(__name__)
 # Bootstrap location — holds config.json only; never changes.
 _UAR_DIR = Path.home() / ".uacragent"
 _CONFIG_FILE = _UAR_DIR / "config.json"
-_SESSION_FILENAME = "session.json"
+_SESSION_FILENAME = "session.json"   # lives inside <workspace>/.uacragent/
 _VERSION = 1
 
 
@@ -238,9 +242,17 @@ def list_sessions() -> list[dict]:
     Each record: ``{workspace, course_name, last_modified}``
     Workspace paths in the records are always the resolved (canonical) form.
     """
+    from uacragent.infra.workspace import AGENT_SUBDIR
+
     records = _load_index()
-    # Filter out entries whose workspace no longer exists
-    valid = [r for r in records if Path(r.get("workspace", "")).exists()]
+    # Filter out entries whose session file no longer exists
+    def _session_exists(r: dict) -> bool:
+        ws = r.get("workspace", "")
+        if not ws:
+            return False
+        return (Path(ws) / AGENT_SUBDIR / _SESSION_FILENAME).exists()
+
+    valid = [r for r in records if _session_exists(r)]
     if len(valid) != len(records):
         _save_index(valid)
     return sorted(valid, key=lambda r: r.get("last_modified", ""), reverse=True)
@@ -250,14 +262,17 @@ def save_session(
     session: "AgentSession",  # type: ignore[name-defined]
     ui_extras: dict | None = None,
 ) -> None:
-    """Serialise *session* to ``<workspace>/session.json`` and update the index.
+    """Serialise *session* to ``<workspace>/.uacragent/session.json`` and update the index.
 
-    *ui_extras* holds UI-only state (e.g. ``export_format``) that lives
-    outside AgentSession but should be persisted.
+    All agent artefacts live inside the ``.uacragent`` subdirectory so they
+    form a single, clearly-labelled bundle inside the user's workspace.
     The API key is never written.
     """
+    from uacragent.infra.workspace import AGENT_SUBDIR
+
     workspace = _resolve_workspace(session)
-    workspace.mkdir(parents=True, exist_ok=True)
+    agent_dir = workspace / AGENT_SUBDIR
+    agent_dir.mkdir(parents=True, exist_ok=True)
 
     payload: dict[str, Any] = {
         "version": _VERSION,
@@ -284,7 +299,7 @@ def save_session(
                         if k not in ("api_key", "google_api_key")})
 
     try:
-        session_file = workspace / _SESSION_FILENAME
+        session_file = agent_dir / _SESSION_FILENAME
         session_file.write_text(
             json.dumps(payload, indent=2, ensure_ascii=False),
             encoding="utf-8",
@@ -295,8 +310,10 @@ def save_session(
 
 
 def load_session(workspace: Path) -> dict[str, Any] | None:
-    """Load session state from ``<workspace>/session.json``."""
-    session_file = workspace / _SESSION_FILENAME
+    """Load session state from ``<workspace>/.uacragent/session.json``."""
+    from uacragent.infra.workspace import AGENT_SUBDIR
+
+    session_file = workspace / AGENT_SUBDIR / _SESSION_FILENAME
     if not session_file.exists():
         return None
     try:
@@ -313,29 +330,22 @@ def load_session(workspace: Path) -> dict[str, Any] | None:
 def delete_session(workspace: Path) -> None:
     """Delete all agent-created files inside *workspace* and remove from index.
 
-    Removes:
-    - ``session.json``
-    - ``chroma_db/``   (vector store embeddings)
-    - ``outputs/``     (generated study documents)
-    - ``uploads/``     (any file copies made during indexing)
+    All agent artefacts live inside ``<workspace>/.uacragent/``, so deletion
+    is simply a matter of wiping that single subdirectory.
 
     The workspace folder itself is removed only when it is empty afterwards
-    (i.e. it was created solely by the agent).  User-chosen folders that
+    (i.e. it was auto-created solely by the agent).  User-chosen folders that
     contain other files are left in place.
     """
     import shutil
+    from uacragent.infra.workspace import AGENT_SUBDIR
 
-    _AGENT_PATHS = [_SESSION_FILENAME, "chroma_db", "outputs", "uploads"]
-
-    for name in _AGENT_PATHS:
-        target = workspace / name
-        try:
-            if target.is_dir():
-                shutil.rmtree(target)
-            elif target.exists():
-                target.unlink()
-        except Exception as exc:
-            logger.warning("Could not remove %s: %s", target, exc)
+    agent_dir = workspace / AGENT_SUBDIR
+    try:
+        if agent_dir.is_dir():
+            shutil.rmtree(agent_dir)
+    except Exception as exc:
+        logger.warning("Could not remove agent dir %s: %s", agent_dir, exc)
 
     # Remove the workspace folder itself if it is now empty
     try:

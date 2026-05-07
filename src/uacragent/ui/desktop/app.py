@@ -1248,11 +1248,12 @@ class ConversationApp(tk.Tk):
         if not messagebox.askyesno(
             "Delete Session",
             f'Delete session "{name}"?\n\n'
-            "This will permanently remove:\n"
+            "This will permanently remove the .uacragent folder inside the "
+            "workspace, which contains:\n"
             "  • Session history and settings\n"
             "  • Vector store (chroma_db)\n"
-            "  • Generated outputs folder\n"
-            "  • Uploads folder\n\n"
+            "  • Generated outputs\n"
+            "  • Uploaded file copies\n\n"
             "Your original source files are not affected."
         ):
             return

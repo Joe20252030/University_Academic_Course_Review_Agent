@@ -31,9 +31,9 @@ venv/
 .idea/
 
 # ===============================
-# Project-generated data
+# Project-generated data (legacy default workspace — now lives in ~/.uacragent)
 # ===============================
-data/default/
+data/
 
 # Optional: ignore PDFs / generated docs
 # *.pdf

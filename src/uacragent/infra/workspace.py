@@ -5,10 +5,16 @@ from pathlib import Path
 
 from uacragent.domain.types import DocumentType
 
+# All agent-created working data lives inside this subdirectory of the
+# user-chosen (or auto-generated) workspace folder.  This keeps agent
+# artefacts clearly separated from any pre-existing user files.
+AGENT_SUBDIR = ".uacragent"
+
 
 @dataclass(frozen=True)
 class WorkspacePaths:
-    root: Path
+    root: Path          # workspace folder chosen / assigned for the session
+    agent_dir: Path     # <root>/.uacragent — all agent data lives here
     uploads: Path
     chroma: Path
     outputs: Path
@@ -18,7 +24,7 @@ class WorkspacePaths:
 
 def ensure_workspace_dirs(paths: WorkspacePaths) -> None:
     """Create all workspace directories if they don't exist."""
-    paths.root.mkdir(parents=True, exist_ok=True)
+    paths.agent_dir.mkdir(parents=True, exist_ok=True)
     paths.uploads.mkdir(parents=True, exist_ok=True)
     paths.outputs.mkdir(parents=True, exist_ok=True)
     paths.chroma.mkdir(parents=True, exist_ok=True)
@@ -41,6 +47,10 @@ def workspace_paths(
     2. *workspace_root* / *workspace_id* — legacy / programmatic override.
     3. ``get_app_data_dir()`` / *workspace_id* — default: auto folder inside
        the user-configured app data directory.
+
+    All agent artefacts (uploads, chroma_db, outputs, session.json) are
+    placed inside ``<workspace_root>/.uacragent/`` so they form a single,
+    clearly-labelled bundle that does not mix with the user's own files.
     """
     if workspace_folder is not None:
         ws = Path(workspace_folder)
@@ -50,7 +60,8 @@ def workspace_paths(
             workspace_root = get_app_data_dir()
         ws = workspace_root / (workspace_id or "default")
 
-    uploads = ws / "uploads"
+    agent_dir = ws / AGENT_SUBDIR
+    uploads = agent_dir / "uploads"
     doc_folders = {
         doc_type: uploads / doc_type.value
         for doc_type in DocumentType
@@ -58,8 +69,9 @@ def workspace_paths(
 
     return WorkspacePaths(
         root=ws,
+        agent_dir=agent_dir,
         uploads=uploads,
-        chroma=ws / "chroma_db",
-        outputs=ws / "outputs",
+        chroma=agent_dir / "chroma_db",
+        outputs=agent_dir / "outputs",
         doc_folders=doc_folders,
     )
