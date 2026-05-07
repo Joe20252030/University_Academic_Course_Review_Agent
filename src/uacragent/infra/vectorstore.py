@@ -17,27 +17,64 @@ from uacragent.infra.workspace import WorkspacePaths
 
 
 def _build_embeddings(settings: Settings) -> Any:  # type: ignore[name-defined]
-    """Return the best available embedding model.
+    """Return an embedding model based on *settings.embedding_provider*.
 
-    Priority: Gemini → OpenAI → error.
-    This is independent of the LLM provider so users can mix-and-match
-    (e.g. OpenAI for generation with Gemini embeddings).
+    Providers
+    ---------
+    "gemini"  — Google Generative AI embeddings (needs GOOGLE_API_KEY)
+    "openai"  — OpenAI embeddings              (needs OPENAI_API_KEY)
+    "local"   — HuggingFace sentence-transformers, runs entirely on device,
+                free with no API key required.
     """
-    if settings.google_api_key:
-        from langchain_google_genai import GoogleGenerativeAIEmbeddings
-        return GoogleGenerativeAIEmbeddings(model=settings.embedding_model)
+    from uacragent.domain.errors import ConfigurationError
 
-    if settings.openai_api_key:
-        from langchain_openai import OpenAIEmbeddings
-        return OpenAIEmbeddings(
-            api_key=settings.openai_api_key,  # type: ignore[arg-type]
+    provider = getattr(settings, "embedding_provider", "gemini")
+
+    if provider == "local":
+        return _build_local_embeddings(
+            getattr(settings, "local_embedding_model", "all-MiniLM-L6-v2")
         )
 
-    from uacragent.domain.errors import ConfigurationError
-    raise ConfigurationError(
-        "No API key available for embeddings. "
-        "Set GOOGLE_API_KEY or OPENAI_API_KEY in your .env or ⚙ Settings."
-    )
+    if provider == "openai":
+        if not settings.openai_api_key:
+            raise ConfigurationError(
+                "OpenAI embeddings require OPENAI_API_KEY. "
+                "Enter it in ⚙ Settings → API Key or set OPENAI_API_KEY in .env."
+            )
+        from langchain_openai import OpenAIEmbeddings
+        return OpenAIEmbeddings(api_key=settings.openai_api_key)  # type: ignore[arg-type]
+
+    # Default: "gemini"
+    if not settings.google_api_key:
+        raise ConfigurationError(
+            "Gemini embeddings require GOOGLE_API_KEY. "
+            "Enter it in ⚙ Settings → API Key or set GOOGLE_API_KEY in .env."
+        )
+    from langchain_google_genai import GoogleGenerativeAIEmbeddings
+    return GoogleGenerativeAIEmbeddings(model=settings.embedding_model)
+
+
+def _build_local_embeddings(model_name: str) -> Any:
+    """Load a local sentence-transformers model — free, no API key needed.
+
+    The model is downloaded from HuggingFace Hub on first use and cached
+    locally in the app-managed HuggingFace cache directory.
+
+    Requires ``sentence-transformers`` (and optionally ``langchain-huggingface``).
+    """
+    try:
+        from langchain_huggingface import HuggingFaceEmbeddings  # preferred
+    except ImportError:
+        try:
+            from langchain_community.embeddings import HuggingFaceEmbeddings  # type: ignore[no-redef]
+        except ImportError as exc:
+            from uacragent.domain.errors import ConfigurationError
+            raise ConfigurationError(
+                "Local embeddings require the 'sentence-transformers' package.\n"
+                "Install it with:  pip install sentence-transformers langchain-huggingface"
+            ) from exc
+
+    return HuggingFaceEmbeddings(model_name=model_name)
 
 
 # Use Any at module level to avoid the forward-ref issue

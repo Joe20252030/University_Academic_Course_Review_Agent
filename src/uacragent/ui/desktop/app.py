@@ -164,6 +164,31 @@ class ConversationApp(tk.Tk):
         "openai":   ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
         "deepseek": ["deepseek-chat", "deepseek-reasoner"],
     }
+    # ── Embedding provider choices ────────────────────────────────────────
+    # Display label → internal key used in Settings / env vars
+    _EMB_PROVIDER_OPTIONS: dict[str, str] = {
+        "Gemini  (Google API key)":          "gemini",
+        "OpenAI  (OpenAI API key)":          "openai",
+        "★ Free — Local  (no key needed)":   "local",
+    }
+    # Internal key → display label (reverse map)
+    _EMB_PROVIDER_DISPLAY: dict[str, str] = {
+        v: k for k, v in _EMB_PROVIDER_OPTIONS.items()
+    }
+
+    # Free local models:  display label → HuggingFace model name
+    _FREE_EMB_MODELS: dict[str, str] = {
+        "all-MiniLM-L6-v2  ★ recommended  (~80 MB)":            "all-MiniLM-L6-v2",
+        "all-MiniLM-L12-v2  (balanced, ~120 MB)":              "all-MiniLM-L12-v2",
+        "all-mpnet-base-v2  (high quality, ~420 MB)":          "all-mpnet-base-v2",
+        "BAAI/bge-small-en-v1.5  (fast, ~130 MB)":             "BAAI/bge-small-en-v1.5",
+        "BAAI/bge-base-en-v1.5  (quality, ~440 MB)":           "BAAI/bge-base-en-v1.5",
+        "paraphrase-multilingual-MiniLM-L12-v2  (~470 MB)":    "paraphrase-multilingual-MiniLM-L12-v2",
+    }
+    _FREE_EMB_MODEL_TO_DISPLAY: dict[str, str] = {
+        v: k for k, v in _FREE_EMB_MODELS.items()
+    }
+
     # Provider → env-var label shown next to the key field
     _PROVIDER_KEY_LABEL: dict[str, str] = {
         "gemini":   "Google API Key",
@@ -189,8 +214,18 @@ class ConversationApp(tk.Tk):
             value=os.environ.get("DEEPSEEK_API_KEY", "").strip())
 
         # Model selection
-        self._llm_provider_var = tk.StringVar(value="gemini")
-        self._llm_model_var    = tk.StringVar(value="gemini-2.5-flash")
+        self._llm_provider_var      = tk.StringVar(value="gemini")
+        self._llm_model_var         = tk.StringVar(value="gemini-2.5-flash")
+
+        # Embedding: internal key ("gemini"/"openai"/"local") + its display string
+        self._emb_provider_var      = tk.StringVar(value="gemini")
+        self._emb_provider_disp_var = tk.StringVar(
+            value=self._EMB_PROVIDER_DISPLAY.get("gemini", ""))
+        # Free local model: internal name + display string
+        _default_local = "all-MiniLM-L6-v2"
+        self._local_model_var       = tk.StringVar(value=_default_local)
+        self._local_model_disp_var  = tk.StringVar(
+            value=self._FREE_EMB_MODEL_TO_DISPLAY.get(_default_local, _default_local))
 
         self._course_name_var  = tk.StringVar()
         self._university_var   = tk.StringVar()
@@ -497,6 +532,28 @@ class ConversationApp(tk.Tk):
 
         # Wire entry to current provider's var and update hint
         self._update_api_key_row()
+
+        # ── Embedding ─────────────────────────────────────────────────────
+        embf = ttk.LabelFrame(inner, text="Embedding", padding=_PAD)
+        embf.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
+        embf.columnconfigure(1, weight=1)
+        row += 1
+
+        ttk.Label(embf, text="Provider:").grid(
+            row=0, column=0, sticky="w", padx=(0, 8))
+        emb_cb = ttk.Combobox(
+            embf, textvariable=self._emb_provider_disp_var,
+            values=list(self._EMB_PROVIDER_OPTIONS.keys()),
+            state="readonly", width=34)
+        emb_cb.grid(row=0, column=1, sticky="w")
+        emb_cb.bind("<<ComboboxSelected>>", lambda _e: self._on_emb_provider_changed())
+
+        # Context row — swapped by _on_emb_provider_changed()
+        self._emb_context_frame = ttk.Frame(embf)
+        self._emb_context_frame.grid(
+            row=1, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        self._emb_context_frame.columnconfigure(1, weight=1)
+        self._rebuild_emb_context()   # populate for current provider
 
         # ── Course Information ─────────────────────────────────────────
         inf = ttk.LabelFrame(inner, text="Course Information", padding=_PAD)
@@ -807,6 +864,141 @@ class ConversationApp(tk.Tk):
         except tk.TclError:
             pass  # widget destroyed between the check and the call
 
+    def _on_emb_provider_changed(self) -> None:
+        """Sync internal var from display var and rebuild the context row."""
+        display = self._emb_provider_disp_var.get()
+        internal = self._EMB_PROVIDER_OPTIONS.get(display, "gemini")
+        self._emb_provider_var.set(internal)
+        if self._settings_alive() and hasattr(self, "_emb_context_frame"):
+            try:
+                self._rebuild_emb_context()
+            except tk.TclError:
+                pass
+
+    def _rebuild_emb_context(self) -> None:
+        """Destroy and recreate the content of the embedding context frame."""
+        frame = self._emb_context_frame
+        for child in frame.winfo_children():
+            child.destroy()
+        frame.columnconfigure(1, weight=1)
+
+        provider = self._emb_provider_var.get()
+
+        if provider == "local":
+            # Free model selector
+            ttk.Label(frame, text="Model:").grid(
+                row=0, column=0, sticky="w", padx=(0, 8))
+            local_cb = ttk.Combobox(
+                frame, textvariable=self._local_model_disp_var,
+                values=list(self._FREE_EMB_MODELS.keys()),
+                state="readonly", width=46)
+            local_cb.grid(row=0, column=1, sticky="w")
+            local_cb.bind("<<ComboboxSelected>>",
+                          lambda _e: self._local_model_var.set(
+                              self._FREE_EMB_MODELS.get(
+                                  self._local_model_disp_var.get(), "all-MiniLM-L6-v2")))
+            ttk.Label(
+                frame,
+                text="Downloaded from HuggingFace on first use, then cached in the app data folder. "
+                     "Subsequent uses are instant with no internet required.",
+                foreground="gray", font=("TkDefaultFont", 9), wraplength=400,
+            ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(3, 0))
+        else:
+            # API-based: show a key entry field for the embedding provider.
+            # Reuses the same StringVar as the LLM key section so both fields
+            # stay in sync when the user types in either one.
+            env_var = "GOOGLE_API_KEY" if provider == "gemini" else "OPENAI_API_KEY"
+            key_var = self._gemini_key_var if provider == "gemini" else self._openai_key_var
+            label   = "Google API Key:" if provider == "gemini" else "OpenAI API Key:"
+
+            frame.columnconfigure(1, weight=1)
+            ttk.Label(frame, text=label).grid(
+                row=0, column=0, sticky="w", padx=(0, 8))
+
+            emb_entry = ttk.Entry(frame, textvariable=key_var, show="*")
+            emb_entry.grid(row=0, column=1, sticky="ew", padx=(0, 4))
+
+            show_btn_cell: list[ttk.Button] = []
+            show_btn_cell.append(ttk.Button(
+                frame, text="Show", width=5,
+                command=lambda: self._toggle_key_entry(emb_entry, show_btn_cell[0])))
+            show_btn_cell[0].grid(row=0, column=2)
+
+            # Status hint below the entry
+            key_present = bool(os.environ.get(env_var, "").strip())
+            if key_present:
+                hint = f"✓  {env_var} loaded from .env"
+                fg   = "gray"
+            else:
+                hint = f"⚠  {env_var} not set — enter it above or choose Free — Local."
+                fg   = "#cc4400"
+            ttk.Label(frame, text=hint, foreground=fg,
+                      font=("TkDefaultFont", 9), wraplength=400,
+                      ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(3, 0))
+
+    def _has_embedding_key(self) -> bool:
+        """Return True if the chosen embedding provider has what it needs."""
+        provider = self._emb_provider_var.get()
+        if provider == "local":
+            return True  # no key required
+        if provider == "openai":
+            return bool(os.environ.get("OPENAI_API_KEY", "").strip())
+        # gemini (default)
+        return bool(os.environ.get("GOOGLE_API_KEY", "").strip())
+
+    @staticmethod
+    def _is_model_cached(model_name: str) -> bool:
+        """Return True if the HuggingFace model is already in the local cache.
+
+        Uses ``huggingface_hub.scan_cache_dir()`` when available.  Falls back
+        to False (assume not cached) if the package is absent or the scan fails,
+        which causes the confirmation dialog to appear — safer than silently
+        skipping it.
+        """
+        try:
+            from huggingface_hub import scan_cache_dir  # type: ignore[import]
+            cached_ids = {repo.repo_id for repo in scan_cache_dir().repos}
+            # Short names (e.g. "all-MiniLM-L6-v2") live under sentence-transformers/
+            full_name = model_name if "/" in model_name else f"sentence-transformers/{model_name}"
+            return full_name in cached_ids
+        except Exception:
+            return False  # conservative: prompt the user
+
+    def _confirm_model_download(self) -> bool:
+        """Show a confirmation dialog before downloading a local embedding model.
+
+        Returns True if the user confirmed (or the model is already cached),
+        False if the user cancelled.  Only relevant when embedding_provider == "local".
+        """
+        if self._emb_provider_var.get() != "local":
+            return True
+
+        model_name = self._local_model_var.get()
+        if self._is_model_cached(model_name):
+            return True  # already on disk — no need to ask
+
+        # Work out display size from the label string
+        import re as _re
+        disp = self._local_model_disp_var.get()
+        size_match = _re.search(r"~([\d.]+ MB)", disp)
+        size_str = size_match.group(1) if size_match else "unknown size"
+
+        from uacragent.infra.persistence import get_hf_cache_dir
+        cache_dir = get_hf_cache_dir()
+
+        return messagebox.askyesno(
+            "Download Embedding Model",
+            f'The embedding model has not been downloaded yet.\n\n'
+            f'  Model : {model_name}\n'
+            f'  Size  : {size_str}\n'
+            f'  Saved to : {cache_dir}\n\n'
+            f'This is a one-time download. Future uses load from the local cache '
+            f'with no internet connection required.\n\n'
+            f'Download and continue?',
+            default=messagebox.YES,
+            icon=messagebox.QUESTION,
+        )
+
     def _on_provider_changed(self, _event: object = None) -> None:
         self._update_model_list()
         self._update_api_key_row()
@@ -904,11 +1096,16 @@ class ConversationApp(tk.Tk):
 
         chosen = self._workspace_var.get().strip()
         if chosen:
+            # User explicitly picked a folder — use it directly.
+            # workspace_id is irrelevant when workspace_folder is set.
             s.workspace_folder = Path(chosen)
-            s.workspace_id = "default"
         else:
+            # No folder picked yet — leave workspace_folder as None so the
+            # auto-assign in _on_load_session() can use the session's UUID-based
+            # workspace_id to build a unique path under <app_data>/sessions/.
+            # Never overwrite workspace_id here: doing so would collapse every
+            # unspecified session onto the same "default" folder.
             s.workspace_folder = None
-            s.workspace_id = "default"
 
     def _sync_vars_from_session(self) -> None:
         """Push session data back into all StringVars (after switching sessions)."""
@@ -952,7 +1149,10 @@ class ConversationApp(tk.Tk):
     # ------------------------------------------------------------------
 
     def _inject_api_keys(self) -> bool:
-        """Inject all GUI API keys into env and return True if the active provider has a key."""
+        """Inject all GUI keys + embedding settings into env.
+
+        Returns True if the active LLM provider has its required key.
+        """
         key_map = {
             "GOOGLE_API_KEY":   self._gemini_key_var.get().strip(),
             "OPENAI_API_KEY":   self._openai_key_var.get().strip(),
@@ -966,7 +1166,7 @@ class ConversationApp(tk.Tk):
         if changed:
             self._agent = None  # force re-creation with new keys
 
-        # Also propagate provider/model
+        # Propagate LLM provider/model
         provider = self._llm_provider_var.get()
         model = self._llm_model_var.get()
         if provider:
@@ -974,7 +1174,14 @@ class ConversationApp(tk.Tk):
         if model:
             os.environ["LLM_MODEL"] = model
 
-        # Check that the active provider has a key
+        # Propagate embedding provider and (if local) the model name
+        emb_provider = self._emb_provider_var.get() or "gemini"
+        os.environ["EMBEDDING_PROVIDER"] = emb_provider
+        if emb_provider == "local":
+            local_model = self._local_model_var.get() or "all-MiniLM-L6-v2"
+            os.environ["LOCAL_EMBEDDING_MODEL"] = local_model
+
+        # Check that the active LLM provider has its key
         env_var = self._PROVIDER_KEY_ENV.get(provider, "GOOGLE_API_KEY")
         return bool(os.environ.get(env_var, ""))
 
@@ -1096,6 +1303,17 @@ class ConversationApp(tk.Tk):
         self._session = dict_to_session(data)
         # Sessions loaded from disk already have a committed workspace.
         self._workspace_committed = True
+
+        # Restore embedding settings (stored as ui_extras in session.json)
+        emb_provider = data.get("embedding_provider", "gemini")
+        local_model  = data.get("local_embedding_model", "all-MiniLM-L6-v2")
+        self._emb_provider_var.set(emb_provider)
+        self._emb_provider_disp_var.set(
+            self._EMB_PROVIDER_DISPLAY.get(emb_provider, emb_provider))
+        self._local_model_var.set(local_model)
+        self._local_model_disp_var.set(
+            self._FREE_EMB_MODEL_TO_DISPLAY.get(local_model, local_model))
+
         self._sync_vars_from_session()
         self._update_header()
         self._clear_chat()
@@ -1121,10 +1339,24 @@ class ConversationApp(tk.Tk):
         if self._is_busy:
             return
         if not self._inject_api_key():
+            provider = self._llm_provider_var.get()
+            label = self._PROVIDER_KEY_LABEL.get(provider, "API Key")
             messagebox.showwarning(
                 "API Key Required",
-                "No Google API key found.\n\nEnter your key in ⚙ Settings "
-                "or set GOOGLE_API_KEY in a .env file.")
+                f"No {label} found for the selected LLM provider ({provider}).\n\n"
+                "Enter your key in ⚙ Settings → API Key.")
+            return
+
+        # Embeddings always need a Gemini or OpenAI key, regardless of LLM provider.
+        if not self._has_embedding_key():
+            messagebox.showwarning(
+                "Embedding Key Required",
+                "Document indexing requires a Google or OpenAI API key for embeddings.\n\n"
+                "• Using Gemini or OpenAI as your LLM: the same key is used automatically.\n"
+                "• Using DeepSeek: enter a Gemini or OpenAI key in ⚙ Settings → "
+                "API Key → Embedding key."
+            )
+            self._open_settings()
             return
 
         self._sync_session_from_vars()
@@ -1136,20 +1368,33 @@ class ConversationApp(tk.Tk):
             return
 
         # Auto-assign workspace on first load if user didn't pick one.
+        # Placed under <global_data>/sessions/ to keep the global folder root
+        # clean (only index.json and config.json should live there).
         # Once set here the workspace is locked for the lifetime of this session.
         if not self._session.workspace_folder:
             self._session.workspace_folder = (
-                get_app_data_dir() / self._session.workspace_id
+                get_app_data_dir() / "sessions" / self._session.workspace_id
             )
             self._workspace_var.set(str(self._session.workspace_folder))
         self._workspace_committed = True
+
+        # Ask for confirmation before downloading a local embedding model.
+        if not self._confirm_model_download():
+            return  # user cancelled
 
         self._session.retriever = None
         self._session.chat_history = []
         self._clear_chat()
 
-        self._set_busy(True, "Indexing documents…")
-        self._session_status_var.set("Indexing documents…")
+        if self._emb_provider_var.get() == "local" and not self._is_model_cached(
+            self._local_model_var.get()
+        ):
+            busy_label = "Downloading embedding model… (this may take a while)"
+        else:
+            busy_label = "Indexing documents…"
+
+        self._set_busy(True, busy_label)
+        self._session_status_var.set(busy_label)
 
         def _work() -> None:
             try:
@@ -1193,8 +1438,10 @@ class ConversationApp(tk.Tk):
         if not message:
             return
         if not self._inject_api_key():
+            provider = self._llm_provider_var.get()
+            label = self._PROVIDER_KEY_LABEL.get(provider, "API Key")
             messagebox.showwarning("API Key Required",
-                                   "Enter your Google API key in ⚙ Settings.")
+                                   f"Enter your {label} in ⚙ Settings → API Key.")
             return
         self._sync_session_from_vars()
         if not self._session.course_name:
@@ -1353,7 +1600,11 @@ class ConversationApp(tk.Tk):
 
     def _save_current_session(self) -> None:
         self._sync_session_from_vars()
-        ui_extras = {"export_format": self._export_format_var.get()}
+        ui_extras = {
+            "export_format":       self._export_format_var.get(),
+            "embedding_provider":  self._emb_provider_var.get(),
+            "local_embedding_model": self._local_model_var.get(),
+        }
         save_session(self._session, ui_extras)
 
     def _on_close(self) -> None:
@@ -1377,6 +1628,10 @@ class ConversationApp(tk.Tk):
 def main() -> None:
     from dotenv import load_dotenv
     load_dotenv()
+    # Redirect HuggingFace model downloads into the app data folder so all
+    # agent data lives in one place.  Must run before any HF import.
+    from uacragent.infra.persistence import configure_hf_cache
+    configure_hf_cache()
     app = ConversationApp()
     app.mainloop()
 

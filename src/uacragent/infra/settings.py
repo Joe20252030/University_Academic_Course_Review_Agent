@@ -37,9 +37,24 @@ class Settings(BaseSettings):
         repr=False,
     )
 
+    # ── Embedding ─────────────────────────────────────────────────────────────
+    # Which provider to use for document embeddings.
+    # "gemini"  → GoogleGenerativeAIEmbeddings (needs GOOGLE_API_KEY)
+    # "openai"  → OpenAIEmbeddings             (needs OPENAI_API_KEY)
+    # "local"   → HuggingFace sentence-transformers (free, no key needed)
+    embedding_provider: str = Field(
+        default="gemini",
+        validation_alias=AliasChoices("EMBEDDING_PROVIDER", "embedding_provider"),
+    )
+    # Gemini cloud embedding model name (used when embedding_provider == "gemini")
     embedding_model: str = Field(
         default="gemini-embedding-001",
         validation_alias=AliasChoices("EMBEDDING_MODEL", "embedding_model"),
+    )
+    # HuggingFace / sentence-transformers model name (used when embedding_provider == "local")
+    local_embedding_model: str = Field(
+        default="all-MiniLM-L6-v2",
+        validation_alias=AliasChoices("LOCAL_EMBEDDING_MODEL", "local_embedding_model"),
     )
 
     chunk_size: int = Field(

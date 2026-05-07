@@ -9,6 +9,7 @@ langchain-community>=0.3
 langchain-text-splitters>=0.3
 langchain-google-genai>=2.0
 langchain-openai>=0.2
+langchain-huggingface>=0.1
 
 # ── Vector store ──────────────────────────────────────────────────────────────
 chromadb>=0.5
@@ -17,6 +18,7 @@ langchain-chroma>=0.1
 # ── Document loading / parsing ────────────────────────────────────────────────
 pypdf>=4.0
 docx2txt>=0.8        # used by langchain_community.document_loaders.Docx2txtLoader
+sentence-transformers>=3.0
 
 # ── Export ────────────────────────────────────────────────────────────────────
 python-docx>=1.0

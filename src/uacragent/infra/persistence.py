@@ -2,18 +2,28 @@
 
 Layout
 ------
-~/.uacragent/
-    config.json         ← bootstrap config: stores the user-chosen app data dir
-    index.json          ← (present when app_data_dir == ~/.uacragent)
+~/.uacragent/                       ← bootstrap location; holds config only
+    config.json                     ← stores the user-chosen app data dir
 
-<app_data_dir>/         ← configurable; defaults to ~/.uacragent
-    index.json          ← list of {workspace, course_name, last_modified}
+<app_data_dir>/                     ← configurable; defaults to ~/.uacragent
+    index.json                      ← lightweight session registry
+    models/                         ← HuggingFace model cache (HF_HUB_CACHE)
+    sessions/                       ← auto-created workspaces (no user pick)
+        <workspace_id>/
+            session.json
+            chroma_db/
+            outputs/
+            uploads/
 
-<workspace_folder>/     ← one per session; chosen once, never changed
-    session.json        ← full session state (no API key)
-    uploads/
-    outputs/
+<user-chosen workspace>/            ← explicit workspace picked by the user
+    session.json                    ← full session state (no API key)
     chroma_db/
+    outputs/
+    uploads/
+
+Rule: the global data folder root contains ONLY index.json and config.json.
+All session working data lives inside a workspace folder — either one the
+user chose explicitly or one auto-created under <app_data_dir>/sessions/.
 
 The API key is intentionally excluded from all saved data.
 """
@@ -41,6 +51,27 @@ _VERSION = 1
 # ---------------------------------------------------------------------------
 # App-level data directory (global, user-configurable)
 # ---------------------------------------------------------------------------
+
+def get_hf_cache_dir() -> Path:
+    """Return the directory used for HuggingFace model downloads.
+
+    Kept inside the app data folder so all agent data (index, sessions,
+    and local embedding models) lives in one visible place.
+    """
+    return get_app_data_dir() / "models"
+
+
+def configure_hf_cache() -> None:
+    """Point HuggingFace Hub at the app-managed cache directory.
+
+    Must be called before any ``huggingface_hub`` or ``sentence-transformers``
+    import so the env var is in place when those libraries initialise.
+    """
+    import os
+    cache_dir = get_hf_cache_dir()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    os.environ["HF_HUB_CACHE"] = str(cache_dir)
+
 
 def get_app_data_dir() -> Path:
     """Return the user-configured app data directory.
@@ -354,9 +385,10 @@ def _resolve_workspace(session: "AgentSession") -> Path:  # type: ignore[name-de
     Priority:
     1. session.workspace_folder — set by the user via folder picker or
        auto-assigned on first Load Session; locked thereafter.
-    2. <app_data_dir>/<workspace_id> — fallback for sessions that have
-       not yet been committed (should be rare in normal GUI use).
+    2. <app_data_dir>/sessions/<workspace_id> — auto-created fallback,
+       kept inside a dedicated ``sessions/`` subfolder so the global data
+       folder root stays clean (only index.json and config.json live there).
     """
     if session.workspace_folder:
         return session.workspace_folder.resolve()
-    return (get_app_data_dir() / (session.workspace_id or "default")).resolve()
+    return (get_app_data_dir() / "sessions" / (session.workspace_id or "default")).resolve()

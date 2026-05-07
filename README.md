@@ -49,7 +49,19 @@ The project supports multiple LLM providers for chat, planning, and writing:
 | OpenAI   | Chat, planning, writing, embeddings | `OPENAI_API_KEY` |
 | DeepSeek | Chat, planning, writing | `DEEPSEEK_API_KEY` |
 
-Embeddings currently come from Gemini when available, otherwise OpenAI.
+## Embedding Providers
+
+Document retrieval embeddings are configured independently from the chat/writer
+LLM provider:
+
+| Provider | Use Cases | Requirements |
+|----------|-----------|--------------|
+| Gemini   | Cloud embeddings | `GOOGLE_API_KEY` |
+| OpenAI   | Cloud embeddings | `OPENAI_API_KEY` |
+| Local    | On-device sentence-transformers embeddings | No API key; first use downloads a model |
+
+The desktop GUI exposes all three embedding options. Local embeddings are free
+to run after the model has been downloaded and cached.
 
 ## Exam Types
 
@@ -107,15 +119,18 @@ metadata (chapter, section, subsection) is preserved on every chunk.
   - Google Gemini, or
   - OpenAI, or
   - DeepSeek
-- An embedding-capable API key for retrieval:
-  - Google Gemini embeddings are used when `GOOGLE_API_KEY` is available
-  - otherwise OpenAI embeddings are used when `OPENAI_API_KEY` is available
+- One embedding option for retrieval:
+  - Google Gemini embeddings with `GOOGLE_API_KEY`, or
+  - OpenAI embeddings with `OPENAI_API_KEY`, or
+  - local sentence-transformers embeddings with no API key
 
 Notes:
 
 - Running the pipeline will make paid model requests (LLM + embeddings).
-- DeepSeek can be used for chat/planning/writing, but embeddings still require
-  either Gemini or OpenAI credentials.
+- DeepSeek can be used for chat/planning/writing together with either cloud
+  embeddings or local embeddings.
+- Local embeddings download a HuggingFace model on first use, then run from the
+  local cache afterward.
 
 ## Install
 
@@ -163,13 +178,14 @@ Provider behavior:
 - `openai` uses `OPENAI_API_KEY`
 - `deepseek` uses `DEEPSEEK_API_KEY`
 
-Embedding behavior:
+Embedding configuration:
 
-- Gemini embeddings are used when `GOOGLE_API_KEY` is available
-- otherwise OpenAI embeddings are used when `OPENAI_API_KEY` is available
+- `EMBEDDING_PROVIDER=gemini` uses `GOOGLE_API_KEY`
+- `EMBEDDING_PROVIDER=openai` uses `OPENAI_API_KEY`
+- `EMBEDDING_PROVIDER=local` uses a local sentence-transformers model with no API key
 
-That means a DeepSeek-only setup is not enough for retrieval; you still need
-either Gemini or OpenAI credentials for embeddings.
+For local embeddings, you can choose the downloaded model with
+`LOCAL_EMBEDDING_MODEL`.
 
 > Security note: API key fields are excluded from `Settings` repr output, and
 > the desktop session persistence layer intentionally does not write API keys to disk.
@@ -181,7 +197,9 @@ Optional overrides (see defaults in [src/uacragent/infra/settings.py](src/uacrag
 ```
 LLM_PROVIDER=gemini
 LLM_MODEL=gemini-2.5-flash
+EMBEDDING_PROVIDER=gemini
 EMBEDDING_MODEL=gemini-embedding-001
+LOCAL_EMBEDDING_MODEL=all-MiniLM-L6-v2
 RETRIEVER_K=8
 ```
 
@@ -207,6 +225,8 @@ The GUI lets you:
 - Create, rename, delete, and reopen persistent study sessions
 - Choose an LLM provider (`gemini`, `openai`, or `deepseek`) and model per session
 - Enter provider API keys in the settings dialog when they are not already set in `.env`
+- Choose an embedding provider (`gemini`, `openai`, or free local embeddings`)
+- Pick a free local embedding model when using on-device embeddings
 - Enter a **course name** and optional course details
 - Add files to different document type categories (Syllabus, Lecture Notes, etc.)
 - Choose exam settings and export format
@@ -225,7 +245,8 @@ The desktop app persists session state so you can return to previous work.
 - Bootstrap config: `~/.uacragent/config.json`
 - Default app data directory: `~/.uacragent/`
 - Session index: `<app_data_dir>/index.json`
-- Auto-created workspaces: `<app_data_dir>/<workspace_id>/`
+- Local embedding model cache: `<app_data_dir>/models/`
+- Auto-created workspaces: `<app_data_dir>/sessions/<workspace_id>/`
 - Per-session state file: `<workspace>/session.json`
 
 Persisted data includes course settings, selected files, chosen provider/model,
@@ -237,6 +258,8 @@ Notes:
   workspaces do not collide with each other.
 - The app data directory can be changed from the session-list pane’s global
   app settings button and takes full effect after restarting the app.
+- Local embedding models are cached under `<app_data_dir>/models/` via
+  HuggingFace cache redirection.
 - Once a session has been loaded and its workspace committed, that workspace is
   treated as fixed for the lifetime of the session.
 - Deleting a session removes agent-created artifacts inside its workspace,
@@ -254,6 +277,10 @@ matching API key from your environment.
 `--workspace-id` controls the output folder name under the app data directory.
 By default, one-shot CLI runs write to `~/.uacragent/default/` unless the app
 data directory has been changed by the desktop app.
+
+CLI runs also respect `EMBEDDING_PROVIDER`. For example, you can use DeepSeek
+for generation together with `EMBEDDING_PROVIDER=local` to avoid cloud
+embedding costs.
 
 Simple review summary (all files treated as "other"):
 ```
@@ -313,6 +340,9 @@ and the matching API key from the environment.
 `workspace_id` in API requests resolves to a folder under the app data
 directory in the same way as the CLI.
 
+The API likewise respects `EMBEDDING_PROVIDER`, `EMBEDDING_MODEL`, and
+`LOCAL_EMBEDDING_MODEL`.
+
 Endpoints:
 
 - `GET /health` — health check
@@ -367,7 +397,7 @@ Endpoints:
 Workspace resolution:
 
 - Desktop GUI with a custom workspace folder: `<workspace>` is the chosen folder
-- Desktop GUI with auto workspace: `<workspace>` is `<app_data_dir>/<workspace_id>/`
+- Desktop GUI with auto workspace: `<workspace>` is `<app_data_dir>/sessions/<workspace_id>/`
 - CLI / API: `<workspace>` is `<app_data_dir>/<workspace_id>/`
 
 ## Project structure
@@ -405,10 +435,10 @@ src/uacragent/
   infra/
     settings.py          Pydantic-based configuration (.env)
     loaders.py           Document loading with multi-stage type-specific splitting
-    vectorstore.py       Chroma vector store with dedup
+    vectorstore.py       Chroma vector store with cloud or local embeddings
     llm.py               Provider-aware LLM client wrapper (Gemini / OpenAI / DeepSeek)
     auth.py              Provider-specific API key validation
-    persistence.py       Desktop session persistence and index management
+    persistence.py       Desktop session persistence, app-data config, and HF cache management
     workspace.py         Workspace directory management with classified folders
   export/
     markdown.py          Markdown export
