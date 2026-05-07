@@ -22,32 +22,35 @@ def ensure_workspace_dirs(paths: WorkspacePaths) -> None:
     paths.uploads.mkdir(parents=True, exist_ok=True)
     paths.outputs.mkdir(parents=True, exist_ok=True)
     paths.chroma.mkdir(parents=True, exist_ok=True)
-    # Create classified document folders
     for folder in paths.doc_folders.values():
         folder.mkdir(parents=True, exist_ok=True)
 
 
 def workspace_paths(
-    workspace_root: Path,
-    workspace_id: str | None = "default",
+    workspace_root: Path | None = None,
+    workspace_id: str | None = None,
     *,
     workspace_folder: Path | None = None,
 ) -> WorkspacePaths:
-    """Build workspace path structure with classified document folders.
+    """Build workspace path structure.
 
-    If *workspace_folder* is provided it is used as the workspace root
-    directly (ignoring *workspace_root* and *workspace_id*).  This lets
-    the GUI offer a folder-picker instead of a plain text ID field.
+    Resolution order
+    ----------------
+    1. *workspace_folder* — used directly as the workspace root when provided.
+       This is the normal path for any session that has been committed.
+    2. *workspace_root* / *workspace_id* — legacy / programmatic override.
+    3. ``get_app_data_dir()`` / *workspace_id* — default: auto folder inside
+       the user-configured app data directory.
     """
     if workspace_folder is not None:
-        ws = workspace_folder
+        ws = Path(workspace_folder)
     else:
-        if not workspace_id:
-            workspace_id = "default"
-        ws = workspace_root / workspace_id
-    uploads = ws / "uploads"
+        if workspace_root is None:
+            from uacragent.infra.persistence import get_app_data_dir
+            workspace_root = get_app_data_dir()
+        ws = workspace_root / (workspace_id or "default")
 
-    # Create a folder for each document type
+    uploads = ws / "uploads"
     doc_folders = {
         doc_type: uploads / doc_type.value
         for doc_type in DocumentType

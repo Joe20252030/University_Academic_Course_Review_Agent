@@ -55,11 +55,6 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("RETRIEVER_K", "retriever_k"),
     )
 
-    workspace_root: Path = Field(
-        default=Path("data"),
-        validation_alias=AliasChoices("WORKSPACE_ROOT", "workspace_root"),
-    )
-
     # ── Rate limiting ──────────────────────────────────────────────────────────
     # Seconds to wait between consecutive LLM section calls (after each
     # completes, before the next begins). Increase if you hit 503/429 errors.

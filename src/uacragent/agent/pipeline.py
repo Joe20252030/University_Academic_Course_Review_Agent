@@ -304,12 +304,12 @@ class AgentPipeline:
         """Run the full RAG pipeline with classified documents.
 
         *workspace_folder*, if supplied, is used as the workspace root
-        directly instead of ``settings.workspace_root / workspace_id``.
+        directly instead of the auto-computed path under the app data dir.
 
         Returns:
             Tuple of (ReviewPlan, markdown content, markdown file path)
         """
-        ws = workspace_paths(self.settings.workspace_root, workspace_id,
+        ws = workspace_paths(workspace_id=workspace_id,
                              workspace_folder=workspace_folder)
         ensure_workspace_dirs(ws)
 
@@ -378,8 +378,7 @@ class AgentPipeline:
         from langchain_core.retrievers import BaseRetriever
 
         ws = workspace_paths(
-            self.settings.workspace_root,
-            session.workspace_id,
+            workspace_id=session.workspace_id,
             workspace_folder=session.workspace_folder,
         )
         ensure_workspace_dirs(ws)

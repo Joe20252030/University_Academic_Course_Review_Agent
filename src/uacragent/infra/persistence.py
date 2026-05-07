@@ -1,16 +1,15 @@
 """Session persistence.
 
-Each session's full state is stored as ``session.json`` inside its own
-workspace folder.  A lightweight index at ``~/.uacragent/index.json`` maps
-every known workspace path to a small metadata record so the session-list
-sidebar can be populated without reading every session file.
-
 Layout
 ------
 ~/.uacragent/
+    config.json         ← bootstrap config: stores the user-chosen app data dir
+    index.json          ← (present when app_data_dir == ~/.uacragent)
+
+<app_data_dir>/         ← configurable; defaults to ~/.uacragent
     index.json          ← list of {workspace, course_name, last_modified}
 
-<workspace_folder>/
+<workspace_folder>/     ← one per session; chosen once, never changed
     session.json        ← full session state (no API key)
     uploads/
     outputs/
@@ -32,10 +31,51 @@ from uacragent.domain.types import DocumentType
 
 logger = logging.getLogger(__name__)
 
+# Bootstrap location — holds config.json only; never changes.
 _UAR_DIR = Path.home() / ".uacragent"
-_INDEX_FILE = _UAR_DIR / "index.json"
+_CONFIG_FILE = _UAR_DIR / "config.json"
 _SESSION_FILENAME = "session.json"
 _VERSION = 1
+
+
+# ---------------------------------------------------------------------------
+# App-level data directory (global, user-configurable)
+# ---------------------------------------------------------------------------
+
+def get_app_data_dir() -> Path:
+    """Return the user-configured app data directory.
+
+    Reads ``~/.uacragent/config.json``.  Defaults to ``~/.uacragent`` when
+    the config is absent or the stored path is empty.
+    """
+    try:
+        if _CONFIG_FILE.exists():
+            cfg = json.loads(_CONFIG_FILE.read_text(encoding="utf-8"))
+            p = cfg.get("app_data_dir", "").strip()
+            if p:
+                return Path(p)
+    except Exception as exc:
+        logger.warning("Could not read app config: %s", exc)
+    return _UAR_DIR
+
+
+def set_app_data_dir(path: Path) -> None:
+    """Persist the chosen app data directory to ``~/.uacragent/config.json``."""
+    try:
+        _UAR_DIR.mkdir(parents=True, exist_ok=True)
+        cfg: dict = {}
+        if _CONFIG_FILE.exists():
+            try:
+                cfg = json.loads(_CONFIG_FILE.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        cfg["app_data_dir"] = str(path.resolve())
+        _CONFIG_FILE.write_text(
+            json.dumps(cfg, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        logger.warning("Could not save app config: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -44,6 +84,11 @@ _VERSION = 1
 
 def _now_iso() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
+
+
+def _get_index_file() -> Path:
+    """Return the index file path inside the current app data directory."""
+    return get_app_data_dir() / "index.json"
 
 
 def _serialise_history(history: list[BaseMessage]) -> list[dict]:
@@ -90,10 +135,11 @@ def _deserialise_files(data: dict[str, list[str]]) -> dict[DocumentType, list[st
 
 def _load_index() -> list[dict]:
     """Return the list of session metadata records."""
-    if not _INDEX_FILE.exists():
+    index_file = _get_index_file()
+    if not index_file.exists():
         return []
     try:
-        return json.loads(_INDEX_FILE.read_text(encoding="utf-8"))
+        return json.loads(index_file.read_text(encoding="utf-8"))
     except Exception as exc:
         logger.warning("Could not read session index: %s", exc)
         return []
@@ -101,8 +147,9 @@ def _load_index() -> list[dict]:
 
 def _save_index(records: list[dict]) -> None:
     try:
-        _UAR_DIR.mkdir(parents=True, exist_ok=True)
-        _INDEX_FILE.write_text(
+        data_dir = get_app_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        _get_index_file().write_text(
             json.dumps(records, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
@@ -233,16 +280,39 @@ def load_session(workspace: Path) -> dict[str, Any] | None:
 
 
 def delete_session(workspace: Path) -> None:
-    """Delete ``<workspace>/session.json`` and remove from index.
+    """Delete all agent-created files inside *workspace* and remove from index.
 
-    The workspace folder itself (uploads, outputs, chroma_db) is left intact.
+    Removes:
+    - ``session.json``
+    - ``chroma_db/``   (vector store embeddings)
+    - ``outputs/``     (generated study documents)
+    - ``uploads/``     (any file copies made during indexing)
+
+    The workspace folder itself is removed only when it is empty afterwards
+    (i.e. it was created solely by the agent).  User-chosen folders that
+    contain other files are left in place.
     """
-    session_file = workspace / _SESSION_FILENAME
+    import shutil
+
+    _AGENT_PATHS = [_SESSION_FILENAME, "chroma_db", "outputs", "uploads"]
+
+    for name in _AGENT_PATHS:
+        target = workspace / name
+        try:
+            if target.is_dir():
+                shutil.rmtree(target)
+            elif target.exists():
+                target.unlink()
+        except Exception as exc:
+            logger.warning("Could not remove %s: %s", target, exc)
+
+    # Remove the workspace folder itself if it is now empty
     try:
-        if session_file.exists():
-            session_file.unlink()
+        if workspace.exists() and not any(workspace.iterdir()):
+            workspace.rmdir()
     except Exception as exc:
-        logger.warning("Could not delete session file: %s", exc)
+        logger.warning("Could not remove workspace folder %s: %s", workspace, exc)
+
     _remove_from_index(workspace)
 
 
@@ -266,7 +336,7 @@ def dict_to_session(data: dict[str, Any]) -> "AgentSession":  # type: ignore[nam
         exam_format=data.get("exam_format", "written"),
         exam_duration=data.get("exam_duration", ""),
         exam_info_path=data.get("exam_info_path", ""),
-        workspace_id=data.get("workspace_id", "default"),
+        workspace_id=data.get("workspace_id", ""),
         workspace_folder=workspace_folder,
         extra_instructions=data.get("extra_instructions", ""),
         classified_files=_deserialise_files(data.get("classified_files", {})),
@@ -282,9 +352,11 @@ def _resolve_workspace(session: "AgentSession") -> Path:  # type: ignore[name-de
     """Return the absolute workspace folder for *session*.
 
     Priority:
-    1. session.workspace_folder (user-chosen absolute path)
-    2. ~/.uacragent/workspaces/<workspace_id>  (fallback)
+    1. session.workspace_folder — set by the user via folder picker or
+       auto-assigned on first Load Session; locked thereafter.
+    2. <app_data_dir>/<workspace_id> — fallback for sessions that have
+       not yet been committed (should be rare in normal GUI use).
     """
     if session.workspace_folder:
         return session.workspace_folder.resolve()
-    return (_UAR_DIR / "workspaces" / (session.workspace_id or "default")).resolve()
+    return (get_app_data_dir() / (session.workspace_id or "default")).resolve()

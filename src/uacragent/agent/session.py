@@ -1,6 +1,7 @@
 """AgentSession — all mutable state for one conversation session."""
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -39,8 +40,10 @@ class AgentSession:
     llm_model: str = "gemini-2.5-flash"
 
     # ── Misc ──────────────────────────────────────────────────────────────
-    workspace_id: str = "default"
-    workspace_folder: Optional[Path] = field(default=None)  # user-chosen folder; overrides workspace_id
+    # Each new session gets a unique 12-char hex ID so its auto-created folder
+    # inside the app data dir never collides with other sessions.
+    workspace_id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
+    workspace_folder: Optional[Path] = field(default=None)  # set once on first Load; locked thereafter
     extra_instructions: str = ""
 
     # ── Files ─────────────────────────────────────────────────────────────

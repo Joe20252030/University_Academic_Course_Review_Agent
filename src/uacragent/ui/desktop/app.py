@@ -33,8 +33,8 @@ from uacragent.domain.types import DocumentType, ExamFormat, ExamType, ExportFor
 from uacragent.export.docx import save_docx
 from uacragent.export.pdf import save_pdf
 from uacragent.infra.persistence import (
-    delete_session, dict_to_session, list_sessions, load_session,
-    rename_session, save_session,
+    delete_session, dict_to_session, get_app_data_dir, list_sessions,
+    load_session, rename_session, save_session, set_app_data_dir,
 )
 from uacragent.infra.workspace import workspace_paths, ensure_workspace_dirs
 
@@ -127,6 +127,10 @@ class ConversationApp(tk.Tk):
         self._agent: Optional[ConversationAgent] = None
         self._is_busy = False
 
+        # True once a session's workspace has been committed (Load Session ran
+        # or session was loaded from disk).  Prevents workspace from being changed.
+        self._workspace_committed = False
+
         # Settings Toplevel (created lazily, kept alive while open)
         self._settings_win: Optional[tk.Toplevel] = None
 
@@ -173,6 +177,9 @@ class ConversationApp(tk.Tk):
     }
 
     def _init_setting_vars(self) -> None:
+        # Global app data dir (shown/edited in the App Settings dialog)
+        self._app_data_dir_var = tk.StringVar(value=str(get_app_data_dir()))
+
         # Per-provider API key vars (pre-populate from env)
         self._gemini_key_var   = tk.StringVar(
             value=os.environ.get("GOOGLE_API_KEY", "").strip())
@@ -235,8 +242,10 @@ class ConversationApp(tk.Tk):
             row=0, column=0, sticky="w"
         )
         ttk.Button(hdr, text="+ New", width=7, command=self._on_new_session).grid(
-            row=0, column=1
+            row=0, column=1, padx=(0, 3)
         )
+        ttk.Button(hdr, text="⚙", width=3,
+                   command=self._open_app_settings).grid(row=0, column=2)
 
         ttk.Separator(frame, orient="horizontal").grid(
             row=0, column=0, sticky="ew", pady=(36, 0)
@@ -543,16 +552,28 @@ class ConversationApp(tk.Tk):
         ws_row = ttk.Frame(wf)
         ws_row.grid(row=0, column=1, sticky="ew")
         ws_row.columnconfigure(0, weight=1)
-        self._workspace_label = ttk.Label(
-            ws_row, textvariable=self._workspace_var,
-            foreground="gray", anchor="w", text="Default")
-        self._workspace_label.grid(row=0, column=0, sticky="ew")
-        ttk.Button(ws_row, text="Browse...", width=9,
-                   command=self._on_pick_workspace
-                   ).grid(row=0, column=1, padx=(4, 0))
-        ttk.Button(ws_row, text="Reset", width=6,
-                   command=self._on_reset_workspace
-                   ).grid(row=0, column=2, padx=(4, 0))
+        if self._workspace_committed:
+            # Locked: show the path as a read-only label + Open button
+            path_text = self._workspace_var.get() or str(get_app_data_dir())
+            ttk.Label(ws_row, text=path_text, foreground="#1a56a5",
+                      anchor="w").grid(row=0, column=0, sticky="ew")
+            ttk.Button(ws_row, text="Open", width=6,
+                       command=lambda: _open_folder_in_os(path_text)
+                       ).grid(row=0, column=1, padx=(4, 0))
+            ttk.Label(ws_row, text="🔒", foreground="gray"
+                      ).grid(row=0, column=2, padx=(4, 0))
+        else:
+            # Not yet committed: allow user to pick
+            self._workspace_label = ttk.Label(
+                ws_row, textvariable=self._workspace_var,
+                foreground="gray", anchor="w", text="Auto (app data folder)")
+            self._workspace_label.grid(row=0, column=0, sticky="ew")
+            ttk.Button(ws_row, text="Browse...", width=9,
+                       command=self._on_pick_workspace
+                       ).grid(row=0, column=1, padx=(4, 0))
+            ttk.Button(ws_row, text="Reset", width=6,
+                       command=self._on_reset_workspace
+                       ).grid(row=0, column=2, padx=(4, 0))
 
         ttk.Label(wf, text="Export format:").grid(
             row=1, column=0, sticky="w", padx=(0, 6), pady=(6, 0))
@@ -632,6 +653,74 @@ class ConversationApp(tk.Tk):
                    ).pack(side="left")
 
     # ------------------------------------------------------------------
+    # App Settings dialog  (global, not per-session)
+    # ------------------------------------------------------------------
+
+    def _open_app_settings(self) -> None:
+        """Open a small dialog to configure the global app data directory."""
+        win = tk.Toplevel(self)
+        win.title("App Settings")
+        win.resizable(False, False)
+        win.grab_set()
+
+        frm = ttk.Frame(win, padding=16)
+        frm.pack(fill="both", expand=True)
+        frm.columnconfigure(1, weight=1)
+
+        ttk.Label(frm, text="App data folder:", font=("TkDefaultFont", 10, "bold")
+                  ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 6))
+        ttk.Label(
+            frm,
+            text="The index.json and any auto-created session workspaces\n"
+                 "are stored here.  Changes take effect on next launch.",
+            foreground="gray", font=("TkDefaultFont", 9),
+        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 10))
+
+        # Current path entry
+        path_var = tk.StringVar(value=self._app_data_dir_var.get())
+        path_entry = ttk.Entry(frm, textvariable=path_var, width=42)
+        path_entry.grid(row=2, column=0, sticky="ew", padx=(0, 4))
+
+        def _browse() -> None:
+            folder = filedialog.askdirectory(
+                title="Select app data folder",
+                initialdir=path_var.get() or str(Path.home()),
+            )
+            if folder:
+                path_var.set(folder)
+
+        ttk.Button(frm, text="Browse…", command=_browse
+                   ).grid(row=2, column=1, padx=(0, 4))
+
+        def _save() -> None:
+            chosen = path_var.get().strip()
+            if not chosen:
+                messagebox.showwarning("Invalid Path",
+                                       "Please enter a valid folder path.",
+                                       parent=win)
+                return
+            p = Path(chosen)
+            try:
+                p.mkdir(parents=True, exist_ok=True)
+            except Exception as exc:
+                messagebox.showerror("Cannot Create Folder", str(exc), parent=win)
+                return
+            set_app_data_dir(p)
+            self._app_data_dir_var.set(str(p.resolve()))
+            messagebox.showinfo(
+                "App Settings Saved",
+                f"App data folder set to:\n{p.resolve()}\n\n"
+                "Restart the application for the change to take full effect.",
+                parent=win,
+            )
+            win.destroy()
+
+        btn_row = ttk.Frame(frm)
+        btn_row.grid(row=3, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        ttk.Button(btn_row, text="Save", command=_save).pack(side="left", padx=(0, 6))
+        ttk.Button(btn_row, text="Cancel", command=win.destroy).pack(side="left")
+
+    # ------------------------------------------------------------------
     # Settings field helpers
     # ------------------------------------------------------------------
 
@@ -639,46 +728,65 @@ class ConversationApp(tk.Tk):
     # Provider / model helpers
     # ------------------------------------------------------------------
 
+    def _settings_alive(self) -> bool:
+        """Return True only when the Settings Toplevel exists and is not destroyed."""
+        return (
+            self._settings_win is not None
+            and self._settings_win.winfo_exists()
+        )
+
     def _update_model_list(self) -> None:
-        """Refresh the model combobox values for the current provider."""
+        """Refresh the model combobox values for the current provider.
+
+        Skips the widget update when the Settings dialog is closed — the
+        StringVars are always updated so the next dialog open picks the
+        correct value.
+        """
         provider = self._llm_provider_var.get()
         models = self._PROVIDER_MODELS.get(provider, [])
-        if hasattr(self, "_model_cb"):
-            self._model_cb.configure(values=models)
+        # Always keep the StringVar consistent (no widget needed)
         current = self._llm_model_var.get()
         if current not in models and models:
             self._llm_model_var.set(models[0])
+        # Only touch the Combobox widget if the dialog is alive
+        if self._settings_alive() and hasattr(self, "_model_cb"):
+            try:
+                self._model_cb.configure(values=models)
+            except tk.TclError:
+                pass  # widget destroyed between the check and the call
 
     def _update_api_key_row(self) -> None:
-        """Swap the active key entry to show the current provider's key."""
-        if not hasattr(self, "_active_key_entry"):
-            return
+        """Swap the active key entry to match the current provider.
+
+        Safe to call even when the Settings dialog is closed.
+        """
+        # Label var is a plain StringVar — always safe to update
         provider = self._llm_provider_var.get()
-        var_map = {
-            "gemini":   self._gemini_key_var,
-            "openai":   self._openai_key_var,
-            "deepseek": self._deepseek_key_var,
-        }
-        var = var_map.get(provider, self._gemini_key_var)
-
-        # Re-bind the entry to the correct StringVar
-        self._active_key_entry.configure(textvariable=var, show="*")
-        self._api_key_show_btn.configure(text="Show")
-
-        # Update label
         labels = {"gemini": "Google API Key:", "openai": "OpenAI API Key:",
                   "deepseek": "DeepSeek API Key:"}
         self._api_key_label_var.set(labels.get(provider, "API Key:"))
 
-        # Update hint
+        # Update hint var (also a plain StringVar)
         env_var = self._PROVIDER_KEY_ENV.get(provider, "GOOGLE_API_KEY")
         env_key = os.environ.get(env_var, "").strip()
-        if env_key:
-            self._api_key_hint_var.set("Loaded from .env")
-            self._api_key_hint_lbl.configure(foreground="gray")
-        else:
-            self._api_key_hint_var.set("Not set")
-            self._api_key_hint_lbl.configure(foreground="#cc4400")
+        self._api_key_hint_var.set("Loaded from .env" if env_key else "Not set")
+
+        # Widget-level updates only when the dialog is alive
+        if not self._settings_alive():
+            return
+        try:
+            var_map = {
+                "gemini":   self._gemini_key_var,
+                "openai":   self._openai_key_var,
+                "deepseek": self._deepseek_key_var,
+            }
+            var = var_map.get(provider, self._gemini_key_var)
+            self._active_key_entry.configure(textvariable=var, show="*")
+            self._api_key_show_btn.configure(text="Show")
+            self._api_key_hint_lbl.configure(
+                foreground="gray" if env_key else "#cc4400")
+        except tk.TclError:
+            pass  # widget destroyed between the check and the call
 
     def _on_provider_changed(self, _event: object = None) -> None:
         self._update_model_list()
@@ -767,9 +875,11 @@ class ConversationApp(tk.Tk):
         s.exam_info_path = self._exam_info_path_var.get().strip()
 
         # Extra instructions (from Text widget if settings dialog is open)
-        if self._settings_win and self._settings_win.winfo_exists() \
-                and hasattr(self, "_extra_text"):
-            s.extra_instructions = self._extra_text.get("1.0", tk.END).strip()
+        if self._settings_alive() and hasattr(self, "_extra_text"):
+            try:
+                s.extra_instructions = self._extra_text.get("1.0", tk.END).strip()
+            except tk.TclError:
+                s.extra_instructions = self._extra_instructions_var.get().strip()
         else:
             s.extra_instructions = self._extra_instructions_var.get().strip()
 
@@ -799,23 +909,24 @@ class ConversationApp(tk.Tk):
         self._exam_info_path_var.set(s.exam_info_path)
         self._workspace_var.set(str(s.workspace_folder) if s.workspace_folder else "")
 
-        if self._settings_win and self._settings_win.winfo_exists() \
-                and hasattr(self, "_extra_text"):
-            self._extra_text.delete("1.0", tk.END)
-            self._extra_text.insert("1.0", s.extra_instructions)
+        if self._settings_alive() and hasattr(self, "_extra_text"):
+            try:
+                self._extra_text.delete("1.0", tk.END)
+                self._extra_text.insert("1.0", s.extra_instructions)
+            except tk.TclError:
+                self._extra_instructions_var.set(s.extra_instructions)
         else:
             self._extra_instructions_var.set(s.extra_instructions)
 
-        # Repopulate file listboxes only when the settings dialog is open
-        # and its widgets are still alive (Toplevel may have been closed).
-        if self._settings_win and self._settings_win.winfo_exists():
+        # Repopulate file listboxes only when the settings dialog is alive.
+        if self._settings_alive():
             for dt, lb in self._file_listboxes.items():
                 try:
                     lb.delete(0, tk.END)
                     for p in self._session.classified_files.get(dt, []):
                         lb.insert(tk.END, Path(p).name)
                 except tk.TclError:
-                    pass  # widget was destroyed — will be rebuilt on next open
+                    pass  # widget destroyed — rebuilt on next dialog open
 
     # ------------------------------------------------------------------
     # API key
@@ -888,8 +999,9 @@ class ConversationApp(tk.Tk):
         """Start a blank session and open settings so the user can fill it in."""
         self._session = AgentSession()
         self._session.chat_history = []
-        self._file_listboxes = {}         # clear stale widget refs
-        self._init_setting_vars()         # reset all vars
+        self._workspace_committed = False  # new session: workspace not yet locked
+        self._file_listboxes = {}          # clear stale widget refs
+        self._init_setting_vars()          # reset all vars
         self._sync_vars_from_session()
         self._header_course_var.set("New session")
         self._session_status_var.set("Fill in the settings and click Load Session.")
@@ -910,8 +1022,12 @@ class ConversationApp(tk.Tk):
         if not messagebox.askyesno(
             "Delete Session",
             f'Delete session "{name}"?\n\n'
-            "This removes the session history only. Your uploaded files and "
-            "generated outputs in the workspace folder are not affected."
+            "This will permanently remove:\n"
+            "  • Session history and settings\n"
+            "  • Vector store (chroma_db)\n"
+            "  • Generated outputs folder\n"
+            "  • Uploads folder\n\n"
+            "Your original source files are not affected."
         ):
             return
         ws = Path(rec["workspace"])
@@ -959,6 +1075,8 @@ class ConversationApp(tk.Tk):
         if data is None:
             return
         self._session = dict_to_session(data)
+        # Sessions loaded from disk already have a committed workspace.
+        self._workspace_committed = True
         self._sync_vars_from_session()
         self._update_header()
         self._clear_chat()
@@ -998,6 +1116,15 @@ class ConversationApp(tk.Tk):
             self._open_settings()
             return
 
+        # Auto-assign workspace on first load if user didn't pick one.
+        # Once set here the workspace is locked for the lifetime of this session.
+        if not self._session.workspace_folder:
+            self._session.workspace_folder = (
+                get_app_data_dir() / self._session.workspace_id
+            )
+            self._workspace_var.set(str(self._session.workspace_folder))
+        self._workspace_committed = True
+
         self._session.retriever = None
         self._session.chat_history = []
         self._clear_chat()
@@ -1019,7 +1146,7 @@ class ConversationApp(tk.Tk):
         self._set_busy(False)
         self._update_header()
         self._session_status_var.set(status)
-        if self._settings_win and self._settings_win.winfo_exists():
+        if self._settings_alive():
             self._settings_status_var.set(status)
         self._append_chat("assistant", f"**Session loaded.** {status}")
         self._save_current_session()
@@ -1167,12 +1294,8 @@ class ConversationApp(tk.Tk):
         export_fmt = self._export_format_var.get()
         if export_fmt != ExportFormat.markdown.value and output_path.endswith(".md"):
             try:
-                from uacragent.infra.settings import get_settings
-                settings = get_settings()
-                from uacragent.infra.persistence import _resolve_workspace
                 ws = workspace_paths(
-                    settings.workspace_root,
-                    self._session.workspace_id,
+                    workspace_id=self._session.workspace_id,
                     workspace_folder=self._session.workspace_folder,
                 )
                 ensure_workspace_dirs(ws)

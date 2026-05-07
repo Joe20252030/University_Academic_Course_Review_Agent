@@ -70,7 +70,11 @@ def main() -> None:
         help="Task: review_summary, practice_booklet, mock_exam, exam_prediction",
     )
     parser.add_argument("--extra-instructions", default="", help="Additional instructions for the LLM")
-    parser.add_argument("--workspace-id", default="default", help="Workspace ID under WORKSPACE_ROOT")
+    parser.add_argument(
+        "--workspace-id",
+        default="default",
+        help="Workspace ID used to name the output folder inside the app data directory",
+    )
     parser.add_argument(
         "--doc-type",
         choices=[dt.value for dt in DocumentType],
