@@ -422,8 +422,27 @@ class ConversationApp(tk.Tk):
                    lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.bind("<Configure>",
                     lambda e: canvas.itemconfig(win_id, width=e.width))
-        canvas.bind_all("<MouseWheel>",
-                        lambda e: canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+
+        # Bind mousewheel globally while the dialog is open, then unbind on close.
+        # bind_all fires for every widget in the app; we must remove it when the
+        # Toplevel is destroyed, otherwise the dead canvas keeps being called.
+        def _on_mousewheel(event: tk.Event) -> None:
+            try:
+                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            except tk.TclError:
+                pass  # canvas already destroyed
+
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
+        def _on_settings_destroy(event: tk.Event) -> None:
+            # Only act on the Toplevel itself, not on child-widget destroy events.
+            if event.widget is win:
+                try:
+                    canvas.unbind_all("<MouseWheel>")
+                except Exception:
+                    pass
+
+        win.bind("<Destroy>", _on_settings_destroy)
 
         inner.columnconfigure(0, weight=1)
         row = 0
