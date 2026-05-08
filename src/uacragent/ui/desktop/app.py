@@ -126,6 +126,7 @@ class ConversationApp(tk.Tk):
         self._session = AgentSession()
         self._agent: Optional[ConversationAgent] = None
         self._is_busy = False
+        self._cancel_event = threading.Event()  # set to abort in-flight requests
 
         # True once a session's workspace has been committed (Load Session ran
         # or session was loaded from disk).  Prevents workspace from being changed.
@@ -423,8 +424,11 @@ class ConversationApp(tk.Tk):
         self._send_btn = ttk.Button(btn_col, text="Send", width=8,
                                     command=self._on_send)
         self._send_btn.pack(fill="x", pady=(0, 4))
+        self._cancel_btn = ttk.Button(btn_col, text="✕ Cancel", width=8,
+                                      command=self._on_cancel)
+        # _cancel_btn is pack()ed / pack_forget()en dynamically by _set_busy
         self._busy_label = ttk.Label(btn_col, text="", foreground="gray",
-                                     font=("TkDefaultFont", 9))
+                                     font=("TkDefaultFont", 9), wraplength=72)
         self._busy_label.pack()
 
     # ------------------------------------------------------------------
@@ -698,6 +702,9 @@ class ConversationApp(tk.Tk):
         action_row.grid(row=1, column=0, sticky="ew")
         ttk.Button(action_row, text="⟳  Load Session",
                    command=self._on_load_session
+                   ).pack(side="left", padx=(0, 8))
+        ttk.Button(action_row, text="✓  Apply",
+                   command=self._on_apply_settings
                    ).pack(side="left", padx=(0, 8))
         ttk.Button(action_row, text="Close",
                    command=win.destroy
@@ -1401,9 +1408,11 @@ class ConversationApp(tk.Tk):
             try:
                 agent = self._get_agent()
                 msg = agent.initialize_session(self._session)
-                self.after(0, self._on_session_loaded, msg)
+                if not self._cancel_event.is_set():
+                    self.after(0, self._on_session_loaded, msg)
             except Exception as exc:
-                self.after(0, self._on_session_load_error, str(exc))
+                if not self._cancel_event.is_set():
+                    self.after(0, self._on_session_load_error, str(exc))
 
         threading.Thread(target=_work, daemon=True).start()
 
@@ -1420,7 +1429,12 @@ class ConversationApp(tk.Tk):
     def _on_session_load_error(self, error: str) -> None:
         self._set_busy(False)
         self._session_status_var.set(f"Error: {error}")
-        self._append_chat("assistant", f"⚠️ Failed to load session: {error}")
+        self._append_chat("system", f"⚠️ Failed to load session: {error}")
+        messagebox.showerror(
+            "Session Load Failed",
+            f"Could not load the session:\n\n{error}\n\n"
+            "Check your API key, file paths, and network connection, then try again."
+        )
 
     # ------------------------------------------------------------------
     # Chat send / receive
@@ -1457,9 +1471,11 @@ class ConversationApp(tk.Tk):
         def _work() -> None:
             try:
                 response = self._get_agent().chat(message, self._session)
-                self.after(0, self._on_chat_response, response)
+                if not self._cancel_event.is_set():
+                    self.after(0, self._on_chat_response, response)
             except Exception as exc:
-                self.after(0, self._on_chat_error, str(exc))
+                if not self._cancel_event.is_set():
+                    self.after(0, self._on_chat_error, str(exc))
 
         threading.Thread(target=_work, daemon=True).start()
 
@@ -1477,7 +1493,12 @@ class ConversationApp(tk.Tk):
 
     def _on_chat_error(self, error: str) -> None:
         self._set_busy(False)
-        self._append_chat("assistant", f"⚠️ Error: {error}")
+        self._append_chat("system", f"⚠️ Error: {error}")
+        messagebox.showerror(
+            "Response Failed",
+            f"The agent could not complete your request:\n\n{error}\n\n"
+            "You can try sending your message again."
+        )
 
     # ------------------------------------------------------------------
     # Chat display helpers
@@ -1608,6 +1629,29 @@ class ConversationApp(tk.Tk):
         }
         save_session(self._session, ui_extras)
 
+    def _on_apply_settings(self) -> None:
+        """Apply settings immediately without re-indexing documents.
+
+        Syncs all fields → session, injects API keys into env, updates the
+        header, and persists to disk.  Use this for changes to course info,
+        exam options, extra instructions, model/key, or export format.
+        Use Load Session when you add/remove documents or switch embedding model.
+        """
+        self._sync_session_from_vars()
+        self._inject_api_keys()
+        # Reset agent so it re-reads updated provider/model on next message
+        self._agent = None
+        self._update_header()
+        self._save_current_session()
+        self._refresh_session_list()
+        if self._settings_alive():
+            try:
+                self._settings_status_var.set(
+                    "✓ Settings applied. Use Load Session if you changed documents or embedding."
+                )
+            except tk.TclError:
+                pass
+
     def _on_close(self) -> None:
         self._save_current_session()
         self.destroy()
@@ -1621,7 +1665,18 @@ class ConversationApp(tk.Tk):
         self._send_btn.configure(state="disabled" if busy else "normal")
         self._load_btn.configure(state="disabled" if busy else "normal")
         self._busy_label.configure(text=label)
+        if busy:
+            self._cancel_event.clear()
+            self._cancel_btn.pack(fill="x", pady=(2, 0))
+        else:
+            self._cancel_btn.pack_forget()
 
+
+    def _on_cancel(self) -> None:
+        """Signal the in-flight background request to be discarded."""
+        self._cancel_event.set()
+        self._set_busy(False)
+        self._append_chat("system", "Request cancelled.")
 
 # ---------------------------------------------------------------------------
 # Entry point
