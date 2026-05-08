@@ -6,22 +6,30 @@ from pathlib import Path
 import pytest
 
 from uacragent.domain.types import DocumentType
-from uacragent.infra.workspace import WorkspacePaths, ensure_workspace_dirs, workspace_paths
+from uacragent.infra.workspace import (
+    AGENT_SUBDIR,
+    WorkspacePaths,
+    ensure_workspace_dirs,
+    workspace_paths,
+)
 
 
 def test_workspace_paths_structure(tmp_path: Path):
     ws = workspace_paths(tmp_path, "myws")
     assert ws.root == tmp_path / "myws"
-    assert ws.uploads == tmp_path / "myws" / "uploads"
-    assert ws.chroma == tmp_path / "myws" / "chroma_db"
-    assert ws.outputs == tmp_path / "myws" / "outputs"
+    assert ws.agent_dir == tmp_path / "myws" / AGENT_SUBDIR
+    assert ws.uploads == tmp_path / "myws" / AGENT_SUBDIR / "uploads"
+    assert ws.chroma == tmp_path / "myws" / AGENT_SUBDIR / "chroma_db"
+    assert ws.outputs == tmp_path / "myws" / AGENT_SUBDIR / "outputs"
 
 
 def test_workspace_paths_all_doc_types(tmp_path: Path):
     ws = workspace_paths(tmp_path, "test")
     for doc_type in DocumentType:
         assert doc_type in ws.doc_folders
-        assert ws.doc_folders[doc_type] == tmp_path / "test" / "uploads" / doc_type.value
+        assert ws.doc_folders[doc_type] == (
+            tmp_path / "test" / AGENT_SUBDIR / "uploads" / doc_type.value
+        )
 
 
 def test_workspace_paths_default_id(tmp_path: Path):
@@ -39,6 +47,7 @@ def test_ensure_workspace_dirs_creates_all(tmp_path: Path):
     ensure_workspace_dirs(ws)
 
     assert ws.root.is_dir()
+    assert ws.agent_dir.is_dir()
     assert ws.uploads.is_dir()
     assert ws.chroma.is_dir()
     assert ws.outputs.is_dir()

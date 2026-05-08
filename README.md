@@ -231,10 +231,12 @@ The GUI lets you:
 - Add files to different document type categories (Syllabus, Lecture Notes, etc.)
 - Choose exam settings and export format
 - Pick a custom workspace folder before first load, or let the app auto-create one
+- Use **Apply** to save setting changes without re-indexing
 - Click **Load Session** to commit the workspace path and index documents into the session retriever
 - Chat with the assistant about the course material
 - Use quick actions to generate a Review Summary, Practice Booklet, Mock Exam, or Exam Prediction
 - Open generated outputs directly from the chat transcript
+- Cancel an in-flight indexing or chat request from the main panel
 
 Works on macOS, Windows, and Linux.
 
@@ -247,7 +249,8 @@ The desktop app persists session state so you can return to previous work.
 - Session index: `<app_data_dir>/index.json`
 - Local embedding model cache: `<app_data_dir>/models/`
 - Auto-created workspaces: `<app_data_dir>/sessions/<workspace_id>/`
-- Per-session state file: `<workspace>/session.json`
+- Per-session agent bundle: `<workspace>/.uacragent/`
+- Per-session state file: `<workspace>/.uacragent/session.json`
 
 Persisted data includes course settings, selected files, chosen provider/model,
 chat history, and UI extras such as export format. API keys are not saved.
@@ -260,11 +263,12 @@ Notes:
   app settings button and takes full effect after restarting the app.
 - Local embedding models are cached under `<app_data_dir>/models/` via
   HuggingFace cache redirection.
+- All agent-generated files inside a workspace are grouped under
+  `<workspace>/.uacragent/` so they stay separate from the user’s own files.
 - Once a session has been loaded and its workspace committed, that workspace is
   treated as fixed for the lifetime of the session.
-- Deleting a session removes agent-created artifacts inside its workspace,
-  including `session.json`, `uploads/`, `outputs/`, and `chroma_db/`. Original
-  source files outside the workspace are not affected.
+- Deleting a session removes the `<workspace>/.uacragent/` bundle. Original
+  source files outside that folder are not affected.
 
 ## Run (CLI)
 
@@ -388,10 +392,10 @@ Endpoints:
 
 ## Output
 
-- Canonical output is written to `<workspace>/outputs/review_<timestamp>.md`
+- Canonical output is written to `<workspace>/.uacragent/outputs/review_<timestamp>.md`
 - When using the desktop GUI, optional DOCX/PDF exports are written to the same output folder
-- Uploaded files are organized under `<workspace>/uploads/<doc_type>/`
-- Vector DB is persisted under `<workspace>/chroma_db/`
+- Uploaded file copies are organized under `<workspace>/.uacragent/uploads/<doc_type>/`
+- Vector DB is persisted under `<workspace>/.uacragent/chroma_db/`
 - The generated document header includes all provided course information fields
 
 Workspace resolution:
