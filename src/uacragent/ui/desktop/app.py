@@ -144,13 +144,10 @@ class ConversationApp(tk.Tk):
 
         self._build_ui()
 
-        # Restore last-used session or start fresh
+        # Populate the session list but do not auto-select anything.
+        # The right panel stays blank until the user clicks a session.
         self._refresh_session_list()
-        sessions = list_sessions()
-        if sessions:
-            self._load_session_from_workspace(Path(sessions[0]["workspace"]))
-        else:
-            self._show_welcome()
+        self._show_idle()
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -337,7 +334,7 @@ class ConversationApp(tk.Tk):
         self._paned.add(right, minsize=500, stretch="always")
 
         # ── Top bar ───────────────────────────────────────────────────
-        top_bar = ttk.Frame(right)
+        self._chat_top_bar = top_bar = ttk.Frame(right)
         top_bar.grid(row=0, column=0, sticky="ew", pady=(0, 4))
         top_bar.columnconfigure(0, weight=1)
 
@@ -357,7 +354,7 @@ class ConversationApp(tk.Tk):
         btn_frame.grid(row=0, column=1, rowspan=2, sticky="e")
 
         self._load_btn = ttk.Button(
-            btn_frame, text="⟳  Load Session", command=self._on_load_session
+            btn_frame, text="⟳  Re-index", command=self._on_load_session
         )
         self._load_btn.pack(side="left", padx=(0, 6))
 
@@ -365,12 +362,11 @@ class ConversationApp(tk.Tk):
             btn_frame, text="⚙  Settings", command=self._open_settings
         ).pack(side="left")
 
-        ttk.Separator(right, orient="horizontal").grid(
-            row=0, column=0, sticky="ew", pady=(42, 0)
-        )
+        self._chat_separator = ttk.Separator(right, orient="horizontal")
+        self._chat_separator.grid(row=0, column=0, sticky="ew", pady=(42, 0))
 
         # ── Chat history ──────────────────────────────────────────────
-        hist_frame = ttk.Frame(right)
+        self._hist_frame = hist_frame = ttk.Frame(right)
         hist_frame.grid(row=1, column=0, sticky="nsew")
         hist_frame.rowconfigure(0, weight=1)
         hist_frame.columnconfigure(0, weight=1)
@@ -400,7 +396,7 @@ class ConversationApp(tk.Tk):
             font=("TkDefaultFont", 10, "italic"), spacing1=6)
 
         # ── Quick actions ─────────────────────────────────────────────
-        qa_frame = ttk.LabelFrame(right, text="Quick Actions", padding=4)
+        self._qa_frame = qa_frame = ttk.LabelFrame(right, text="Quick Actions", padding=4)
         qa_frame.grid(row=2, column=0, sticky="ew", pady=(_PAD, 4))
         for label, message in _QUICK_ACTIONS:
             ttk.Button(qa_frame, text=label,
@@ -408,7 +404,7 @@ class ConversationApp(tk.Tk):
                        ).pack(side="left", padx=3, pady=2)
 
         # ── Input area ────────────────────────────────────────────────
-        input_frame = ttk.Frame(right)
+        self._input_frame = input_frame = ttk.Frame(right)
         input_frame.grid(row=3, column=0, sticky="ew")
         input_frame.columnconfigure(0, weight=1)
 
@@ -431,9 +427,67 @@ class ConversationApp(tk.Tk):
                                      font=("TkDefaultFont", 9), wraplength=72)
         self._busy_label.pack()
 
+        # ── Placeholder (shown when no session is active) ─────────────
+        self._placeholder_frame = ttk.Frame(right)
+        ttk.Label(
+            self._placeholder_frame,
+            text="Select a session from the left panel\nor click  + New  to create a new one.",
+            foreground="#aaaaaa",
+            font=("TkDefaultFont", 14),
+            justify="center",
+        ).place(relx=0.5, rely=0.5, anchor="center")
+
+        # Start in blank state — activated by session select or + New.
+        self._set_chat_active(False)
+
+    # ------------------------------------------------------------------
+    # Chat pane show / hide
+    # ------------------------------------------------------------------
+
+    def _set_chat_active(self, active: bool) -> None:
+        """Show the full chat UI (active=True) or a blank placeholder (active=False)."""
+        chat_widgets = [
+            self._chat_top_bar,
+            self._chat_separator,
+            self._hist_frame,
+            self._qa_frame,
+            self._input_frame,
+        ]
+        if active:
+            self._placeholder_frame.grid_remove()
+            for w in chat_widgets:
+                w.grid()          # restores original grid options saved by grid_remove()
+        else:
+            for w in chat_widgets:
+                w.grid_remove()
+            self._placeholder_frame.grid(
+                row=0, column=0, rowspan=4, sticky="nsew")
+
     # ------------------------------------------------------------------
     # Settings Toplevel dialog
     # ------------------------------------------------------------------
+
+    def _reset_setting_vars_from_committed(self) -> None:
+        """Reset every setting StringVar to the last *committed* state.
+
+        Called each time the Settings dialog is freshly opened so that any
+        edits the user made and then discarded (closed without clicking Apply)
+        are thrown away rather than shown as if they were the real values.
+
+        Committed sources:
+          • API keys  → os.environ  (written by _inject_api_keys via Apply)
+          • Everything else → self._session  (written by _sync_session_from_vars via Apply)
+        """
+        # API keys — ground truth is os.environ, NOT the StringVars
+        self._gemini_key_var.set(os.environ.get("GOOGLE_API_KEY", "").strip())
+        self._openai_key_var.set(os.environ.get("OPENAI_API_KEY", "").strip())
+        self._deepseek_key_var.set(os.environ.get("DEEPSEEK_API_KEY", "").strip())
+
+        # Session fields — ground truth is self._session
+        # _sync_vars_from_session() is safe to call before the dialog is built:
+        # the file-listbox and _extra_text updates inside it are guarded by
+        # _settings_alive() which returns False at this point.
+        self._sync_vars_from_session()
 
     def _open_settings(self) -> None:
         """Open (or bring to front) the settings dialog."""
@@ -442,13 +496,30 @@ class ConversationApp(tk.Tk):
             self._settings_win.focus_set()
             return
 
+        # Discard any uncommitted edits from a previous open-then-close.
+        # This must happen before building the widgets so every field
+        # is initialised from the committed state.
+        self._reset_setting_vars_from_committed()
+
         win = tk.Toplevel(self)
         win.title("Session Settings")
         win.minsize(560, 600)
         win.resizable(True, True)
         self._settings_win = win
 
-        # Scrollable canvas inside the dialog
+        # ── Fixed banner (always visible, above the scroll area) ──────
+        banner = tk.Frame(win, background="#fff8e1", padx=10, pady=6)
+        banner.pack(side="top", fill="x")
+        tk.Label(
+            banner,
+            text="✏️  Edit any setting below, then scroll down and click  ✓ Apply  to save and re-index.",
+            background="#fff8e1",
+            foreground="#5d4037",
+            font=("TkDefaultFont", 9),
+            anchor="w",
+        ).pack(side="left")
+
+        # ── Scrollable canvas inside the dialog ───────────────────────
         canvas = tk.Canvas(win, borderwidth=0, highlightthickness=0)
         sb = ttk.Scrollbar(win, orient="vertical", command=canvas.yview)
         canvas.configure(yscrollcommand=sb.set)
@@ -700,9 +771,6 @@ class ConversationApp(tk.Tk):
 
         action_row = ttk.Frame(btn_row_frame)
         action_row.grid(row=1, column=0, sticky="ew")
-        ttk.Button(action_row, text="⟳  Load Session",
-                   command=self._on_load_session
-                   ).pack(side="left", padx=(0, 8))
         ttk.Button(action_row, text="✓  Apply",
                    command=self._on_apply_settings
                    ).pack(side="left", padx=(0, 8))
@@ -1226,7 +1294,10 @@ class ConversationApp(tk.Tk):
         if idx >= len(self._session_records):
             return
         ws = Path(self._session_records[idx]["workspace"])
+        self._set_chat_active(True)
+        # Load metadata + replay history immediately, then auto-index.
         self._load_session_from_workspace(ws)
+        self._start_indexing(show_error_dialog=False)
 
     def _on_new_session(self) -> None:
         """Start a blank session and open settings so the user can fill it in."""
@@ -1236,8 +1307,9 @@ class ConversationApp(tk.Tk):
         self._file_listboxes = {}          # clear stale widget refs
         self._init_setting_vars()          # reset all vars
         self._sync_vars_from_session()
+        self._set_chat_active(True)
         self._header_course_var.set("New session")
-        self._session_status_var.set("Fill in the settings and click Load Session.")
+        self._session_status_var.set("Fill in the settings and click Apply.")
         self._clear_chat()
         self._show_welcome()
         self._open_settings()
@@ -1266,14 +1338,11 @@ class ConversationApp(tk.Tk):
             return
         ws = Path(rec["workspace"])
         delete_session(ws)
-        # If the deleted session is the active one, start fresh
+        # If the deleted session is the active one, return to idle
         active_ws = (self._session.workspace_folder or self._default_workspace()).resolve()
         if active_ws == ws.resolve():
             self._session = AgentSession()
-            self._clear_chat()
-            self._show_welcome()
-            self._header_course_var.set("No session loaded")
-            self._session_status_var.set("")
+            self._show_idle()
         self._refresh_session_list()
 
     def _on_rename_session(self, _event: object = None) -> None:
@@ -1340,45 +1409,72 @@ class ConversationApp(tk.Tk):
         return (_UAR_DIR / "workspaces" / "default").resolve()
 
     # ------------------------------------------------------------------
-    # Load / reload session (index documents)
+    # Indexing  (shared core used by sidebar select, Apply, and Re-index)
     # ------------------------------------------------------------------
 
-    def _on_load_session(self) -> None:
+    def _start_indexing(self, *, show_error_dialog: bool = True) -> None:
+        """Index session documents in a background thread.
+
+        *show_error_dialog* controls whether blocking error messageboxes are
+        shown on failure.  Pass False for automatic triggers (sidebar select)
+        so errors appear as inline chat messages instead.
+        """
         if self._is_busy:
             return
-        if not self._inject_api_key():
-            provider = self._llm_provider_var.get()
+
+        # ── Pre-flight checks ──────────────────────────────────────────
+        # Check committed session state — do NOT read or inject live StringVars.
+        # Apply is the only entry-point that commits settings to os.environ.
+        provider = self._session.llm_provider or "gemini"
+        env_var = self._PROVIDER_KEY_ENV.get(provider, "GOOGLE_API_KEY")
+        if not os.environ.get(env_var, "").strip():
             label = self._PROVIDER_KEY_LABEL.get(provider, "API Key")
-            messagebox.showwarning(
-                "API Key Required",
-                f"No {label} found for the selected LLM provider ({provider}).\n\n"
-                "Enter your key in ⚙ Settings → API Key.")
+            if show_error_dialog:
+                messagebox.showwarning(
+                    "API Key Required",
+                    f"No {label} found for the selected LLM provider ({provider}).\n\n"
+                    "Enter your key in ⚙ Settings → API Key, then click Apply.")
+            else:
+                self._append_chat(
+                    "system",
+                    f"⚠️ No {label} configured. Open ⚙ Settings → API Key to enter "
+                    "one, then click Apply.")
             return
 
-        # Embeddings always need a Gemini or OpenAI key, regardless of LLM provider.
         if not self._has_embedding_key():
-            messagebox.showwarning(
-                "Embedding Key Required",
-                "Document indexing requires a Google or OpenAI API key for embeddings.\n\n"
-                "• Using Gemini or OpenAI as your LLM: the same key is used automatically.\n"
-                "• Using DeepSeek: enter a Gemini or OpenAI key in ⚙ Settings → "
-                "API Key → Embedding key."
-            )
-            self._open_settings()
+            if show_error_dialog:
+                messagebox.showwarning(
+                    "Embedding Key Required",
+                    "Document indexing requires a Google or OpenAI API key for embeddings.\n\n"
+                    "• Using Gemini or OpenAI as your LLM: the same key is used automatically.\n"
+                    "• Using DeepSeek: enter a Gemini or OpenAI key in ⚙ Settings → Embedding.")
+            else:
+                self._append_chat(
+                    "system",
+                    "⚠️ Embedding key required. Open ⚙ Settings → Embedding to "
+                    "configure, then click Apply.")
             return
-
-        self._sync_session_from_vars()
 
         if not self._session.course_name:
-            messagebox.showwarning("Course Name Required",
-                                   "Please enter a course name in ⚙ Settings.")
-            self._open_settings()
+            if show_error_dialog:
+                messagebox.showwarning("Course Name Required",
+                                       "Please enter a course name in ⚙ Settings.")
+                self._open_settings()
+            else:
+                self._append_chat(
+                    "system",
+                    "⚠️ Course name required. Open ⚙ Settings to fill in course "
+                    "details, then click Apply.")
             return
 
-        # Auto-assign workspace on first load if user didn't pick one.
-        # Placed under <global_data>/sessions/ to keep the global folder root
-        # clean (only index.json and config.json should live there).
-        # Once set here the workspace is locked for the lifetime of this session.
+        if not self._session.has_files():
+            self._append_chat(
+                "system",
+                "⚠️ No documents loaded. Add files in ⚙ Settings → Course Documents, "
+                "then click Apply to index them.")
+            return
+
+        # ── Workspace assignment (once, then locked) ───────────────────
         if not self._session.workspace_folder:
             self._session.workspace_folder = (
                 get_app_data_dir() / "sessions" / self._session.workspace_id
@@ -1386,13 +1482,12 @@ class ConversationApp(tk.Tk):
             self._workspace_var.set(str(self._session.workspace_folder))
         self._workspace_committed = True
 
-        # Ask for confirmation before downloading a local embedding model.
+        # ── Confirm local model download ───────────────────────────────
         if not self._confirm_model_download():
-            return  # user cancelled
+            return
 
+        # ── Start background indexing ──────────────────────────────────
         self._session.retriever = None
-        self._session.chat_history = []
-        self._clear_chat()
 
         if self._emb_provider_var.get() == "local" and not self._is_model_cached(
             self._local_model_var.get()
@@ -1403,6 +1498,9 @@ class ConversationApp(tk.Tk):
 
         self._set_busy(True, busy_label)
         self._session_status_var.set(busy_label)
+        self._append_chat("system", busy_label)
+
+        _show_err = show_error_dialog
 
         def _work() -> None:
             try:
@@ -1412,9 +1510,17 @@ class ConversationApp(tk.Tk):
                     self.after(0, self._on_session_loaded, msg)
             except Exception as exc:
                 if not self._cancel_event.is_set():
-                    self.after(0, self._on_session_load_error, str(exc))
+                    self.after(0, lambda e=str(exc): self._on_session_load_error(e, _show_err))
 
         threading.Thread(target=_work, daemon=True).start()
+
+    def _on_load_session(self) -> None:
+        """Manual Re-index button: re-index with currently *committed* settings.
+
+        Settings are committed by Apply — this button does not pull in any
+        uncommitted changes from the StringVars.
+        """
+        self._start_indexing(show_error_dialog=True)
 
     def _on_session_loaded(self, status: str) -> None:
         self._set_busy(False)
@@ -1422,18 +1528,30 @@ class ConversationApp(tk.Tk):
         self._session_status_var.set(status)
         if self._settings_alive():
             self._settings_status_var.set(status)
-        self._append_chat("assistant", f"**Session loaded.** {status}")
+        # History is already visible — just append the completion notice.
+        self._append_chat("system", f"✓ Documents indexed. {status}")
         self._save_current_session()
         self._refresh_session_list()
 
-    def _on_session_load_error(self, error: str) -> None:
+    def _on_session_load_error(self, error: str, show_dialog: bool = True) -> None:
         self._set_busy(False)
         self._session_status_var.set(f"Error: {error}")
-        self._append_chat("system", f"⚠️ Failed to load session: {error}")
+        self._append_chat("system", f"⚠️ Indexing failed: {error}")
+        if not show_dialog:
+            return
+        error_lower = error.lower()
+        if any(k in error_lower for k in ("api key", "api_key", "invalid_argument",
+                                           "authentication", "permission_denied",
+                                           "unauthenticated")):
+            detail = (
+                "Your API key appears to be missing or invalid.\n\n"
+                "Open ⚙ Settings → API Key, enter a valid key, and click Apply."
+            )
+        else:
+            detail = "Check your file paths and network connection, then try again."
         messagebox.showerror(
-            "Session Load Failed",
-            f"Could not load the session:\n\n{error}\n\n"
-            "Check your API key, file paths, and network connection, then try again."
+            "Indexing Failed",
+            f"Could not index session documents:\n\n{error}\n\n{detail}"
         )
 
     # ------------------------------------------------------------------
@@ -1452,16 +1570,20 @@ class ConversationApp(tk.Tk):
         message = self._input_text.get("1.0", tk.END).strip()
         if not message:
             return
-        if not self._inject_api_key():
-            provider = self._llm_provider_var.get()
+        # Use the committed session state — do NOT read live StringVars here.
+        # Settings only take effect after the user clicks Apply.
+        provider = self._session.llm_provider or "gemini"
+        env_var = self._PROVIDER_KEY_ENV.get(provider, "GOOGLE_API_KEY")
+        if not os.environ.get(env_var, "").strip():
             label = self._PROVIDER_KEY_LABEL.get(provider, "API Key")
-            messagebox.showwarning("API Key Required",
-                                   f"Enter your {label} in ⚙ Settings → API Key.")
+            messagebox.showwarning(
+                "API Key Required",
+                f"Enter your {label} in ⚙ Settings → API Key and click  ✓ Apply.")
             return
-        self._sync_session_from_vars()
         if not self._session.course_name:
-            messagebox.showwarning("Course Name Required",
-                                   "Please enter a course name in ⚙ Settings.")
+            messagebox.showwarning(
+                "Course Name Required",
+                "Please enter a course name in ⚙ Settings and click  ✓ Apply.")
             self._open_settings()
             return
         self._input_text.delete("1.0", tk.END)
@@ -1494,10 +1616,19 @@ class ConversationApp(tk.Tk):
     def _on_chat_error(self, error: str) -> None:
         self._set_busy(False)
         self._append_chat("system", f"⚠️ Error: {error}")
+        error_lower = error.lower()
+        if any(k in error_lower for k in ("api key", "api_key", "invalid_argument",
+                                           "authentication", "permission_denied",
+                                           "unauthenticated")):
+            detail = (
+                "Your API key appears to be missing or invalid.\n\n"
+                "Open ⚙ Settings → API Key, enter a valid key, and click Apply."
+            )
+        else:
+            detail = "You can try sending your message again."
         messagebox.showerror(
             "Response Failed",
-            f"The agent could not complete your request:\n\n{error}\n\n"
-            "You can try sending your message again."
+            f"The agent could not complete your request:\n\n{error}\n\n{detail}"
         )
 
     # ------------------------------------------------------------------
@@ -1509,6 +1640,10 @@ class ConversationApp(tk.Tk):
         self._chat_text.delete("1.0", tk.END)
         self._chat_text.configure(state="disabled")
 
+    def _show_idle(self) -> None:
+        """Blank right panel shown at startup before any session is selected."""
+        self._set_chat_active(False)
+
     def _show_welcome(self) -> None:
         self._append_chat(
             "assistant",
@@ -1519,23 +1654,14 @@ class ConversationApp(tk.Tk):
         )
 
     def _replay_chat_history(self) -> None:
+        """Re-render saved messages into the chat display. No status hints — those
+        come from the indexing flow that follows immediately after."""
         from langchain_core.messages import HumanMessage, AIMessage
         for msg in self._session.chat_history:
             if isinstance(msg, HumanMessage):
                 self._append_chat("user", msg.content)
             elif isinstance(msg, AIMessage):
                 self._append_chat("assistant", msg.content)
-        if self._session.chat_history:
-            self._append_chat(
-                "system",
-                "Previous session restored. Click Load Session to re-index documents.",
-            )
-        else:
-            self._append_chat(
-                "assistant",
-                f"Session for **{self._session.course_name or 'this course'}** loaded. "
-                "Click Load Session to index documents, then start chatting.",
-            )
 
     def _append_chat(self, role: str, text: str) -> None:
         self._chat_text.configure(state="normal")
@@ -1621,7 +1747,10 @@ class ConversationApp(tk.Tk):
     # ------------------------------------------------------------------
 
     def _save_current_session(self) -> None:
-        self._sync_session_from_vars()
+        # Do NOT call _sync_session_from_vars() here.
+        # The session object always holds the last-committed state (set by
+        # _on_apply_settings).  Syncing from live StringVars would allow
+        # uncommitted settings to leak into the saved file silently.
         ui_extras = {
             "export_format":       self._export_format_var.get(),
             "embedding_provider":  self._emb_provider_var.get(),
@@ -1630,27 +1759,24 @@ class ConversationApp(tk.Tk):
         save_session(self._session, ui_extras)
 
     def _on_apply_settings(self) -> None:
-        """Apply settings immediately without re-indexing documents.
+        """Save settings then re-index documents.
 
-        Syncs all fields → session, injects API keys into env, updates the
-        header, and persists to disk.  Use this for changes to course info,
-        exam options, extra instructions, model/key, or export format.
-        Use Load Session when you add/remove documents or switch embedding model.
+        Syncs all fields → session, injects API keys, persists to disk, and
+        triggers a full re-index so every change (model, key, docs, embedding,
+        course info) takes effect immediately.
         """
         self._sync_session_from_vars()
         self._inject_api_keys()
-        # Reset agent so it re-reads updated provider/model on next message
-        self._agent = None
+        self._agent = None          # force re-creation with updated provider/model
         self._update_header()
         self._save_current_session()
         self._refresh_session_list()
         if self._settings_alive():
             try:
-                self._settings_status_var.set(
-                    "✓ Settings applied. Use Load Session if you changed documents or embedding."
-                )
+                self._settings_status_var.set("Applying settings and re-indexing…")
             except tk.TclError:
                 pass
+        self._start_indexing(show_error_dialog=True)
 
     def _on_close(self) -> None:
         self._save_current_session()

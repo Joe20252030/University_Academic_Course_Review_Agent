@@ -321,7 +321,8 @@ class AgentPipeline:
         if not chunks:
             raise LLMError("No document chunks were created. Please check your input files.")
 
-        vectorstore = get_or_create_vectorstore(chunks, self.settings, ws)
+        vectorstore = get_or_create_vectorstore(chunks, self.settings, ws,
+                                                classified_files=classified_files)
         retriever = build_retriever(vectorstore, self.settings)
 
         all_docs: list[Document] = []
@@ -394,7 +395,8 @@ class AgentPipeline:
                 "Please check that the files are readable."
             )
 
-        vectorstore = get_or_create_vectorstore(chunks, self.settings, ws)
+        vectorstore = get_or_create_vectorstore(chunks, self.settings, ws,
+                                                classified_files=session.classified_files)
         return build_retriever(vectorstore, self.settings)
 
     def run_simple(
