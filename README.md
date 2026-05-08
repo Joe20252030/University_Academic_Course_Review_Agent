@@ -231,7 +231,7 @@ The GUI lets you:
 - Add files to different document type categories (Syllabus, Lecture Notes, etc.)
 - Choose exam settings and export format
 - Pick a custom workspace folder before first load, or let the app auto-create one
-- Use **Apply** to save setting changes without re-indexing
+- Use **Apply** to commit setting changes and re-index with the updated session configuration
 - Click **Load Session** to commit the workspace path and index documents into the session retriever
 - Chat with the assistant about the course material
 - Use quick actions to generate a Review Summary, Practice Booklet, Mock Exam, or Exam Prediction
