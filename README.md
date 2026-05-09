@@ -43,21 +43,21 @@ Each task uses dedicated planner and writer prompts tuned for its output format.
 
 The project supports multiple LLM providers for chat, planning, and writing:
 
-| Provider | Use Cases | Required Key |
-|----------|-----------|--------------|
-| Gemini   | Chat, planning, writing, embeddings | `GOOGLE_API_KEY` |
-| OpenAI   | Chat, planning, writing, embeddings | `OPENAI_API_KEY` |
-| DeepSeek | Chat, planning, writing | `DEEPSEEK_API_KEY` |
+| Provider | Use Cases                           | Required Key       |
+|----------|-------------------------------------|--------------------|
+| Gemini   | Chat, planning, writing, embeddings | `GOOGLE_API_KEY`   |
+| OpenAI   | Chat, planning, writing, embeddings | `OPENAI_API_KEY`   |
+| DeepSeek | Chat, planning, writing             | `DEEPSEEK_API_KEY` |
 
 ## Embedding Providers
 
 Document retrieval embeddings are configured independently from the chat/writer
 LLM provider:
 
-| Provider | Use Cases | Requirements |
-|----------|-----------|--------------|
-| Gemini   | Cloud embeddings | `GOOGLE_API_KEY` |
-| OpenAI   | Cloud embeddings | `OPENAI_API_KEY` |
+| Provider | Use Cases                                  | Requirements                            |
+|----------|--------------------------------------------|-----------------------------------------|
+| Gemini   | Cloud embeddings                           | `GOOGLE_API_KEY`                        |
+| OpenAI   | Cloud embeddings                           | `OPENAI_API_KEY`                        |
 | Local    | On-device sentence-transformers embeddings | No API key; first use downloads a model |
 
 The desktop GUI exposes all three embedding options. Local embeddings are free
@@ -209,11 +209,11 @@ Sections are written **sequentially** (one at a time) to avoid overwhelming the 
 
 If you still see `503 ServiceUnavailable` or `429 Too Many Requests` errors, increase `LLM_REQUEST_DELAY`:
 
-| Variable | Default | Description |
-|---|---|---|
-| `LLM_REQUEST_DELAY` | `3.0` | Seconds to wait after each LLM call completes before starting the next |
-| `LLM_MAX_RETRIES` | `2` | Max retry attempts on transient 503/429/quota errors (keep low — retries generate more requests) |
-| `LLM_RETRY_BASE_DELAY` | `10.0` | Initial backoff delay in seconds before the first retry (doubles each attempt, capped at 60 s) |
+| Variable               | Default | Description                                                                                      |
+|------------------------|---------|--------------------------------------------------------------------------------------------------|
+| `LLM_REQUEST_DELAY`    | `3.0`   | Seconds to wait after each LLM call completes before starting the next                           |
+| `LLM_MAX_RETRIES`      | `2`     | Max retry attempts on transient 503/429/quota errors (keep low — retries generate more requests) |
+| `LLM_RETRY_BASE_DELAY` | `10.0`  | Initial backoff delay in seconds before the first retry (doubles each attempt, capped at 60 s)   |
 
 ## Run (Desktop GUI)
 
