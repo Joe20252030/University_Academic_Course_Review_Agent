@@ -533,24 +533,59 @@ class ConversationApp(tk.Tk):
         canvas.bind("<Configure>",
                     lambda e: canvas.itemconfig(win_id, width=e.width))
 
-        # Bind mousewheel globally while the dialog is open, then unbind on close.
-        # bind_all fires for every widget in the app; we must remove it when the
-        # Toplevel is destroyed, otherwise the dead canvas keeps being called.
+        # ── Mouse-wheel scrolling ─────────────────────────────────────
+        # Strategy: bind the handler directly on every widget inside the dialog
+        # rather than using bind_all.
+        #
+        # Why not bind_all?
+        #   bind_all adds to tkinter's "all" binding tag, which fires *after*
+        #   class-level handlers.  Text and Listbox widgets have class bindings
+        #   for <MouseWheel> that can suppress propagation on some platforms,
+        #   so bind_all may never fire when the cursor is over those widgets.
+        #
+        # Why fix the delta calculation?
+        #   On Windows/physical mouse wheel event.delta is ±120 per notch, so
+        #   dividing by 120 gives ±1.  On macOS trackpad event.delta is a small
+        #   integer (±1…±30 per gesture frame), and int(±10 / 120) == 0 — nothing
+        #   scrolls.  We normalise so at least 1 unit is always scrolled.
+
         def _on_mousewheel(event: tk.Event) -> None:
             try:
-                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+                delta = event.delta
+                if delta == 0:
+                    return
+                # Large delta → physical scroll wheel (Windows-style ±120 per notch).
+                # Small delta → macOS trackpad continuous scroll.
+                if abs(delta) >= 120:
+                    units = int(-delta / 120)
+                else:
+                    units = -1 if delta > 0 else 1
+                canvas.yview_scroll(units, "units")
             except tk.TclError:
                 pass  # canvas already destroyed
 
-        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        def _bind_mousewheel(widget: tk.Widget) -> None:
+            """Recursively bind the scroll handler on *widget* and all descendants."""
+            try:
+                widget.bind("<MouseWheel>", _on_mousewheel, add=True)
+            except tk.TclError:
+                pass
+            for child in widget.winfo_children():
+                _bind_mousewheel(child)
 
+        # Bind on the canvas and the banner immediately (they exist now).
+        canvas.bind("<MouseWheel>", _on_mousewheel, add=True)
+        banner.bind("<MouseWheel>", _on_mousewheel, add=True)
+
+        # Bind on the inner frame and everything inside it after the dialog is
+        # fully built (after_idle runs once the event loop returns).
+        win.after_idle(lambda: _bind_mousewheel(inner))
+
+        # No global bind_all needed — destroying the Toplevel removes all
+        # widget-level bindings automatically, so no explicit cleanup required.
+        # Keep the Destroy handler only to catch any edge-case canvas errors.
         def _on_settings_destroy(event: tk.Event) -> None:
-            # Only act on the Toplevel itself, not on child-widget destroy events.
-            if event.widget is win:
-                try:
-                    canvas.unbind_all("<MouseWheel>")
-                except Exception:
-                    pass
+            pass  # instance bindings are cleaned up automatically with the widgets
 
         win.bind("<Destroy>", _on_settings_destroy)
 
@@ -726,17 +761,45 @@ class ConversationApp(tk.Tk):
                        command=self._on_reset_workspace
                        ).grid(row=0, column=2, padx=(4, 0))
 
+        # ── Deletion warning ──────────────────────────────────────────
+        warn_frame = tk.Frame(wf, background="#fff3e0",
+                              highlightbackground="#e65100",
+                              highlightthickness=1,
+                              padx=8, pady=5)
+        warn_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 2))
+        tk.Label(
+            warn_frame,
+            text="⚠️  Deletion warning",
+            background="#fff3e0", foreground="#bf360c",
+            font=("TkDefaultFont", 9, "bold"),
+            anchor="w",
+        ).pack(side="top", fill="x")
+        tk.Label(
+            warn_frame,
+            text=(
+                "When this session is deleted, the agent bundle (.uacragent/) inside "
+                "the workspace folder — including all session history, the vector store, "
+                "generated outputs, and uploaded file copies — is permanently removed.\n"
+                "If the workspace folder is empty afterwards, the folder itself is also deleted.\n"
+                "If you choose a folder that already contains your own files, those files are "
+                "not affected — only .uacragent/ is removed."
+            ),
+            background="#fff3e0", foreground="#4e342e",
+            font=("TkDefaultFont", 9),
+            anchor="w", justify="left", wraplength=460,
+        ).pack(side="top", fill="x")
+
         ttk.Label(wf, text="Export format:").grid(
-            row=1, column=0, sticky="w", padx=(0, 6), pady=(6, 0))
+            row=2, column=0, sticky="w", padx=(0, 6), pady=(6, 0))
         ttk.Combobox(wf, textvariable=self._export_format_var,
                      values=[e.value for e in ExportFormat],
                      state="readonly", width=12
-                     ).grid(row=1, column=1, sticky="w", pady=(6, 0))
+                     ).grid(row=2, column=1, sticky="w", pady=(6, 0))
 
         ttk.Label(wf, text="Extra instructions:").grid(
-            row=2, column=0, sticky="nw", padx=(0, 6), pady=(6, 0))
+            row=3, column=0, sticky="nw", padx=(0, 6), pady=(6, 0))
         self._extra_text = tk.Text(wf, height=3, wrap="word")
-        self._extra_text.grid(row=2, column=1, sticky="ew", pady=(6, 0))
+        self._extra_text.grid(row=3, column=1, sticky="ew", pady=(6, 0))
         self._extra_text.insert("1.0", self._extra_instructions_var.get())
 
         # ── Course Documents ──────────────────────────────────────────
@@ -1286,6 +1349,18 @@ class ConversationApp(tk.Tk):
             date = _fmt_dt(rec.get("last_modified", ""))
             lb.insert(tk.END, f"  {name}\n  {date}" if date else f"  {name}")
 
+        # Restore the listbox selection to the currently active session so that
+        # the selection is not silently lost whenever the list is refreshed
+        # (e.g. after indexing completes, after rename, after a chat auto-save).
+        # Only do this when a committed session is actually active.
+        if self._workspace_committed and self._session.workspace_folder:
+            active = Path(self._session.workspace_folder).resolve()
+            for i, rec in enumerate(self._session_records):
+                if Path(rec.get("workspace", "")).resolve() == active:
+                    lb.selection_set(i)
+                    lb.see(i)
+                    break
+
     def _on_session_select(self, _event: object = None) -> None:
         sel = self._session_listbox.curselection()
         if not sel:
@@ -1338,10 +1413,14 @@ class ConversationApp(tk.Tk):
             return
         ws = Path(rec["workspace"])
         delete_session(ws)
-        # If the deleted session is the active one, return to idle
+        # If the deleted session is the active one, return to a clean idle state.
+        # _workspace_committed MUST be reset here — without it, _on_close() would
+        # call _save_current_session() on the blank AgentSession(), creating a
+        # phantom entry in the index that re-appears on the next launch.
         active_ws = (self._session.workspace_folder or self._default_workspace()).resolve()
         if active_ws == ws.resolve():
             self._session = AgentSession()
+            self._workspace_committed = False
             self._show_idle()
         self._refresh_session_list()
 
@@ -1367,11 +1446,8 @@ class ConversationApp(tk.Tk):
             return
         ws = Path(rec["workspace"])
         rename_session(ws, new_name.strip())
+        # _refresh_session_list() re-selects the active session automatically.
         self._refresh_session_list()
-        # Re-select the same entry after refresh
-        self._session_listbox.selection_clear(0, tk.END)
-        self._session_listbox.selection_set(idx)
-        self._session_listbox.see(idx)
 
     def _load_session_from_workspace(self, ws: Path) -> None:
         data = load_session(ws)
@@ -1395,14 +1471,9 @@ class ConversationApp(tk.Tk):
         self._update_header()
         self._clear_chat()
         self._replay_chat_history()
-        # Re-select in the listbox
+        # _refresh_session_list() automatically re-selects the active session
+        # (matched by workspace_folder), so no manual re-selection needed here.
         self._refresh_session_list()
-        for i, rec in enumerate(self._session_records):
-            if Path(rec["workspace"]).resolve() == ws.resolve():
-                self._session_listbox.selection_clear(0, tk.END)
-                self._session_listbox.selection_set(i)
-                self._session_listbox.see(i)
-                break
 
     def _default_workspace(self) -> Path:
         from uacragent.infra.persistence import _UAR_DIR
@@ -1751,6 +1822,14 @@ class ConversationApp(tk.Tk):
         # The session object always holds the last-committed state (set by
         # _on_apply_settings).  Syncing from live StringVars would allow
         # uncommitted settings to leak into the saved file silently.
+
+        # Only persist sessions that have been formally committed (Apply was
+        # clicked at least once, locking the workspace).  This prevents a blank
+        # or file-less new session from silently appearing in the sidebar just
+        # because the user typed a chat message before setting anything up.
+        if not self._workspace_committed:
+            return
+
         ui_extras = {
             "export_format":       self._export_format_var.get(),
             "embedding_provider":  self._emb_provider_var.get(),
@@ -1764,11 +1843,32 @@ class ConversationApp(tk.Tk):
         Syncs all fields → session, injects API keys, persists to disk, and
         triggers a full re-index so every change (model, key, docs, embedding,
         course info) takes effect immediately.
+
+        Session creation rule
+        ---------------------
+        A session is considered "created" — and therefore persisted — as soon as
+        the user has filled in a course name and clicked Apply.  We do not wait
+        for indexing to succeed; the session is committed immediately so it
+        survives app restarts even when there are no files yet.
         """
         self._sync_session_from_vars()
         self._inject_api_keys()
         self._agent = None          # force re-creation with updated provider/model
         self._update_header()
+
+        # ── Commit the session the moment Apply is clicked with a course name ──
+        # Without this, _save_current_session() would be blocked by the
+        # _workspace_committed guard for every new session that hasn't indexed yet
+        # (e.g. no files added, or indexing still pending).
+        if self._session.course_name and not self._workspace_committed:
+            # Auto-assign workspace if the user didn't pick one explicitly.
+            if not self._session.workspace_folder:
+                self._session.workspace_folder = (
+                    get_app_data_dir() / "sessions" / self._session.workspace_id
+                )
+                self._workspace_var.set(str(self._session.workspace_folder))
+            self._workspace_committed = True
+
         self._save_current_session()
         self._refresh_session_list()
         if self._settings_alive():
