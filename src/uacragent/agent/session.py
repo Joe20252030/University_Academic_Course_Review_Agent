@@ -43,7 +43,7 @@ class AgentSession:
     # Each new session gets a unique 12-char hex ID so its auto-created folder
     # inside the app data dir never collides with other sessions.
     workspace_id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
-    workspace_folder: Optional[Path] = field(default=None)  # set once on first Load; locked thereafter
+    workspace_folder: Optional[Path] = field(default=None)  # set once on first Apply; locked thereafter
     extra_instructions: str = ""
 
     # ── Files ─────────────────────────────────────────────────────────────

@@ -128,8 +128,9 @@ class ConversationApp(tk.Tk):
         self._is_busy = False
         self._cancel_event = threading.Event()  # set to abort in-flight requests
 
-        # True once a session's workspace has been committed (Load Session ran
-        # or session was loaded from disk).  Prevents workspace from being changed.
+        # True once a session's workspace has been committed (Apply was clicked
+        # with a course name, or a saved session was loaded). Prevents the
+        # workspace from being changed.
         self._workspace_committed = False
 
         # Settings Toplevel (created lazily, kept alive while open)
@@ -1719,7 +1720,7 @@ class ConversationApp(tk.Tk):
         self._append_chat(
             "assistant",
             "Welcome! Open ⚙ Settings to fill in your course details and add "
-            "documents, then click Load Session to index them.\n\n"
+            "documents, then click Apply to save and index them.\n\n"
             "After that you can ask me anything about the course or use the "
             "quick action buttons to generate study documents.",
         )

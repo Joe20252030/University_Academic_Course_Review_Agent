@@ -230,9 +230,9 @@ The GUI lets you:
 - Enter a **course name** and optional course details
 - Add files to different document type categories (Syllabus, Lecture Notes, etc.)
 - Choose exam settings and export format
-- Pick a custom workspace folder before first load, or let the app auto-create one
+- Pick a custom workspace folder before the first **Apply**, or let the app auto-create one
 - Use **Apply** to commit setting changes and re-index with the updated session configuration
-- Click **Load Session** to commit the workspace path and index documents into the session retriever
+- Use **Re-index** to rebuild document indexing from the currently committed session settings
 - Chat with the assistant about the course material
 - Use quick actions to generate a Review Summary, Practice Booklet, Mock Exam, or Exam Prediction
 - Open generated outputs directly from the chat transcript
@@ -265,8 +265,8 @@ Notes:
   HuggingFace cache redirection.
 - All agent-generated files inside a workspace are grouped under
   `<workspace>/.uacragent/` so they stay separate from the user’s own files.
-- Once a session has been loaded and its workspace committed, that workspace is
-  treated as fixed for the lifetime of the session.
+- Once a session has been created and its workspace committed, that workspace
+  is treated as fixed for the lifetime of the session.
 - Deleting a session removes the `<workspace>/.uacragent/` bundle. Original
   source files outside that folder are not affected.
 

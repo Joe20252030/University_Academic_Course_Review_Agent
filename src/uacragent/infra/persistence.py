@@ -394,7 +394,7 @@ def _resolve_workspace(session: "AgentSession") -> Path:  # type: ignore[name-de
 
     Priority:
     1. session.workspace_folder — set by the user via folder picker or
-       auto-assigned on first Load Session; locked thereafter.
+       auto-assigned on first Apply; locked thereafter.
     2. <app_data_dir>/sessions/<workspace_id> — auto-created fallback,
        kept inside a dedicated ``sessions/`` subfolder so the global data
        folder root stays clean (only index.json and config.json live there).
