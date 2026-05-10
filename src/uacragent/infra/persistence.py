@@ -294,9 +294,16 @@ def save_session(
         "classified_files": _serialise_files(session.classified_files),
         "chat_history": _serialise_history(session.chat_history),
     }
+    # Defensive key-name blocklist: cover every name a caller might accidentally
+    # pass, now and in the future.  API keys are NEVER written to disk.
+    _KEY_NAMES = frozenset({
+        "api_key", "google_api_key", "openai_api_key", "deepseek_api_key",
+        "GOOGLE_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY",
+        "key", "secret", "token", "password",
+    })
     if ui_extras:
         payload.update({k: v for k, v in ui_extras.items()
-                        if k not in ("api_key", "google_api_key")})
+                        if k not in _KEY_NAMES})
 
     try:
         session_file = agent_dir / _SESSION_FILENAME

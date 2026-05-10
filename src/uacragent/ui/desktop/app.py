@@ -24,7 +24,6 @@ import tkinter as tk
 from datetime import datetime, timezone
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
-from typing import Optional
 
 from uacragent.agent.conversation import ConversationAgent, ChatResponse
 from uacragent.agent.session import AgentSession
@@ -124,7 +123,7 @@ class ConversationApp(tk.Tk):
 
         # Active session
         self._session = AgentSession()
-        self._agent: Optional[ConversationAgent] = None
+        self._agent: ConversationAgent | None = None
         self._is_busy = False
         self._cancel_event = threading.Event()  # set to abort in-flight requests
 
@@ -134,7 +133,7 @@ class ConversationApp(tk.Tk):
         self._workspace_committed = False
 
         # Settings Toplevel (created lazily, kept alive while open)
-        self._settings_win: Optional[tk.Toplevel] = None
+        self._settings_win: tk.Toplevel | None = None
 
         # File listboxes live inside the settings dialog
         self._file_listboxes: dict[DocumentType, tk.Listbox] = {}
@@ -1092,8 +1091,13 @@ class ConversationApp(tk.Tk):
                       ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(3, 0))
 
     def _has_embedding_key(self) -> bool:
-        """Return True if the chosen embedding provider has what it needs."""
-        provider = self._emb_provider_var.get()
+        """Return True if the committed embedding provider has what it needs.
+
+        Reads from os.environ (the committed state) rather than the live
+        StringVar so that opening Settings and switching the provider without
+        clicking Apply does not cause a false "key missing" rejection.
+        """
+        provider = os.environ.get("EMBEDDING_PROVIDER", self._emb_provider_var.get())
         if provider == "local":
             return True  # no key required
         if provider == "openai":
@@ -1813,30 +1817,58 @@ class ConversationApp(tk.Tk):
                                  lambda _e: self._chat_text.configure(cursor=""))
         self._chat_text.insert(tk.END, "[Open folder]", tag_folder)
 
-        # Optional extra-format export
+        # Optional extra-format export — run in a background thread so the UI
+        # is not frozen while python-docx / fpdf2 write the file.
         export_fmt = self._export_format_var.get()
         if export_fmt != ExportFormat.markdown.value and output_path.endswith(".md"):
-            try:
-                ws = workspace_paths(
-                    workspace_id=self._session.workspace_id,
-                    workspace_folder=self._session.workspace_folder,
-                )
-                ensure_workspace_dirs(ws)
-                md_text = Path(output_path).read_text(encoding="utf-8")
-                extra_path = (save_docx(md_text, ws)
-                              if export_fmt == ExportFormat.docx.value
-                              else save_pdf(md_text, ws))
-                self._chat_text.insert(tk.END, "\n", "assistant_body")
-                xtag = f"extra_{id(extra_path)}"
-                self._chat_text.tag_configure(xtag, foreground="#1565c0", underline=True)
-                self._chat_text.tag_bind(xtag, "<Button-1>",
-                                         lambda _e, p=extra_path: _open_file_in_os(p))
-                self._chat_text.insert(
-                    tk.END,
-                    f"📥 {export_fmt.upper()} export: {Path(extra_path).name}", xtag)
-            except Exception as exc:
-                self._chat_text.insert(
-                    tk.END, f"\n⚠️ Export failed: {exc}", "system_body")
+            # Insert a placeholder that will be replaced once the export finishes.
+            placeholder_tag = f"export_placeholder_{id(output_path)}"
+            self._chat_text.insert(
+                tk.END, f"\n⏳ Exporting {export_fmt.upper()}…", placeholder_tag)
+
+            _ws_id     = self._session.workspace_id
+            _ws_folder = self._session.workspace_folder
+
+            def _export_worker() -> None:
+                try:
+                    ws = workspace_paths(workspace_id=_ws_id, workspace_folder=_ws_folder)
+                    ensure_workspace_dirs(ws)
+                    md_text = Path(output_path).read_text(encoding="utf-8")
+                    extra_path = (save_docx(md_text, ws)
+                                  if export_fmt == ExportFormat.docx.value
+                                  else save_pdf(md_text, ws))
+                    self.after(0, lambda p=extra_path: _finish_export(p, None))
+                except Exception as exc:  # noqa: BLE001
+                    self.after(0, lambda e=str(exc): _finish_export(None, e))
+
+            def _finish_export(extra_path: str | None, error: str | None) -> None:
+                """Replace the placeholder with the final link or error text."""
+                try:
+                    # Locate and delete the placeholder text.
+                    start = self._chat_text.tag_ranges(placeholder_tag)
+                    if start:
+                        self._chat_text.configure(state="normal")
+                        self._chat_text.delete(start[0], start[1])
+                        if extra_path:
+                            xtag = f"extra_{id(extra_path)}"
+                            self._chat_text.tag_configure(
+                                xtag, foreground="#1565c0", underline=True)
+                            self._chat_text.tag_bind(
+                                xtag, "<Button-1>",
+                                lambda _e, p=extra_path: _open_file_in_os(p))
+                            self._chat_text.insert(
+                                start[0],
+                                f"\n📥 {export_fmt.upper()} export: {Path(extra_path).name}",
+                                xtag)
+                        else:
+                            self._chat_text.insert(
+                                start[0], f"\n⚠️ Export failed: {error}", "system_body")
+                        self._chat_text.configure(state="disabled")
+                        self._chat_text.see(tk.END)
+                except tk.TclError:
+                    pass  # widget already destroyed
+
+            threading.Thread(target=_export_worker, daemon=True).start()
 
         self._chat_text.insert(tk.END, "\n", "assistant_body")
         self._chat_text.configure(state="disabled")
@@ -1918,6 +1950,19 @@ class ConversationApp(tk.Tk):
 
     def _on_close(self) -> None:
         self._save_current_session()
+
+        # Erase API keys from in-process memory before the window is destroyed.
+        # The process exit would clean these up anyway, but explicit zeroing is
+        # the correct security practice — it removes key material immediately
+        # rather than leaving it in the process heap until the OS reclaims it.
+        for var in (self._gemini_key_var, self._openai_key_var, self._deepseek_key_var):
+            try:
+                var.set("")
+            except Exception:  # noqa: BLE001
+                pass
+        for env_var in ("GOOGLE_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY"):
+            os.environ.pop(env_var, None)
+
         self.destroy()
 
     # ------------------------------------------------------------------
@@ -1952,6 +1997,17 @@ def main() -> None:
     # agent data lives in one place.  Must run before any HF import.
     from uacragent.infra.persistence import configure_hf_cache
     configure_hf_cache()
+
+    # Remove the legacy last_session.json written by older app versions.
+    # It is no longer used and its presence is misleading.  It never contained
+    # API keys (confirmed), but deleting it keeps the data directory clean and
+    # removes any ambiguity for future security audits.
+    _legacy = Path.home() / ".uacragent" / "last_session.json"
+    try:
+        _legacy.unlink(missing_ok=True)
+    except Exception:  # noqa: BLE001
+        pass  # non-fatal; stale file remains but causes no harm
+
     app = ConversationApp()
     app.mainloop()
 

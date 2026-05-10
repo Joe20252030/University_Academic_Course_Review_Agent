@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import shutil
 from pathlib import Path
-from typing import Callable
+from collections.abc import Callable
 
 from langchain_community.document_loaders import PyPDFLoader, TextLoader, Docx2txtLoader
 from langchain_core.documents import Document

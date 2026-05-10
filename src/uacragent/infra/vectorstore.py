@@ -4,6 +4,7 @@ import hashlib
 import json
 import shutil
 from pathlib import Path
+from typing import Any
 
 try:
     from langchain_chroma import Chroma  # type: ignore
@@ -19,7 +20,7 @@ from uacragent.infra.settings import Settings
 from uacragent.infra.workspace import WorkspacePaths
 
 
-def _build_embeddings(settings: Settings) -> Any:  # type: ignore[name-defined]
+def _build_embeddings(settings: Settings) -> Any:
     """Return an embedding model based on *settings.embedding_provider*.
 
     Providers
@@ -82,9 +83,6 @@ def _build_local_embeddings(model_name: str) -> Any:
 
     return HuggingFaceEmbeddings(model_name=model_name)
 
-
-# Use Any at module level to avoid the forward-ref issue
-from typing import Any  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
