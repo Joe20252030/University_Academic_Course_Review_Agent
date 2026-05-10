@@ -1418,8 +1418,12 @@ class ConversationApp(tk.Tk):
         # _workspace_committed MUST be reset here — without it, _on_close() would
         # call _save_current_session() on the blank AgentSession(), creating a
         # phantom entry in the index that re-appears on the next launch.
-        active_ws = (self._session.workspace_folder or self._default_workspace()).resolve()
-        if active_ws == ws.resolve():
+        #
+        # Compare using workspace_folder directly (the real committed path).
+        # Falling back to _default_workspace() when workspace_folder is None would
+        # produce a wrong path and silently skip this branch for UUID-based sessions.
+        active_ws = self._session.workspace_folder
+        if active_ws is not None and Path(active_ws).resolve() == ws.resolve():
             self._session = AgentSession()
             self._workspace_committed = False
             self._show_idle()
@@ -1468,6 +1472,14 @@ class ConversationApp(tk.Tk):
         self._local_model_disp_var.set(
             self._FREE_EMB_MODEL_TO_DISPLAY.get(local_model, local_model))
 
+        # Commit the embedding provider into os.environ immediately so that
+        # Re-index (which does not go through Apply) uses the correct provider.
+        # Without this, Settings() would fall back to whatever EMBEDDING_PROVIDER
+        # was set previously (or default "gemini"), ignoring the saved value.
+        os.environ["EMBEDDING_PROVIDER"] = emb_provider
+        if emb_provider == "local":
+            os.environ["LOCAL_EMBEDDING_MODEL"] = local_model
+
         self._sync_vars_from_session()
         self._update_header()
         self._clear_chat()
@@ -1477,8 +1489,7 @@ class ConversationApp(tk.Tk):
         self._refresh_session_list()
 
     def _default_workspace(self) -> Path:
-        from uacragent.infra.persistence import _UAR_DIR
-        return (_UAR_DIR / "workspaces" / "default").resolve()
+        return (get_app_data_dir() / "sessions" / "default").resolve()
 
     # ------------------------------------------------------------------
     # Indexing  (shared core used by sidebar select, Apply, and Re-index)

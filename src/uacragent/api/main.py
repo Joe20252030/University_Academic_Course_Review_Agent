@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
@@ -7,8 +9,28 @@ from uacragent.api.routes import router
 from uacragent.domain.errors import UACRAgentError
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Run startup tasks before the server begins accepting requests."""
+    # Load .env so API keys / provider settings are available via os.environ,
+    # mirroring the desktop mode.  dotenv is a soft dependency — skip silently
+    # if not installed.
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+
+    # Point HuggingFace downloads at the app-managed cache so all agent data
+    # (models, sessions, index) lives in one place regardless of run mode.
+    from uacragent.infra.persistence import configure_hf_cache
+    configure_hf_cache()
+
+    yield   # server runs here
+
+
 def create_app() -> FastAPI:
-    app = FastAPI(title="UACRAgent")
+    app = FastAPI(title="UACRAgent", lifespan=_lifespan)
     app.include_router(router)
 
     @app.exception_handler(UACRAgentError)

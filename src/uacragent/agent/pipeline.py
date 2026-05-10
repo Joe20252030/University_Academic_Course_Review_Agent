@@ -426,7 +426,7 @@ class AgentPipeline:
             task_type=task_type,
             extra_instructions=extra_instructions,
             workspace_id=workspace_id,
-            copy_to_workspace=False,
+            copy_to_workspace=True,   # copy so manifest tracks files correctly
             university_name=university_name,
             major=major,
             course_code=course_code,
