@@ -1386,9 +1386,9 @@ class ConversationApp(tk.Tk):
             return
         ws = Path(self._session_records[idx]["workspace"])
         self._set_chat_active(True)
-        # Load metadata + replay history immediately, then auto-index.
+        # Load metadata + replay history immediately, then attach retriever.
         self._load_session_from_workspace(ws)
-        self._start_indexing(show_error_dialog=False)
+        self._attach_session_async()
 
     def _on_new_session(self) -> None:
         """Start a blank session and open settings so the user can fill it in."""
@@ -1608,7 +1608,10 @@ class ConversationApp(tk.Tk):
 
             try:
                 agent = self._get_agent()
-                msg = agent.initialize_session(self._session, progress_cb=_progress)
+                # force_reindex=True: Apply always runs the full pipeline so
+                # changes to files, embedding provider, or model take effect.
+                msg, _ = agent.initialize_session(
+                    self._session, progress_cb=_progress, force_reindex=True)
                 if not self._cancel_event.is_set():
                     self.after(0, self._on_session_loaded, msg)
             except Exception as exc:
@@ -1616,6 +1619,100 @@ class ConversationApp(tk.Tk):
                     self.after(0, lambda e=str(exc): self._on_session_load_error(e, _show_err))
 
         threading.Thread(target=_work, daemon=True).start()
+
+    def _attach_session_async(self) -> None:
+        """Attach a retriever to the current session after a sidebar-select.
+
+        Tries the fast path (open existing ChromaDB, zero API calls) first.
+        Falls back to full indexing only when the database is absent or the
+        file set has changed.
+
+        Unlike _start_indexing (the Apply path) this method does NOT add a
+        chat message when the fast path succeeds — the session is silently
+        ready.  A completion notice is only shown when actual indexing ran.
+        """
+        if self._is_busy:
+            return
+
+        # ── Pre-flight (always inline — sidebar selects never show dialogs) ──
+        provider = self._session.llm_provider or "gemini"
+        env_var = self._PROVIDER_KEY_ENV.get(provider, "GOOGLE_API_KEY")
+        if not os.environ.get(env_var, "").strip():
+            label = self._PROVIDER_KEY_LABEL.get(provider, "API Key")
+            self._append_chat(
+                "system",
+                f"⚠️ No {label} configured. Open ⚙ Settings → API Key to enter "
+                "one, then click Apply.")
+            return
+
+        if not self._has_embedding_key():
+            self._append_chat(
+                "system",
+                "⚠️ Embedding key required. Open ⚙ Settings → Embedding to "
+                "configure, then click Apply.")
+            return
+
+        if not self._session.course_name:
+            self._append_chat(
+                "system",
+                "⚠️ Course name required. Open ⚙ Settings to fill in course "
+                "details, then click Apply.")
+            return
+
+        if not self._session.has_files():
+            self._append_chat(
+                "system",
+                "⚠️ No documents loaded. Add files in ⚙ Settings → Course Documents, "
+                "then click Apply to index them.")
+            return
+
+        # Workspace is already committed for any loaded session.
+        if not self._session.workspace_folder:
+            self._session.workspace_folder = (
+                get_app_data_dir() / "sessions" / self._session.workspace_id
+            )
+            self._workspace_var.set(str(self._session.workspace_folder))
+        self._workspace_committed = True
+
+        if not self._confirm_model_download():
+            return
+
+        self._set_busy(True, "Loading session…")
+        self._session_status_var.set("Loading session…")
+        self._session.retriever = None
+
+        def _work() -> None:
+            def _progress(msg: str) -> None:
+                if not self._cancel_event.is_set():
+                    self.after(0, lambda m=msg: self._busy_label.configure(text=m))
+                    self.after(0, lambda m=msg: self._session_status_var.set(m))
+
+            try:
+                agent = self._get_agent()
+                # force_reindex=False: use fast path when Chroma is current.
+                status, was_cached = agent.initialize_session(
+                    self._session, progress_cb=_progress)
+                if not self._cancel_event.is_set():
+                    self.after(0, lambda s=status, c=was_cached: self._on_attach_done(s, c))
+            except Exception as exc:  # noqa: BLE001
+                if not self._cancel_event.is_set():
+                    self.after(0, lambda e=str(exc): self._on_session_load_error(e, False))
+
+        threading.Thread(target=_work, daemon=True).start()
+
+    def _on_attach_done(self, status: str, was_cached: bool) -> None:
+        """Completion handler for _attach_session_async."""
+        self._set_busy(False)
+        self._update_header()
+        self._session_status_var.set(status)
+        if self._settings_alive():
+            self._settings_status_var.set(status)
+        # Only add a chat notice when actual (re-)indexing was performed.
+        # On the fast path the session is silently ready — no noise in chat.
+        if not was_cached:
+            self._append_chat("system", f"✓ Documents indexed. {status}")
+        self._save_current_session()
+        self._refresh_session_list()
 
     def _on_session_loaded(self, status: str) -> None:
         self._set_busy(False)

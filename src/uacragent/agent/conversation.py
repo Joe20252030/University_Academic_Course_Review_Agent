@@ -65,11 +65,16 @@ class ConversationAgent:
         self,
         session: AgentSession,
         progress_cb: Callable[[str], None] | None = None,
-    ) -> str:
-        """Build the retriever from session files and attach it to *session*.
+        force_reindex: bool = False,
+    ) -> tuple[str, bool]:
+        """Build or reuse the retriever for *session*.
 
-        Returns a short status message suitable for display in the chat window.
-        Importing here to avoid circular imports between pipeline and agent.
+        Returns ``(status_message, was_cached)`` where *was_cached* is ``True``
+        when the existing ChromaDB was opened directly without any re-embedding.
+
+        When *force_reindex* is ``True`` the fast path is skipped and a full
+        indexing run is always performed (used by the Apply button so that
+        changes to embedding provider, model, or files always take effect).
         """
         from uacragent.agent.pipeline import AgentPipeline
 
@@ -77,22 +82,42 @@ class ConversationAgent:
             session.retriever = None
             return (
                 "No documents are loaded yet. "
-                "Add files in the Session Settings panel and click **Apply** or **Re-index** to index them."
+                "Add files in the Session Settings panel and click **Apply** to index them.",
+                False,
             )
 
         try:
             settings = _settings_for_session(self.settings, session)
             pipeline = AgentPipeline(settings)
+
+            # ── Fast path: reuse existing ChromaDB without re-embedding ────────
+            if not force_reindex:
+                try:
+                    retriever = pipeline.prepare_session_fast(session)
+                    if retriever is not None:
+                        session.retriever = retriever
+                        n_files = sum(len(v) for v in session.active_files().values())
+                        n_types = len(session.active_files())
+                        return (
+                            f"Session ready. {n_files} file(s) across {n_types} "
+                            f"document type(s) already indexed.",
+                            True,
+                        )
+                except Exception:  # noqa: BLE001
+                    pass  # fall through to full indexing
+
+            # ── Full indexing path ──────────────────────────────────────────────
             session.retriever = pipeline.prepare_session(session, progress_cb=progress_cb)
             n_types = len(session.active_files())
             n_files = sum(len(v) for v in session.active_files().values())
             return (
                 f"Session ready. Indexed {n_files} file(s) across {n_types} document "
-                f"type(s). You can now ask questions or request a study document."
+                f"type(s). You can now ask questions or request a study document.",
+                False,
             )
         except Exception as exc:  # noqa: BLE001
             session.retriever = None
-            return f"Failed to initialise session: {exc}"
+            return f"Failed to initialise session: {exc}", False
 
     # ------------------------------------------------------------------
     # Chat

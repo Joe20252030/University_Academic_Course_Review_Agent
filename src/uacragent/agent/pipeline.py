@@ -375,6 +375,37 @@ class AgentPipeline:
         md_path = save_markdown(final_md, ws)
         return plan, final_md, md_path
 
+    def prepare_session_fast(
+        self,
+        session: "AgentSession",  # type: ignore[name-defined]
+    ) -> "BaseRetriever | None":  # type: ignore[name-defined]
+        """Return a retriever by opening the existing ChromaDB — no re-indexing.
+
+        Returns *None* when the database does not exist on disk or the current
+        file set no longer matches what was indexed last time, signalling that a
+        full :meth:`prepare_session` run is required.
+
+        This path makes zero embedding API calls: the Chroma DB is opened
+        directly from disk and the retriever is wrapped around it.
+        """
+        from uacragent.infra.vectorstore import chroma_is_current
+
+        if not session.has_files():
+            return None
+
+        ws = workspace_paths(
+            workspace_id=session.workspace_id,
+            workspace_folder=session.workspace_folder,
+        )
+
+        if not chroma_is_current(ws, session.classified_files):
+            return None
+
+        # Open the existing store — empty chunk list means nothing is added or
+        # removed.  Omitting classified_files prevents manifest rewrite.
+        vectorstore = get_or_create_vectorstore([], self.settings, ws)
+        return build_retriever(vectorstore, self.settings)
+
     def prepare_session(
         self,
         session: "AgentSession",  # type: ignore[name-defined]

@@ -151,7 +151,7 @@ def _cli(args: argparse.Namespace) -> None:
     if classified_files:
         print("Indexing documents…")
     _progress, _finish = _make_cli_progress()
-    status = agent.initialize_session(session, progress_cb=_progress if classified_files else None)
+    status, _ = agent.initialize_session(session, progress_cb=_progress if classified_files else None)
     _finish()
     print(f"✓  {status}\n")
 

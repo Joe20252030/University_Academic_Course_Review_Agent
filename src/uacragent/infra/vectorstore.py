@@ -227,3 +227,24 @@ def get_or_create_vectorstore(
 
 def build_retriever(vectorstore: VectorStore, settings: Settings) -> BaseRetriever:
     return vectorstore.as_retriever(search_kwargs={"k": settings.retriever_k})
+
+
+def chroma_is_current(
+    workspace_paths: WorkspacePaths,
+    classified_files: dict[DocumentType, list[str]],
+) -> bool:
+    """Return True when the ChromaDB on disk is up to date with *classified_files*.
+
+    Specifically: the Chroma directory exists and is non-empty, AND the
+    indexed-files manifest exactly matches the current file set (no additions,
+    no removals).  A True result means a retriever can be opened from disk
+    without any re-embedding work.
+    """
+    chroma_dir = Path(workspace_paths.chroma)
+    if not chroma_dir.exists() or not any(chroma_dir.iterdir()):
+        return False
+    prev = _load_manifest(workspace_paths)
+    if not prev:
+        return False
+    curr = {(dt.value, p) for dt, paths in classified_files.items() for p in paths}
+    return prev == curr
