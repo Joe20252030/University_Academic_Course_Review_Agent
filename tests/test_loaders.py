@@ -9,8 +9,6 @@ from langchain_core.documents import Document
 from uacragent.domain.types import DocumentType
 from uacragent.infra.loaders import (
     DocumentLoader,
-    SplittingConfig,
-    SPLITTING_CONFIGS,
     run_splitting_pipeline,
 )
 from uacragent.infra.settings import Settings
@@ -27,24 +25,6 @@ def settings(tmp_path: Path) -> Settings:
 @pytest.fixture
 def loader(settings: Settings) -> DocumentLoader:
     return DocumentLoader(settings)
-
-
-# ---------------------------------------------------------------------------
-# SPLITTING_CONFIGS completeness
-# ---------------------------------------------------------------------------
-
-def test_splitting_configs_covers_all_doc_types():
-    for doc_type in DocumentType:
-        assert doc_type in SPLITTING_CONFIGS, f"Missing config for {doc_type}"
-
-
-def test_splitting_configs_valid_values():
-    for doc_type, cfg in SPLITTING_CONFIGS.items():
-        assert cfg.chunk_size > 0, f"{doc_type}: chunk_size must be > 0"
-        assert cfg.chunk_overlap >= 0, f"{doc_type}: chunk_overlap must be >= 0"
-        assert cfg.chunk_overlap < cfg.chunk_size, (
-            f"{doc_type}: overlap must be < chunk_size"
-        )
 
 
 # ---------------------------------------------------------------------------

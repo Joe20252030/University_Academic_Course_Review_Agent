@@ -1,17 +1,13 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
 from pathlib import Path
 
 from docx import Document as DocxDocument
 from docx.shared import Pt
 
+from uacragent.export._utils import safe_timestamp
 from uacragent.infra.workspace import WorkspacePaths
-
-
-def _safe_timestamp() -> str:
-    return datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 
 def _add_markdown_to_docx(doc: DocxDocument, md_text: str) -> None:
@@ -54,6 +50,6 @@ def save_docx(md_text: str, work_space_paths: WorkspacePaths) -> str:
     doc = DocxDocument()
     _add_markdown_to_docx(doc, md_text)
 
-    path = Path(work_space_paths.outputs) / f"review_{_safe_timestamp()}.docx"
+    path = Path(work_space_paths.outputs) / f"review_{safe_timestamp()}.docx"
     doc.save(str(path))
     return str(path)

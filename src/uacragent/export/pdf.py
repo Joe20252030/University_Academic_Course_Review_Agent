@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from datetime import datetime
 from pathlib import Path
 
 from fpdf import FPDF
 
+from uacragent.export._utils import safe_timestamp
 from uacragent.infra.workspace import WorkspacePaths
 
 # Common system TTF font paths (checked in order; first match wins).
@@ -31,10 +31,6 @@ def _find_unicode_font() -> str | None:
         if Path(path).exists():
             return path
     return None
-
-
-def _safe_timestamp() -> str:
-    return datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 
 class _ReviewPDF(FPDF):
@@ -154,6 +150,6 @@ def save_pdf(md_text: str, work_space_paths: WorkspacePaths) -> str:
     pdf = _ReviewPDF()
     pdf.add_markdown(md_text)
 
-    path = Path(work_space_paths.outputs) / f"review_{_safe_timestamp()}.pdf"
+    path = Path(work_space_paths.outputs) / f"review_{safe_timestamp()}.pdf"
     pdf.output(str(path))
     return str(path)

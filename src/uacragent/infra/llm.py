@@ -25,7 +25,11 @@ def _build_chat_model(settings: Settings) -> Any:
     if provider == "gemini":
         require_api_key(settings, "gemini")
         from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(model=model, temperature=0)
+        return ChatGoogleGenerativeAI(
+            model=model,
+            google_api_key=settings.google_api_key,  # type: ignore[arg-type]
+            temperature=0,
+        )
 
     if provider == "openai":
         require_api_key(settings, "openai")

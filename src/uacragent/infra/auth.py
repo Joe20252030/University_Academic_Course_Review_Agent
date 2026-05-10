@@ -22,8 +22,3 @@ def require_api_key(settings: Settings, provider: str | None = None) -> None:
             f"Missing {env_var} for provider '{p}'. "
             f"Set it in your .env file or enter it in ⚙ Settings."
         )
-
-
-# Keep the old name as an alias so existing call-sites don't break immediately.
-def require_google_api_key(settings: Settings) -> None:
-    require_api_key(settings, provider="gemini")

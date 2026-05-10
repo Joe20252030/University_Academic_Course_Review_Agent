@@ -55,7 +55,6 @@ class ConversationAgent:
 
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings: Settings = settings or get_settings()
-        self._llm = LLMClient(self.settings)
 
     # ------------------------------------------------------------------
     # Session initialisation

@@ -47,19 +47,10 @@ def load_prompt(name: str) -> str:
 
 
 def _get_prompt_files(task_type: TaskType) -> tuple[str, str]:
-    """Return (planner_file, writer_file) for the given task type.
-
-    Falls back to the generic planner.md / reviewer.md if task-specific
-    files don't exist.
-    """
-    planner_file, writer_file = _PROMPT_FILES.get(
-        task_type, ("planner.md", "reviewer.md")
-    )
-    if not (_PROMPTS_DIR / planner_file).exists():
-        planner_file = "planner.md"
-    if not (_PROMPTS_DIR / writer_file).exists():
-        writer_file = "reviewer.md"
-    return planner_file, writer_file
+    """Return (planner_file, writer_file) for the given task type."""
+    if task_type not in _PROMPT_FILES:
+        raise ValueError(f"No prompt files registered for task type: {task_type!r}")
+    return _PROMPT_FILES[task_type]
 
 
 # ---------------------------------------------------------------------------

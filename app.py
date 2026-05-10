@@ -3,8 +3,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
-
 # Ensure src/ is on sys.path so the package is importable
 # even without `pip install -e .`.
 ROOT = Path(__file__).resolve().parent
@@ -13,14 +11,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from uacragent.agent.service import AgentService
-from uacragent.domain.errors import UACRAgentError
 from uacragent.domain.types import DocumentType
-
-
-# Default test fixture shipped with the repo
-TEST_FILE_PATHS = [
-    "test_materials/outlines/MGTA01 Course Outline - MShibaeva (Fall 2025) - updated.pdf"
-]
 
 
 def main(
@@ -84,19 +75,9 @@ def main_simple(file_paths: list[str], user_prefs: dict) -> None:
 
 
 if __name__ == "__main__":
-    load_dotenv()
-    try:
-        classified = {
-            DocumentType.syllabus: TEST_FILE_PATHS,
-        }
-        main(
-            classified,
-            {
-                "course_name": "MGTA01 - Introduction to Business",
-                "exam_format": "written",
-                "exam_type": "final",
-                "task_type": "review_summary",
-            },
-        )
-    except UACRAgentError as exc:
-        raise SystemExit(f"Error: {exc}")
+    print(
+        "app.py is a library entry point — import and call main() or main_simple() directly.\n"
+        "To run interactively, use:  python -m uacragent",
+        file=sys.stderr,
+    )
+    sys.exit(1)

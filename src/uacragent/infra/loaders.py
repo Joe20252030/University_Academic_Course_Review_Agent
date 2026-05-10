@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 import shutil
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
@@ -240,39 +239,6 @@ def run_splitting_pipeline(
 
 
 # ---------------------------------------------------------------------------
-# Backward-compatible dataclass (kept for get_splitting_config callers)
-# ---------------------------------------------------------------------------
-
-@dataclass
-class SplittingConfig:
-    """Legacy configuration — retained for any callers that inspect chunk sizes."""
-    chunk_size: int
-    chunk_overlap: int
-
-
-SPLITTING_CONFIGS: dict[DocumentType, SplittingConfig] = {
-    DocumentType.syllabus: SplittingConfig(chunk_size=800, chunk_overlap=100),
-    DocumentType.lecture_note: SplittingConfig(chunk_size=1000, chunk_overlap=150),
-    DocumentType.textbook: SplittingConfig(chunk_size=1500, chunk_overlap=200),
-    DocumentType.assignment: SplittingConfig(chunk_size=600, chunk_overlap=100),
-    DocumentType.past_exam: SplittingConfig(chunk_size=500, chunk_overlap=80),
-    DocumentType.other: SplittingConfig(chunk_size=1000, chunk_overlap=150),
-}
-
-
-# ---------------------------------------------------------------------------
-# ClassifiedDocument helper
-# ---------------------------------------------------------------------------
-
-@dataclass
-class ClassifiedDocument:
-    """A document with its type classification and source path."""
-    path: str
-    doc_type: DocumentType
-    documents: list[Document]
-
-
-# ---------------------------------------------------------------------------
 # DocumentLoader
 # ---------------------------------------------------------------------------
 
@@ -375,6 +341,3 @@ class DocumentLoader:
 
         return all_chunks
 
-    def get_splitting_config(self, doc_type: DocumentType) -> SplittingConfig:
-        """Get the splitting configuration for a document type."""
-        return SPLITTING_CONFIGS.get(doc_type, SPLITTING_CONFIGS[DocumentType.other])

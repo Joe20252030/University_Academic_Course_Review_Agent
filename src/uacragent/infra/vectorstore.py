@@ -54,7 +54,10 @@ def _build_embeddings(settings: Settings) -> Any:  # type: ignore[name-defined]
             "Enter it in ⚙ Settings → API Key or set GOOGLE_API_KEY in .env."
         )
     from langchain_google_genai import GoogleGenerativeAIEmbeddings
-    return GoogleGenerativeAIEmbeddings(model=settings.embedding_model)
+    return GoogleGenerativeAIEmbeddings(
+        model=settings.embedding_model,
+        google_api_key=settings.google_api_key,  # type: ignore[arg-type]
+    )
 
 
 def _build_local_embeddings(model_name: str) -> Any:
