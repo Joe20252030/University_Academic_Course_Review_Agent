@@ -9,27 +9,42 @@ from fpdf import FPDF
 from uacragent.export._utils import safe_timestamp
 from uacragent.infra.workspace import WorkspacePaths
 
-# Common system TTF font paths (checked in order; first match wins).
-_UNICODE_FONT_CANDIDATES = [
-    # macOS
-    "/System/Library/Fonts/Supplemental/Arial Unicode MS.ttf",
-    "/Library/Fonts/Arial Unicode MS.ttf",
-    # Linux (DejaVu, Liberation, Noto)
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    "/usr/share/fonts/dejavu/DejaVuSans.ttf",
-    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-    "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
-    # Windows
-    "C:/Windows/Fonts/arial.ttf",
-    "C:/Windows/Fonts/arialuni.ttf",
+# Candidate font pairs (regular, bold).
+# Bold may be None — FPDF2 will emulate bold from the regular file in that case.
+_FONT_CANDIDATES: list[tuple[str, str | None]] = [
+    # macOS — Arial (installed with Office or available in Supplemental)
+    ("/Library/Fonts/Arial.ttf",
+     "/Library/Fonts/Arial Bold.ttf"),
+    ("/System/Library/Fonts/Supplemental/Arial.ttf",
+     "/System/Library/Fonts/Supplemental/Arial Bold.ttf"),
+    # macOS — Arial Unicode (single weight, no bold file)
+    ("/System/Library/Fonts/Supplemental/Arial Unicode MS.ttf", None),
+    ("/Library/Fonts/Arial Unicode MS.ttf", None),
+    # Linux — DejaVu Sans
+    ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+    ("/usr/share/fonts/dejavu/DejaVuSans.ttf",
+     "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf"),
+    # Linux — Noto Sans
+    ("/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+     "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf"),
+    # Windows — Arial
+    ("C:/Windows/Fonts/arial.ttf",
+     "C:/Windows/Fonts/arialbd.ttf"),
+    ("C:/Windows/Fonts/arialuni.ttf", None),
 ]
 
 
-def _find_unicode_font() -> str | None:
-    """Return the path of the first available Unicode TTF font, or None."""
-    for path in _UNICODE_FONT_CANDIDATES:
-        if Path(path).exists():
-            return path
+def _find_fonts() -> tuple[str, str | None] | None:
+    """Return (regular_path, bold_path_or_None) for the first available font pair.
+
+    *bold_path* is None when only a single-weight font was found; FPDF2 will
+    simulate bold using the regular file in that case.
+    """
+    for regular, bold in _FONT_CANDIDATES:
+        if Path(regular).exists():
+            bold_path = bold if (bold and Path(bold).exists()) else None
+            return regular, bold_path
     return None
 
 
@@ -47,10 +62,13 @@ class _ReviewPDF(FPDF):
         self.add_page()
         self.set_auto_page_break(auto=True, margin=15)
 
-        unicode_font = _find_unicode_font()
-        if unicode_font:
-            self.add_font("Unicode", "", unicode_font)
-            self.add_font("Unicode", "B", unicode_font)
+        fonts = _find_fonts()
+        if fonts:
+            regular, bold = fonts
+            self.add_font("Unicode", "", regular)
+            # Register bold variant; if no separate bold file, use the regular
+            # file — FPDF2 will simulate bold from it.
+            self.add_font("Unicode", "B", bold or regular)
             self._body_font = "Unicode"
         else:
             self._body_font = "Helvetica"
@@ -77,6 +95,11 @@ class _ReviewPDF(FPDF):
         self.multi_cell(0, 6, self._prep(text))
 
     def _paragraph(self, text: str) -> None:
+        # Reset x to the left margin before multi_cell.  FPDF2 ≥ 2.7 leaves x
+        # at the right margin after multi_cell returns, so any caller that does
+        # not emit a ln() before calling _paragraph would inherit x ≈ 200 mm,
+        # making the computed available width ≈ 0 and crashing.
+        self.set_x(self.l_margin)
         self.multi_cell(0, 6, self._prep(text))
         self.ln(2)
 

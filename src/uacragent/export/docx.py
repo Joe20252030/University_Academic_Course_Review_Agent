@@ -22,13 +22,18 @@ def _add_markdown_to_docx(doc: DocxDocument, md_text: str) -> None:
         if not stripped:
             continue
 
-        # Headings
+        is_heading = False
+
+        # Headings — let the built-in heading style control the font size
         if stripped.startswith("### "):
             p = doc.add_heading(stripped[4:], level=3)
+            is_heading = True
         elif stripped.startswith("## "):
             p = doc.add_heading(stripped[3:], level=2)
+            is_heading = True
         elif stripped.startswith("# "):
             p = doc.add_heading(stripped[2:], level=1)
+            is_heading = True
         # Bullet lists
         elif re.match(r"^[-*]\s", stripped):
             p = doc.add_paragraph(stripped[2:], style="List Bullet")
@@ -39,9 +44,12 @@ def _add_markdown_to_docx(doc: DocxDocument, md_text: str) -> None:
         else:
             p = doc.add_paragraph(stripped)
 
-        # Apply a readable body font size
-        for run in p.runs:
-            run.font.size = Pt(11)
+        # Only override font size for body paragraphs.
+        # Headings inherit their size from the paragraph style (H1 ≈ 16pt,
+        # H2 ≈ 14pt, H3 ≈ 12pt) — forcing Pt(11) would flatten them all.
+        if not is_heading:
+            for run in p.runs:
+                run.font.size = Pt(11)
 
 
 def save_docx(md_text: str, work_space_paths: WorkspacePaths) -> str:
