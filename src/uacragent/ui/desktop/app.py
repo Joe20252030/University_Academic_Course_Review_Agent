@@ -353,11 +353,6 @@ class ConversationApp(tk.Tk):
         btn_frame = ttk.Frame(top_bar)
         btn_frame.grid(row=0, column=1, rowspan=2, sticky="e")
 
-        self._load_btn = ttk.Button(
-            btn_frame, text="⟳  Re-index", command=self._on_load_session
-        )
-        self._load_btn.pack(side="left", padx=(0, 6))
-
         ttk.Button(
             btn_frame, text="⚙  Settings", command=self._open_settings
         ).pack(side="left")
@@ -1260,7 +1255,7 @@ class ConversationApp(tk.Tk):
             s.workspace_folder = Path(chosen)
         else:
             # No folder picked yet — leave workspace_folder as None so the
-            # auto-assign in _on_load_session() can use the session's UUID-based
+            # auto-assign in _start_indexing() can use the session's UUID-based
             # workspace_id to build a unique path under <app_data>/sessions/.
             # Never overwrite workspace_id here: doing so would collapse every
             # unspecified session onto the same "default" folder.
@@ -1493,7 +1488,7 @@ class ConversationApp(tk.Tk):
             self._FREE_EMB_MODEL_TO_DISPLAY.get(local_model, local_model))
 
         # Commit the embedding provider into os.environ immediately so that
-        # Re-index (which does not go through Apply) uses the correct provider.
+        # auto-indexing on session load uses the correct provider.
         # Without this, Settings() would fall back to whatever EMBEDDING_PROVIDER
         # was set previously (or default "gemini"), ignoring the saved value.
         os.environ["EMBEDDING_PROVIDER"] = emb_provider
@@ -1512,7 +1507,7 @@ class ConversationApp(tk.Tk):
         return (get_app_data_dir() / "sessions" / "default").resolve()
 
     # ------------------------------------------------------------------
-    # Indexing  (shared core used by sidebar select, Apply, and Re-index)
+    # Indexing  (shared core used by sidebar select and Apply)
     # ------------------------------------------------------------------
 
     def _start_indexing(self, *, show_error_dialog: bool = True) -> None:
@@ -1621,14 +1616,6 @@ class ConversationApp(tk.Tk):
                     self.after(0, lambda e=str(exc): self._on_session_load_error(e, _show_err))
 
         threading.Thread(target=_work, daemon=True).start()
-
-    def _on_load_session(self) -> None:
-        """Manual Re-index button: re-index with currently *committed* settings.
-
-        Settings are committed by Apply — this button does not pull in any
-        uncommitted changes from the StringVars.
-        """
-        self._start_indexing(show_error_dialog=True)
 
     def _on_session_loaded(self, status: str) -> None:
         self._set_busy(False)
@@ -1972,7 +1959,6 @@ class ConversationApp(tk.Tk):
     def _set_busy(self, busy: bool, label: str = "") -> None:
         self._is_busy = busy
         self._send_btn.configure(state="disabled" if busy else "normal")
-        self._load_btn.configure(state="disabled" if busy else "normal")
         self._busy_label.configure(text=label)
         if busy:
             self._cancel_event.clear()
