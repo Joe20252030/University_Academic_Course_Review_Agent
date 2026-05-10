@@ -644,6 +644,22 @@ class ConversationApp(tk.Tk):
         # Wire entry to current provider's var and update hint
         self._update_api_key_row()
 
+        # ── API key scope notice ───────────────────────────────────────────
+        note_frame = tk.Frame(akf, background="#e8f4fd",
+                              highlightbackground="#90caf9", highlightthickness=1,
+                              padx=8, pady=5)
+        note_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(8, 0))
+        tk.Label(
+            note_frame,
+            text=(
+                "ℹ️  API keys are shared across all sessions for the lifetime of this app window.\n"
+                "A key entered here applies to every session until the app is closed or the key is changed.\n"
+                "Keys are never saved to disk — re-enter them each time you open the app, or add them to a .env file."
+            ),
+            background="#e8f4fd", foreground="#0d47a1",
+            font=("TkDefaultFont", 9), anchor="w", justify="left", wraplength=460,
+        ).pack(fill="x")
+
         # ── Embedding ─────────────────────────────────────────────────────
         embf = ttk.LabelFrame(inner, text="Embedding", padding=_PAD)
         embf.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
