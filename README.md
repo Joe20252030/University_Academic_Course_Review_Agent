@@ -94,6 +94,11 @@ When generating output you can supply context about the course. The **Course Nam
 
 All fields are passed to every planner and writer prompt, so the LLM can tailor content to the specific course and context. The **Exam Duration** and **Exam Info Sheet** fields are especially useful for generating realistic mock exams and practice booklets that match the actual exam constraints.
 
+Interface note:
+- The desktop GUI accepts an exam info sheet as a file attachment.
+- The API accepts `exam_info` as plain text in the request body.
+- The current CLI does not expose a dedicated exam-info argument.
+
 ## Document Types & Splitting Strategies
 
 Each document type uses a multi-stage splitting pipeline optimized for its structure:
@@ -289,6 +294,7 @@ embedding costs.
 How the current CLI works:
 
 - It indexes the supplied files once at startup.
+- It shows live progress updates while indexing documents and generating study documents.
 - It then enters an interactive chat loop in the terminal.
 - You can ask course questions or request a generated document in natural language.
 - Generated outputs are saved to the workspace and their paths are printed in the terminal.
