@@ -157,12 +157,7 @@ class ConversationAgent:
                 except Exception as exc:  # noqa: BLE001
                     generation_error = f"Generation failed: {exc}"
 
-        # -- 6. Update history -------------------------------------------------
-        session.chat_history.append(HumanMessage(content=message))
-        session.chat_history.append(AIMessage(content=clean_text))
-        session.trim_history()
-
-        # -- 7. Build final reply text -----------------------------------------
+        # -- 6. Build final reply text -----------------------------------------
         reply = clean_text
         if output_path:
             p = Path(output_path)
@@ -175,6 +170,13 @@ class ConversationAgent:
             )
         if generation_error:
             reply += f"\n\n⚠️ {generation_error}"
+
+        # -- 7. Update history (after reply is fully assembled) ----------------
+        # Save `reply` — not `clean_text` — so the file path note and any error
+        # message are preserved across session reloads.
+        session.chat_history.append(HumanMessage(content=message))
+        session.chat_history.append(AIMessage(content=reply))
+        session.trim_history()
 
         return ChatResponse(
             text=reply,
