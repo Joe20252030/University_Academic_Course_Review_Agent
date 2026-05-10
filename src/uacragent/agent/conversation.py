@@ -164,6 +164,15 @@ class ConversationAgent:
 
         # -- 7. Build final reply text -----------------------------------------
         reply = clean_text
+        if output_path:
+            p = Path(output_path)
+            reply += (
+                f"\n\n📄 The document has been saved as **{p.name}** "
+                f"in the outputs folder of your workspace.\n"
+                f"Full path: `{output_path}`\n\n"
+                f"*(This file remains on disk permanently — use the path above "
+                f"to locate it if you close and reopen the app.)*"
+            )
         if generation_error:
             reply += f"\n\n⚠️ {generation_error}"
 
