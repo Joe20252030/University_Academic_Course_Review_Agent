@@ -72,7 +72,7 @@ class ConversationAgent:
             session.retriever = None
             return (
                 "No documents are loaded yet. "
-                "Add files in the Session Settings panel and click **Reload Session** to index them."
+                "Add files in the Session Settings panel and click **Apply** or **Re-index** to index them."
             )
 
         try:
@@ -134,12 +134,12 @@ class ConversationAgent:
             if not session.has_files():
                 generation_error = (
                     "No documents are loaded. Please add files in the Session Settings "
-                    "panel and reload the session before generating a document."
+                    "panel and index them before generating a document."
                 )
             elif session.retriever is None:
                 generation_error = (
                     "The session has not been initialised yet. "
-                    "Click **Reload Session** to index your documents first."
+                    "Click **Apply** or **Re-index** to index your documents first."
                 )
             else:
                 try:

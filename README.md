@@ -22,7 +22,7 @@ This project is released under the **MIT License**. See [LICENSE](LICENSE).
 The project currently has three user-facing interfaces:
 
 - **Desktop GUI**: the primary interface, now built as a persistent conversational assistant with session management
-- **CLI**: direct one-shot document generation
+- **CLI**: interactive conversational terminal interface that indexes documents once, then answers questions and generates study documents on request
 - **FastAPI API**: programmatic one-shot document generation
 
 ## Task Types
@@ -272,34 +272,40 @@ Notes:
 
 ## Run (CLI)
 
-`--course-name` is **required** for all CLI runs.
+`--course-name` is **required** for CLI runs with input files.
 
 The CLI examples below assume you completed `pip install -e .` during setup.
 The CLI uses the provider configured through `LLM_PROVIDER`/`LLM_MODEL` and the
 matching API key from your environment.
 
-`--workspace-id` controls the output folder name under the app data directory.
-By default, one-shot CLI runs write to `~/.uacragent/default/` unless the app
-data directory has been changed by the desktop app.
+`--workspace-id` controls the workspace folder name under the app data
+directory. Reusing the same ID lets the CLI reuse the same persisted Chroma
+store and outputs for unchanged files.
 
 CLI runs also respect `EMBEDDING_PROVIDER`. For example, you can use DeepSeek
-for generation together with `EMBEDDING_PROVIDER=local` to avoid cloud
+for chat/generation together with `EMBEDDING_PROVIDER=local` to avoid cloud
 embedding costs.
 
-Simple review summary (all files treated as "other"):
-```
+How the current CLI works:
+
+- It indexes the supplied files once at startup.
+- It then enters an interactive chat loop in the terminal.
+- You can ask course questions or request a generated document in natural language.
+- Generated outputs are saved to the workspace and their paths are printed in the terminal.
+
+Start an interactive CLI session with course files:
+```bash
 python -m uacragent outline.pdf lecture.pdf \
   --course-name "Introduction to Algorithms" \
   --exam-format written
 ```
 
-With all options:
-```
+Use explicit document typing for all supplied files:
+```bash
 python -m uacragent syllabus.pdf \
   --course-name "Data Structures" \
   --doc-type syllabus \
   --exam-type final \
-  --task-type mock_exam \
   --exam-format mixed \
   --university-name "University of Toronto" \
   --major "Computer Science" \
@@ -307,30 +313,24 @@ python -m uacragent syllabus.pdf \
   --professor-name "Dr. Smith" \
   --semester "Fall 2024" \
   --exam-duration "2 hours" \
-  --exam-info "Closed book. One double-sided formula sheet allowed. Topics: chapters 1-6."
+  --workspace-id csc263-final
 ```
 
-Generate a practice booklet for a midterm:
-```
-python -m uacragent notes.pdf \
-  --course-name "Linear Algebra" \
-  --task-type practice_booklet \
-  --exam-type midterm \
-  --exam-format written
-```
+Once the CLI starts, you can type requests such as:
 
-With extra instructions:
-```
-python -m uacragent notes.pdf \
-  --course-name "Graph Theory" \
-  --task-type exam_prediction \
-  --extra-instructions "Professor emphasized graph theory"
-```
+- `Explain the main topics covered in these notes.`
+- `Generate a review summary for this course.`
+- `Generate a practice booklet for this course.`
+- `Generate a mock exam for this course.`
+- `Generate an exam prediction for this course.`
 
-Quick-start script:
-- `python app.py`
+To leave the terminal chat, type `exit` or press `Ctrl-C` / `Ctrl-D`.
 
-By default, [app.py](app.py) runs against the included PDF fixture under `test_materials/outlines/`.
+### app.py
+
+[app.py](app.py) is no longer the main interactive entrypoint. It is a small
+repo-level helper that exposes `main()` / `main_simple()` for direct import and
+prints guidance to use `python -m uacragent` if run as a script.
 
 ## Run (API)
 
@@ -408,7 +408,7 @@ Workspace resolution:
 
 ```
 src/uacragent/
-  __main__.py            CLI + GUI entry point
+  __main__.py            Interactive CLI + desktop GUI entry point
   agent/
     service.py           High-level orchestrator (AgentService)
     conversation.py      Conversational agent for session-based chat + task triggering
@@ -457,7 +457,7 @@ tests/
   test_loaders.py        Document loading and splitting tests
   test_pipeline_utils.py Pipeline utility function tests
   test_workspace.py      Workspace path and directory tests
-app.py                   Script entry point (quick-start)
+app.py                   Lightweight importable helper for direct service calls
 .env.sample              Example environment configuration
 LICENSE                  MIT license text
 ```
