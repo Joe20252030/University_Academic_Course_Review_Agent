@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from langchain_core.documents import Document
@@ -152,6 +153,7 @@ def write_sections_sequential(
     llm_client: LLMClient,
     user_prefs: dict | None = None,
     request_delay: float = 3.0,
+    progress_cb: Callable[[str], None] | None = None,
 ) -> list[str]:
     """Write sections one at a time with a delay between each LLM call.
 
@@ -161,9 +163,12 @@ def write_sections_sequential(
     previous call took.
     """
     results: list[str] = []
+    n = len(sections)
     for i, section in enumerate(sections):
+        if progress_cb:
+            progress_cb(f"Writing section {i + 1}/{n}: {section.title}…")
         results.append(write_section(section, retriever, llm_client, user_prefs))
-        if i < len(sections) - 1:          # no delay after the last section
+        if i < n - 1:                      # no delay after the last section
             time.sleep(request_delay)
     return results
 
@@ -291,6 +296,7 @@ class AgentPipeline:
         exam_duration: str = "",
         exam_info: str = "",
         workspace_folder: "Path | None" = None,
+        progress_cb: Callable[[str], None] | None = None,
     ) -> tuple[ReviewPlan, str, str]:
         """Run the full RAG pipeline with classified documents.
 
@@ -300,10 +306,15 @@ class AgentPipeline:
         Returns:
             Tuple of (ReviewPlan, markdown content, markdown file path)
         """
+        def _progress(msg: str) -> None:
+            if progress_cb:
+                progress_cb(msg)
+
         ws = workspace_paths(workspace_id=workspace_id,
                              workspace_folder=workspace_folder)
         ensure_workspace_dirs(ws)
 
+        _progress("Loading and splitting documents…")
         chunks = self.loader.load_and_split_classified(
             classified_files,
             workspace_paths=ws if copy_to_workspace else None,
@@ -312,6 +323,7 @@ class AgentPipeline:
         if not chunks:
             raise LLMError("No document chunks were created. Please check your input files.")
 
+        _progress(f"Building vector index ({len(chunks)} chunks)…")
         vectorstore = get_or_create_vectorstore(chunks, self.settings, ws,
                                                 classified_files=classified_files)
         retriever = build_retriever(vectorstore, self.settings)
@@ -335,6 +347,7 @@ class AgentPipeline:
             "exam_info": exam_info,
         }
 
+        _progress("Generating study plan…")
         plan = generate_plan(all_docs, user_prefs, self.llm_client)
 
         if not plan.sections:
@@ -346,20 +359,27 @@ class AgentPipeline:
             self.llm_client,
             user_prefs,
             request_delay=self.settings.llm_request_delay,
+            progress_cb=progress_cb,
         )
 
         # For exam_prediction, generate the full predicted exam paper (Part B)
         paper_text = ""
         if task_type == TaskType.exam_prediction.value:
+            _progress("Generating predicted exam paper…")
             paper_text = write_predicted_exam_paper(
                 plan, retriever, self.llm_client, user_prefs
             )
 
+        _progress("Assembling final document…")
         final_md = assemble_markdown(plan, section_texts, task_type, paper_text=paper_text)
         md_path = save_markdown(final_md, ws)
         return plan, final_md, md_path
 
-    def prepare_session(self, session: "AgentSession") -> "BaseRetriever":  # type: ignore[name-defined]
+    def prepare_session(
+        self,
+        session: "AgentSession",  # type: ignore[name-defined]
+        progress_cb: Callable[[str], None] | None = None,
+    ) -> "BaseRetriever":  # type: ignore[name-defined]
         """Index session documents and return a ready-to-use retriever.
 
         Called by :class:`ConversationAgent` when the user initialises or
@@ -369,12 +389,17 @@ class AgentPipeline:
         from uacragent.agent.session import AgentSession  # local import to avoid cycle
         from langchain_core.retrievers import BaseRetriever
 
+        def _progress(msg: str) -> None:
+            if progress_cb:
+                progress_cb(msg)
+
         ws = workspace_paths(
             workspace_id=session.workspace_id,
             workspace_folder=session.workspace_folder,
         )
         ensure_workspace_dirs(ws)
 
+        _progress("Loading and splitting documents…")
         chunks = self.loader.load_and_split_classified(
             session.classified_files,
             workspace_paths=ws,
@@ -386,6 +411,7 @@ class AgentPipeline:
                 "Please check that the files are readable."
             )
 
+        _progress(f"Building vector index ({len(chunks)} chunks)…")
         vectorstore = get_or_create_vectorstore(chunks, self.settings, ws,
                                                 classified_files=session.classified_files)
         return build_retriever(vectorstore, self.settings)

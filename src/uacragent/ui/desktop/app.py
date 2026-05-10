@@ -1586,9 +1586,14 @@ class ConversationApp(tk.Tk):
         _show_err = show_error_dialog
 
         def _work() -> None:
+            def _progress(msg: str) -> None:
+                if not self._cancel_event.is_set():
+                    self.after(0, lambda m=msg: self._busy_label.configure(text=m))
+                    self.after(0, lambda m=msg: self._session_status_var.set(m))
+
             try:
                 agent = self._get_agent()
-                msg = agent.initialize_session(self._session)
+                msg = agent.initialize_session(self._session, progress_cb=_progress)
                 if not self._cancel_event.is_set():
                     self.after(0, self._on_session_loaded, msg)
             except Exception as exc:
@@ -1674,8 +1679,13 @@ class ConversationApp(tk.Tk):
         self._set_busy(True, "Thinking…")
 
         def _work() -> None:
+            def _progress(msg: str) -> None:
+                if not self._cancel_event.is_set():
+                    self.after(0, lambda m=msg: self._busy_label.configure(text=m))
+
             try:
-                response = self._get_agent().chat(message, self._session)
+                response = self._get_agent().chat(message, self._session,
+                                                   progress_cb=_progress)
                 if not self._cancel_event.is_set():
                     self.after(0, self._on_chat_response, response)
             except Exception as exc:

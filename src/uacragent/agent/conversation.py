@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -60,7 +61,11 @@ class ConversationAgent:
     # Session initialisation
     # ------------------------------------------------------------------
 
-    def initialize_session(self, session: AgentSession) -> str:
+    def initialize_session(
+        self,
+        session: AgentSession,
+        progress_cb: Callable[[str], None] | None = None,
+    ) -> str:
         """Build the retriever from session files and attach it to *session*.
 
         Returns a short status message suitable for display in the chat window.
@@ -78,7 +83,7 @@ class ConversationAgent:
         try:
             settings = _settings_for_session(self.settings, session)
             pipeline = AgentPipeline(settings)
-            session.retriever = pipeline.prepare_session(session)
+            session.retriever = pipeline.prepare_session(session, progress_cb=progress_cb)
             n_types = len(session.active_files())
             n_files = sum(len(v) for v in session.active_files().values())
             return (
@@ -93,7 +98,12 @@ class ConversationAgent:
     # Chat
     # ------------------------------------------------------------------
 
-    def chat(self, message: str, session: AgentSession) -> ChatResponse:
+    def chat(
+        self,
+        message: str,
+        session: AgentSession,
+        progress_cb: Callable[[str], None] | None = None,
+    ) -> ChatResponse:
         """Process one user turn and return a :class:`ChatResponse`.
 
         Flow:
@@ -143,7 +153,7 @@ class ConversationAgent:
                 )
             else:
                 try:
-                    output_path = self._run_task(task_type, session)
+                    output_path = self._run_task(task_type, session, progress_cb)
                 except Exception as exc:  # noqa: BLE001
                     generation_error = f"Generation failed: {exc}"
 
@@ -232,7 +242,12 @@ class ConversationAgent:
         clean = _TASK_MARKER_RE.sub("", text).strip()
         return task_value, clean
 
-    def _run_task(self, task_type: str, session: AgentSession) -> str:
+    def _run_task(
+        self,
+        task_type: str,
+        session: AgentSession,
+        progress_cb: Callable[[str], None] | None = None,
+    ) -> str:
         """Run the generation pipeline and return the output markdown path."""
         from uacragent.agent.pipeline import AgentPipeline
 
@@ -256,5 +271,6 @@ class ConversationAgent:
             exam_duration=prefs.get("exam_duration", ""),
             exam_info=prefs.get("exam_info", ""),
             workspace_folder=session.workspace_folder,
+            progress_cb=progress_cb,
         )
         return md_path

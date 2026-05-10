@@ -32,9 +32,43 @@ LLM provider, model, and API keys are read from environment variables or a
 from __future__ import annotations
 
 import argparse
+import sys
 
 from uacragent.domain.errors import UACRAgentError
 from uacragent.domain.types import DocumentType, ExamType
+
+
+# ---------------------------------------------------------------------------
+# CLI progress helper
+# ---------------------------------------------------------------------------
+
+def _make_cli_progress():
+    """Return (progress_cb, finish_cb) for live single-line status in the terminal.
+
+    In a real TTY the status line is overwritten in-place with \\r so the
+    terminal stays clean.  When stdout is redirected (pipe / file) each step
+    is emitted on its own line instead.
+    """
+    is_tty = sys.stdout.isatty()
+    _last_len: list[int] = [0]
+
+    def progress_cb(msg: str) -> None:
+        line = f"  ⋯ {msg}"
+        if is_tty:
+            # Overwrite previous status line
+            clear = " " * _last_len[0]
+            print(f"\r{clear}\r{line}", end="", flush=True)
+            _last_len[0] = len(line)
+        else:
+            print(line, flush=True)
+
+    def finish_cb() -> None:
+        """Advance past the overwritten status line."""
+        if is_tty and _last_len[0]:
+            print()          # move to next line
+            _last_len[0] = 0
+
+    return progress_cb, finish_cb
 
 
 # ---------------------------------------------------------------------------
@@ -115,8 +149,10 @@ def _cli(args: argparse.Namespace) -> None:
 
     # ── Index documents ───────────────────────────────────────────────────────
     if classified_files:
-        print("Indexing documents… (this may take a moment on first run)\n")
-    status = agent.initialize_session(session)
+        print("Indexing documents…")
+    _progress, _finish = _make_cli_progress()
+    status = agent.initialize_session(session, progress_cb=_progress if classified_files else None)
+    _finish()
     print(f"✓  {status}\n")
 
     # ── Usage hint ────────────────────────────────────────────────────────────
@@ -154,11 +190,14 @@ def _cli(args: argparse.Namespace) -> None:
             print("Goodbye!")
             break
 
+        _progress, _finish = _make_cli_progress()
         try:
-            response = agent.chat(user_input, session)
+            response = agent.chat(user_input, session, progress_cb=_progress)
         except Exception as exc:          # noqa: BLE001
+            _finish()
             print(f"\n⚠  Error: {exc}\n")
             continue
+        _finish()
 
         print(f"\nAssistant:\n{response.text}")
 
