@@ -27,12 +27,6 @@ class TaskType(str, Enum):
     exam_prediction = "exam_prediction"
 
 
-class LLMProvider(str, Enum):
-    gemini = "gemini"
-    openai = "openai"
-    deepseek = "deepseek"
-
-
 class ExportFormat(str, Enum):
     markdown = "markdown"
     docx = "docx"

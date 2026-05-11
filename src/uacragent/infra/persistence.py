@@ -371,6 +371,12 @@ def dict_to_session(data: dict[str, Any]) -> "AgentSession":  # type: ignore[nam
     wf_str = data.get("workspace_folder", "")
     workspace_folder = Path(wf_str) if wf_str else None
 
+    import uuid as _uuid
+    # Guard against empty workspace_id (e.g. a session.json written with
+    # "workspace_id": "").  An empty string would collapse in _resolve_workspace
+    # to the shared sessions/default path, corrupting unrelated sessions.
+    workspace_id = data.get("workspace_id", "") or str(_uuid.uuid4())
+
     return AgentSession(
         llm_provider=data.get("llm_provider", "gemini"),
         llm_model=data.get("llm_model", "gemini-2.5-flash"),
@@ -384,7 +390,7 @@ def dict_to_session(data: dict[str, Any]) -> "AgentSession":  # type: ignore[nam
         exam_format=data.get("exam_format", "written"),
         exam_duration=data.get("exam_duration", ""),
         exam_info_path=data.get("exam_info_path", ""),
-        workspace_id=data.get("workspace_id", ""),
+        workspace_id=workspace_id,
         workspace_folder=workspace_folder,
         extra_instructions=data.get("extra_instructions", ""),
         classified_files=_deserialise_files(data.get("classified_files", {})),

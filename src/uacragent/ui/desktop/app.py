@@ -132,6 +132,10 @@ class ConversationApp(tk.Tk):
         # workspace from being changed.
         self._workspace_committed = False
 
+        # Set to True while _refresh_session_list runs so that the programmatic
+        # lb.selection_set() inside it does not re-trigger _on_session_select.
+        self._updating_session_list = False
+
         # Settings Toplevel (created lazily, kept alive while open)
         self._settings_win: tk.Toplevel | None = None
 
@@ -577,12 +581,7 @@ class ConversationApp(tk.Tk):
         win.after_idle(lambda: _bind_mousewheel(inner))
 
         # No global bind_all needed — destroying the Toplevel removes all
-        # widget-level bindings automatically, so no explicit cleanup required.
-        # Keep the Destroy handler only to catch any edge-case canvas errors.
-        def _on_settings_destroy(event: tk.Event) -> None:
-            pass  # instance bindings are cleaned up automatically with the widgets
-
-        win.bind("<Destroy>", _on_settings_destroy)
+        # widget-level bindings automatically.
 
         inner.columnconfigure(0, weight=1)
         row = 0
@@ -1339,10 +1338,6 @@ class ConversationApp(tk.Tk):
         env_var = self._PROVIDER_KEY_ENV.get(provider, "GOOGLE_API_KEY")
         return bool(os.environ.get(env_var, ""))
 
-    # Keep old name used in a few places
-    def _inject_api_key(self) -> bool:
-        return self._inject_api_keys()
-
     def _get_agent(self) -> ConversationAgent:
         if self._agent is None:
             from uacragent.infra.settings import get_settings
@@ -1354,30 +1349,40 @@ class ConversationApp(tk.Tk):
     # ------------------------------------------------------------------
 
     def _refresh_session_list(self) -> None:
-        self._session_records = list_sessions()
-        lb = self._session_listbox
-        lb.delete(0, tk.END)
-        for rec in self._session_records:
-            # display_name (user-set) takes priority over course_name
-            name = (rec.get("display_name")
-                    or rec.get("course_name")
-                    or Path(rec["workspace"]).name)
-            date = _fmt_dt(rec.get("last_modified", ""))
-            lb.insert(tk.END, f"  {name}\n  {date}" if date else f"  {name}")
+        # Guard flag: programmatic selection changes (lb.selection_set below)
+        # fire <<ListboxSelect>> which would re-enter _on_session_select and
+        # spawn a redundant _attach_session_async.  The flag blocks that.
+        self._updating_session_list = True
+        try:
+            self._session_records = list_sessions()
+            lb = self._session_listbox
+            lb.delete(0, tk.END)
+            for rec in self._session_records:
+                # display_name (user-set) takes priority over course_name
+                name = (rec.get("display_name")
+                        or rec.get("course_name")
+                        or Path(rec["workspace"]).name)
+                date = _fmt_dt(rec.get("last_modified", ""))
+                lb.insert(tk.END, f"  {name}\n  {date}" if date else f"  {name}")
 
-        # Restore the listbox selection to the currently active session so that
-        # the selection is not silently lost whenever the list is refreshed
-        # (e.g. after indexing completes, after rename, after a chat auto-save).
-        # Only do this when a committed session is actually active.
-        if self._workspace_committed and self._session.workspace_folder:
-            active = Path(self._session.workspace_folder).resolve()
-            for i, rec in enumerate(self._session_records):
-                if Path(rec.get("workspace", "")).resolve() == active:
-                    lb.selection_set(i)
-                    lb.see(i)
-                    break
+            # Restore the listbox selection to the currently active session so that
+            # the selection is not silently lost whenever the list is refreshed
+            # (e.g. after indexing completes, after rename, after a chat auto-save).
+            # Only do this when a committed session is actually active.
+            if self._workspace_committed and self._session.workspace_folder:
+                active = Path(self._session.workspace_folder).resolve()
+                for i, rec in enumerate(self._session_records):
+                    if Path(rec.get("workspace", "")).resolve() == active:
+                        lb.selection_set(i)
+                        lb.see(i)
+                        break
+        finally:
+            self._updating_session_list = False
 
     def _on_session_select(self, _event: object = None) -> None:
+        # Suppress events fired by programmatic list refreshes (not user clicks).
+        if self._updating_session_list:
+            return
         sel = self._session_listbox.curselection()
         if not sel:
             return
@@ -1434,11 +1439,19 @@ class ConversationApp(tk.Tk):
         # call _save_current_session() on the blank AgentSession(), creating a
         # phantom entry in the index that re-appears on the next launch.
         #
-        # Compare using workspace_folder directly (the real committed path).
-        # Falling back to _default_workspace() when workspace_folder is None would
-        # produce a wrong path and silently skip this branch for UUID-based sessions.
-        active_ws = self._session.workspace_folder
-        if active_ws is not None and Path(active_ws).resolve() == ws.resolve():
+        # Compute the effective workspace for the currently active session:
+        # prefer the explicit workspace_folder; fall back to the auto-path derived
+        # from workspace_id (for UUID-based sessions whose folder was never set
+        # by the user but was committed via Apply or session load).
+        if self._session.workspace_folder:
+            active_ws: Path | None = Path(self._session.workspace_folder).resolve()
+        elif self._session.workspace_id:
+            active_ws = (
+                get_app_data_dir() / "sessions" / self._session.workspace_id
+            ).resolve()
+        else:
+            active_ws = None
+        if active_ws is not None and active_ws == ws.resolve():
             self._session = AgentSession()
             self._workspace_committed = False
             self._show_idle()
@@ -1472,6 +1485,11 @@ class ConversationApp(tk.Tk):
     def _load_session_from_workspace(self, ws: Path) -> None:
         data = load_session(ws)
         if data is None:
+            self._append_chat(
+                "system",
+                f"⚠️ Could not load session data from {ws}. "
+                "The session file may be missing or corrupt.",
+            )
             return
         self._session = dict_to_session(data)
         # Sessions loaded from disk already have a committed workspace.
@@ -1601,19 +1619,25 @@ class ConversationApp(tk.Tk):
         _show_err = show_error_dialog
 
         def _work() -> None:
+            # Capture session at thread-start so a mid-flight session swap
+            # (e.g. user clicks "New") cannot redirect this thread's writes.
+            session = self._session
             def _progress(msg: str) -> None:
                 if not self._cancel_event.is_set():
-                    self.after(0, lambda m=msg: self._busy_label.configure(text=m))
-                    self.after(0, lambda m=msg: self._session_status_var.set(m))
+                    try:
+                        self.after(0, lambda m=msg: self._busy_label.configure(text=m))
+                        self.after(0, lambda m=msg: self._session_status_var.set(m))
+                    except tk.TclError:
+                        pass  # window destroyed before callback fired
 
             try:
                 agent = self._get_agent()
                 # force_reindex=True: Apply always runs the full pipeline so
                 # changes to files, embedding provider, or model take effect.
                 msg, _ = agent.initialize_session(
-                    self._session, progress_cb=_progress, force_reindex=True)
+                    session, progress_cb=_progress, force_reindex=True)
                 if not self._cancel_event.is_set():
-                    self.after(0, self._on_session_loaded, msg)
+                    self.after(0, lambda m=msg, s=session: self._on_session_loaded(m, s))
             except Exception as exc:
                 if not self._cancel_event.is_set():
                     self.after(0, lambda e=str(exc): self._on_session_load_error(e, _show_err))
@@ -1682,27 +1706,42 @@ class ConversationApp(tk.Tk):
         self._session.retriever = None
 
         def _work() -> None:
+            # Capture session at thread-start so a mid-flight session swap
+            # cannot redirect this thread's writes to the wrong session.
+            session = self._session
             def _progress(msg: str) -> None:
                 if not self._cancel_event.is_set():
-                    self.after(0, lambda m=msg: self._busy_label.configure(text=m))
-                    self.after(0, lambda m=msg: self._session_status_var.set(m))
+                    try:
+                        self.after(0, lambda m=msg: self._busy_label.configure(text=m))
+                        self.after(0, lambda m=msg: self._session_status_var.set(m))
+                    except tk.TclError:
+                        pass  # window destroyed before callback fired
 
             try:
                 agent = self._get_agent()
                 # force_reindex=False: use fast path when Chroma is current.
                 status, was_cached = agent.initialize_session(
-                    self._session, progress_cb=_progress)
+                    session, progress_cb=_progress)
                 if not self._cancel_event.is_set():
-                    self.after(0, lambda s=status, c=was_cached: self._on_attach_done(s, c))
+                    self.after(
+                        0,
+                        lambda s=status, c=was_cached, sess=session:
+                            self._on_attach_done(s, c, sess),
+                    )
             except Exception as exc:  # noqa: BLE001
                 if not self._cancel_event.is_set():
                     self.after(0, lambda e=str(exc): self._on_session_load_error(e, False))
 
         threading.Thread(target=_work, daemon=True).start()
 
-    def _on_attach_done(self, status: str, was_cached: bool) -> None:
+    def _on_attach_done(self, status: str, was_cached: bool, session: object) -> None:
         """Completion handler for _attach_session_async."""
+        # Always release the busy lock so the UI is never permanently stuck.
         self._set_busy(False)
+        # Discard stale results if the user switched to a different session
+        # while this background thread was running.
+        if self._session is not session:
+            return
         self._update_header()
         self._session_status_var.set(status)
         if self._settings_alive():
@@ -1714,8 +1753,13 @@ class ConversationApp(tk.Tk):
         self._save_current_session()
         self._refresh_session_list()
 
-    def _on_session_loaded(self, status: str) -> None:
+    def _on_session_loaded(self, status: str, session: object) -> None:
+        """Completion handler for _start_indexing (the Apply path)."""
+        # Always release the busy lock so the UI is never permanently stuck.
         self._set_busy(False)
+        # Discard stale results if the user replaced the session mid-flight.
+        if self._session is not session:
+            return
         self._update_header()
         self._session_status_var.set(status)
         if self._settings_alive():
@@ -1782,16 +1826,25 @@ class ConversationApp(tk.Tk):
         self._append_chat("user", message)
         self._set_busy(True, "Thinking…")
 
+        # Capture export format NOW (before the background thread runs) so
+        # that changing the combobox while the LLM is thinking cannot affect
+        # which format is produced for this response (TOCTOU fix).
+        export_fmt = self._export_format_var.get()
+
         def _work() -> None:
             def _progress(msg: str) -> None:
                 if not self._cancel_event.is_set():
-                    self.after(0, lambda m=msg: self._busy_label.configure(text=m))
+                    try:
+                        self.after(0, lambda m=msg: self._busy_label.configure(text=m))
+                    except tk.TclError:
+                        pass  # window destroyed before callback fired
 
             try:
                 response = self._get_agent().chat(message, self._session,
                                                    progress_cb=_progress)
                 if not self._cancel_event.is_set():
-                    self.after(0, self._on_chat_response, response)
+                    self.after(0, lambda r=response, f=export_fmt:
+                               self._on_chat_response(r, f))
             except Exception as exc:
                 if not self._cancel_event.is_set():
                     self.after(0, self._on_chat_error, str(exc))
@@ -1803,11 +1856,11 @@ class ConversationApp(tk.Tk):
         self._input_text.insert("1.0", message)
         self._on_send()
 
-    def _on_chat_response(self, response: ChatResponse) -> None:
+    def _on_chat_response(self, response: ChatResponse, export_fmt: str) -> None:
         self._set_busy(False)
         self._append_chat("assistant", response.text)
         if response.output_path:
-            self._append_output_link(response.output_path, response.task_type)
+            self._append_output_link(response.output_path, response.task_type, export_fmt)
         self._save_current_session()
 
     def _on_chat_error(self, error: str) -> None:
@@ -1874,7 +1927,12 @@ class ConversationApp(tk.Tk):
         self._chat_text.configure(state="disabled")
         self._chat_text.see(tk.END)
 
-    def _append_output_link(self, output_path: str, task_type: str | None) -> None:
+    def _append_output_link(
+        self,
+        output_path: str,
+        task_type: str | None,
+        export_fmt: str,
+    ) -> None:
         label = task_type.replace("_", " ").title() if task_type else "Output"
         self._chat_text.configure(state="normal")
         self._chat_text.insert(tk.END, f"\n📄 {label} generated: ", "assistant_body")
@@ -1903,7 +1961,7 @@ class ConversationApp(tk.Tk):
 
         # Optional extra-format export — run in a background thread so the UI
         # is not frozen while python-docx / fpdf2 write the file.
-        export_fmt = self._export_format_var.get()
+        # export_fmt was captured at send-time (not now) to avoid TOCTOU.
         if export_fmt != ExportFormat.markdown.value and output_path.endswith(".md"):
             # Insert a placeholder that will be replaced once the export finishes.
             placeholder_tag = f"export_placeholder_{id(output_path)}"
@@ -2044,7 +2102,10 @@ class ConversationApp(tk.Tk):
                 var.set("")
             except Exception:  # noqa: BLE001
                 pass
-        for env_var in ("GOOGLE_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY"):
+        for env_var in (
+            "GOOGLE_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY",
+            "EMBEDDING_PROVIDER", "LOCAL_EMBEDDING_MODEL",
+        ):
             os.environ.pop(env_var, None)
 
         self.destroy()

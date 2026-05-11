@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 from uacragent.agent.pipeline import AgentPipeline
 from uacragent.domain.models import ReviewPlan
@@ -37,6 +39,8 @@ class AgentService:
         semester: str = "",
         exam_duration: str = "",
         exam_info: str = "",
+        workspace_folder: Path | None = None,
+        progress_cb: Callable[[str], None] | None = None,
     ) -> ReviewResult:
         plan, markdown, markdown_path = self.pipeline.run_end_to_end(
             classified_files=classified_files,
@@ -54,6 +58,8 @@ class AgentService:
             semester=semester,
             exam_duration=exam_duration,
             exam_info=exam_info,
+            workspace_folder=workspace_folder,
+            progress_cb=progress_cb,
         )
         return ReviewResult(plan=plan, markdown=markdown, markdown_path=markdown_path)
 

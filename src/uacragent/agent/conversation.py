@@ -15,17 +15,18 @@ from uacragent.infra.settings import Settings, get_settings
 
 
 def _settings_for_session(base: Settings, session: AgentSession) -> Settings:
-    """Return a Settings instance with provider/model overridden from the session."""
-    import os
-    overrides: dict = {}
+    """Return a Settings instance with provider/model overridden from the session.
+
+    Uses ``model_copy`` instead of mutating ``os.environ`` so that concurrent
+    background threads cannot race on the global environment.
+    """
+    updates: dict = {}
     if session.llm_provider:
-        overrides["LLM_PROVIDER"] = session.llm_provider
-        os.environ["LLM_PROVIDER"] = session.llm_provider
+        updates["llm_provider"] = session.llm_provider
     if session.llm_model:
-        overrides["LLM_MODEL"] = session.llm_model
-        os.environ["LLM_MODEL"] = session.llm_model
-    if overrides:
-        return Settings()   # re-read env (we just wrote to it)
+        updates["llm_model"] = session.llm_model
+    if updates:
+        return base.model_copy(update=updates)
     return base
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -117,7 +118,7 @@ class ConversationAgent:
             )
         except Exception as exc:  # noqa: BLE001
             session.retriever = None
-            return f"Failed to initialise session: {exc}", False
+            return (f"Failed to initialise session: {exc}", False)
 
     # ------------------------------------------------------------------
     # Chat

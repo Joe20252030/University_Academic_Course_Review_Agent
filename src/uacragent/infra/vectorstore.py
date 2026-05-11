@@ -8,7 +8,7 @@ from typing import Any
 
 try:
     from langchain_chroma import Chroma  # type: ignore
-except Exception:  # noqa: BLE001
+except ImportError:
     from langchain_community.vectorstores import Chroma
 
 from langchain_core.documents import Document

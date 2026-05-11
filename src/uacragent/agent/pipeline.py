@@ -417,9 +417,6 @@ class AgentPipeline:
         reloads the session.  The retriever is stored on *session* by the
         caller.
         """
-        from uacragent.agent.session import AgentSession  # local import to avoid cycle
-        from langchain_core.retrievers import BaseRetriever
-
         def _progress(msg: str) -> None:
             if progress_cb:
                 progress_cb(msg)
