@@ -81,6 +81,12 @@ class ConversationAgent:
 
         if not session.has_files():
             session.retriever = None
+            # When the user removed every file and clicked Apply, the pipeline
+            # is never entered — so workspace copies would never be cleaned up.
+            # Handle that here explicitly.
+            if force_reindex:
+                from uacragent.agent.pipeline import wipe_session_uploads
+                wipe_session_uploads(session)
             return (
                 "No documents are loaded yet. "
                 "Add files in the Session Settings panel and click **Apply** to index them.",

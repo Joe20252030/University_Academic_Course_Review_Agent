@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -269,6 +270,35 @@ def assemble_markdown(
 
 
 # ---------------------------------------------------------------------------
+# Upload-cleanup helper
+# ---------------------------------------------------------------------------
+
+def wipe_session_uploads(session: "AgentSession") -> None:  # type: ignore[name-defined]
+    """Delete all typed upload subfolders for *session*'s workspace.
+
+    Called on every full re-index (Apply) so that workspace copies of files
+    the user removed via the GUI are actually deleted from disk before the
+    current file set is re-copied.  Also called directly when the user removes
+    every file and clicks Apply — in that case the main pipeline is never
+    entered, so the cleanup must happen at a higher level.
+
+    Safe to call on a freshly-created session that has never been indexed.
+    """
+    if not session.workspace_id and not session.workspace_folder:
+        return
+    try:
+        ws = workspace_paths(
+            workspace_id=session.workspace_id,
+            workspace_folder=session.workspace_folder,
+        )
+        for folder in ws.doc_folders.values():
+            if folder.exists():
+                shutil.rmtree(folder)
+    except Exception:  # noqa: BLE001
+        pass  # non-fatal; worst case the old copies linger until the next run
+
+
+# ---------------------------------------------------------------------------
 # AgentPipeline
 # ---------------------------------------------------------------------------
 
@@ -426,6 +456,12 @@ class AgentPipeline:
             workspace_folder=session.workspace_folder,
         )
         ensure_workspace_dirs(ws)
+
+        # Wipe typed upload subfolders BEFORE re-copying so that workspace
+        # copies of any files the user removed via the GUI are actually deleted.
+        # load_and_split_classified will immediately re-copy only the files
+        # that are still listed in session.classified_files.
+        wipe_session_uploads(session)
 
         _progress("Loading and splitting documents…")
         chunks = self.loader.load_and_split_classified(
