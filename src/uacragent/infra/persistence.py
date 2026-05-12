@@ -354,10 +354,20 @@ def delete_session(workspace: Path) -> None:
     except Exception as exc:
         logger.warning("Could not remove agent dir %s: %s", agent_dir, exc)
 
-    # Remove the workspace folder itself if it is now empty
+    # Remove the workspace folder itself if it is now effectively empty.
+    #
+    # "Effectively empty" means the only surviving items are OS-generated
+    # metadata files (macOS .DS_Store, Windows Thumbs.db / desktop.ini).
+    # Those are invisible to the user and safe to delete together with the
+    # parent folder.  Any real user file keeps the workspace folder alive.
+    _OS_METADATA: frozenset[str] = frozenset({
+        ".DS_Store", ".localized", "Thumbs.db", "desktop.ini", ".Spotlight-V100",
+    })
     try:
-        if workspace.exists() and not any(workspace.iterdir()):
-            workspace.rmdir()
+        if workspace.exists():
+            user_items = [p for p in workspace.iterdir() if p.name not in _OS_METADATA]
+            if not user_items:
+                shutil.rmtree(workspace)
     except Exception as exc:
         logger.warning("Could not remove workspace folder %s: %s", workspace, exc)
 
