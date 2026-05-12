@@ -136,6 +136,11 @@ class ConversationApp(tk.Tk):
         # lb.selection_set() inside it does not re-trigger _on_session_select.
         self._updating_session_list = False
 
+        # Staging area for file-list edits made inside the settings dialog.
+        # Changes here are NOT written to session.classified_files until the
+        # user clicks Apply.  Closing the dialog without Apply discards them.
+        self._staged_files: dict[DocumentType, list[str]] = {}
+
         # Settings Toplevel (created lazily, kept alive while open)
         self._settings_win: tk.Toplevel | None = None
 
@@ -818,12 +823,18 @@ class ConversationApp(tk.Tk):
         docs_frame.columnconfigure(0, weight=1)
         row += 1
 
-        # Re-build file listboxes (they live inside this Toplevel)
+        # Re-build file listboxes (they live inside this Toplevel).
+        # Snapshot the committed file list into the staging area so edits
+        # inside this dialog don't touch session.classified_files until Apply.
         self._file_listboxes = {}
+        self._staged_files = {
+            dt: list(paths)
+            for dt, paths in self._session.classified_files.items()
+        }
         for doc_type in DocumentType:
             self._create_doc_section(docs_frame, doc_type)
-        # Populate listboxes from current session
-        for dt, paths in self._session.classified_files.items():
+        # Populate listboxes from the staged (not yet committed) copy
+        for dt, paths in self._staged_files.items():
             lb = self._file_listboxes.get(dt)
             if lb:
                 lb.delete(0, tk.END)
@@ -1202,7 +1213,9 @@ class ConversationApp(tk.Tk):
         lb = self._file_listboxes.get(doc_type)
         if lb is None:
             return
-        existing = self._session.classified_files.setdefault(doc_type, [])
+        # Work on the staging area — not the live session — so changes only
+        # take effect when the user clicks Apply.
+        existing = self._staged_files.setdefault(doc_type, [])
         for p in paths:
             if p not in existing:
                 existing.append(p)
@@ -1213,7 +1226,8 @@ class ConversationApp(tk.Tk):
         if lb is None:
             return
         indices = list(lb.curselection())
-        files = self._session.classified_files.get(doc_type, [])
+        # Work on the staging area — not the live session.
+        files = self._staged_files.get(doc_type, [])
         for i in reversed(indices):
             lb.delete(i)
             if i < len(files):
@@ -1225,6 +1239,9 @@ class ConversationApp(tk.Tk):
 
     def _sync_session_from_vars(self) -> None:
         s = self._session
+        # Commit the staged file list to the session.  This is the only place
+        # session.classified_files is written from the settings dialog.
+        s.classified_files = {dt: list(paths) for dt, paths in self._staged_files.items()}
         s.llm_provider   = self._llm_provider_var.get()
         s.llm_model      = self._llm_model_var.get()
         s.course_name    = self._course_name_var.get().strip()
@@ -1288,11 +1305,18 @@ class ConversationApp(tk.Tk):
             self._extra_instructions_var.set(s.extra_instructions)
 
         # Repopulate file listboxes only when the settings dialog is alive.
+        # Also reset the staging area from the freshly-loaded session so that
+        # any pending (uncommitted) edits from a previous dialog session are
+        # discarded and the listboxes show the true committed file list.
         if self._settings_alive():
+            self._staged_files = {
+                dt: list(paths)
+                for dt, paths in self._session.classified_files.items()
+            }
             for dt, lb in self._file_listboxes.items():
                 try:
                     lb.delete(0, tk.END)
-                    for p in self._session.classified_files.get(dt, []):
+                    for p in self._staged_files.get(dt, []):
                         lb.insert(tk.END, Path(p).name)
                 except tk.TclError:
                     pass  # widget destroyed — rebuilt on next dialog open
@@ -1584,6 +1608,10 @@ class ConversationApp(tk.Tk):
             return
 
         if not self._session.has_files():
+            # No documents to index — wipe any workspace upload copies left over
+            # from files the user removed via the GUI before clicking Apply.
+            from uacragent.agent.pipeline import wipe_session_uploads
+            wipe_session_uploads(self._session)
             self._append_chat(
                 "system",
                 "⚠️ No documents loaded. Add files in ⚙ Settings → Course Documents, "
