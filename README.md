@@ -85,7 +85,7 @@ When generating output you can supply context about the course. The **Course Nam
 |--------------------|----------|-----------------------------------------------------------------|
 | **Course Name**    | Yes      | `Introduction to Algorithms`                                    |
 | University         | No       | `University of Toronto`                                         |
-| Course Department  | No       | `Computer Science`                                              |
+| Major / Department | No       | `Computer Science`                                              |
 | Course Code        | No       | `CSC263`                                                        |
 | Professor          | No       | `Dr. Jane Smith`                                                |
 | Semester           | No       | `Fall 2024`                                                     |
@@ -350,7 +350,7 @@ prints guidance to use `python -m uacragent` if run as a script.
 
 Start the server:
 
-- `PYTHONPATH=src uvicorn uacragent.api.main:app --reload`
+- `uvicorn uacragent.api.main:app --reload`
 
 The API also uses the provider configured through `LLM_PROVIDER`/`LLM_MODEL`
 and the matching API key from the environment.
@@ -388,21 +388,8 @@ Endpoints:
     "exam_info": "Closed book. One formula sheet allowed."
   }
   ```
-- `POST /review/simple` — legacy endpoint (all files treated as "other"):
-  ```json
-  {
-    "file_paths": ["path/to/file.pdf"],
-    "course_name": "Introduction to Algorithms",
-    "exam_format": "written",
-    "exam_type": "other",
-    "task_type": "review_summary",
-    "workspace_id": "default",
-    "exam_duration": "90 minutes",
-    "exam_info": "Open book. Topics: chapters 1-4."
-  }
-  ```
 
-`course_name` is required in both endpoints. All other fields (`university_name`, `major`, `course_code`, `professor_name`, `semester`, `exam_duration`, `exam_info`) are optional.
+`course_name` is required in the review request. All other fields (`university_name`, `major`, `course_code`, `professor_name`, `semester`, `exam_duration`, `exam_info`) are optional.
 
 ## Output
 
@@ -443,7 +430,7 @@ src/uacragent/
       exam_prediction_paper_writer.md Predicted exam paper writer (Part B)
   api/
     main.py              FastAPI application factory
-    routes.py            API endpoints (/health, /review, /review/simple)
+    routes.py            API endpoints (/health, /review)
     schemas.py           Request / response models (enum-validated fields)
     deps.py              Dependency injection (settings, service singletons)
   domain/
