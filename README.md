@@ -237,7 +237,6 @@ The GUI lets you:
 - Choose exam settings and export format
 - Pick a custom workspace folder before the first **Apply**, or let the app auto-create one
 - Use **Apply** to commit setting changes and re-index with the updated session configuration
-- Use **Re-index** to rebuild document indexing from the currently committed session settings
 - Chat with the assistant about the course material
 - Use quick actions to generate a Review Summary, Practice Booklet, Mock Exam, or Exam Prediction
 - Open generated outputs directly from the chat transcript

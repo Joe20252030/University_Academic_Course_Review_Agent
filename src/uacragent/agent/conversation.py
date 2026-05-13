@@ -186,7 +186,7 @@ class ConversationAgent:
             elif session.retriever is None:
                 generation_error = (
                     "The session has not been initialised yet. "
-                    "Click **Apply** or **Re-index** to index your documents first."
+                    "Click **Apply** to index your documents first."
                 )
             else:
                 try:
