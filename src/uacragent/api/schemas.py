@@ -34,10 +34,10 @@ class ClassifiedFiles(BaseModel):
 
     def is_empty(self) -> bool:
         """Check if no files are provided."""
-        return not any([
+        return not any((
             self.syllabus, self.lecture_note, self.textbook,
-            self.assignment, self.past_exam, self.other
-        ])
+            self.assignment, self.past_exam, self.other,
+        ))
 
 
 class ReviewRequest(BaseModel):

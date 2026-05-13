@@ -11,7 +11,7 @@ from langchain_core.retrievers import BaseRetriever
 
 from uacragent.export.markdown import save_markdown
 from uacragent.domain.models import ReviewPlan, SectionSpec
-from uacragent.domain.errors import LLMError
+from uacragent.domain.errors import LLMError, ParseError
 from uacragent.domain.types import DocumentType, TaskType
 from uacragent.infra.llm import LLMClient
 from uacragent.infra.loaders import DocumentLoader
@@ -106,6 +106,11 @@ def generate_plan(
     )
 
     plan: ReviewPlan = llm_client.generate_structured(ReviewPlan, messages)
+    if plan is None:
+        raise ParseError(
+            "The LLM returned an empty response when asked to generate a study plan. "
+            "Try again or adjust your course settings."
+        )
     return plan
 
 
@@ -358,10 +363,9 @@ class AgentPipeline:
                                                 classified_files=classified_files)
         retriever = build_retriever(vectorstore, self.settings)
 
-        all_docs: list[Document] = []
-        for paths in classified_files.values():
-            all_docs.extend(self.loader.load_documents(paths))
-
+        # Re-use the already-loaded chunks for plan generation instead of
+        # reloading every file from disk a second time.  build_outline()
+        # only samples page_content, so split chunks work equally well.
         user_prefs = {
             "exam_format": exam_format,
             "exam_type": exam_type,
@@ -378,7 +382,7 @@ class AgentPipeline:
         }
 
         _progress("Generating study plan…")
-        plan = generate_plan(all_docs, user_prefs, self.llm_client)
+        plan = generate_plan(chunks, user_prefs, self.llm_client)
 
         if not plan.sections:
             raise LLMError("Generated an empty plan (no sections). Try again or adjust the prompt.")

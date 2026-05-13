@@ -99,6 +99,31 @@ def _open_folder_in_os(path: str) -> None:
         pass
 
 
+def _strip_markdown(text: str) -> str:
+    """Remove common Markdown syntax for display in a plain Text widget.
+
+    Strips bold/italic markers, ATX headings, bullet/horizontal-rule lines,
+    inline code backticks, and link syntax.  Intentionally simple — the goal
+    is legibility in a monospaced plain-text box, not perfect round-tripping.
+    """
+    import re as _re
+    # Bold / italic: **, __, *, _ (keep content, drop markers)
+    text = _re.sub(r'\*{1,3}(.*?)\*{1,3}', r'\1', text)
+    text = _re.sub(r'_{1,3}(.*?)_{1,3}', r'\1', text)
+    # ATX headings: "# Title" → "Title"
+    text = _re.sub(r'^#{1,6}\s+', '', text, flags=_re.MULTILINE)
+    # Horizontal rules
+    text = _re.sub(r'^[-*_]{3,}\s*$', '', text, flags=_re.MULTILINE)
+    # Inline code: `code`
+    text = _re.sub(r'`([^`]*)`', r'\1', text)
+    # Links: [text](url) → text
+    text = _re.sub(r'\[([^\]]+)\]\([^)]*\)', r'\1', text)
+    # Bullet/numbered list markers: leading "- ", "* ", "1. "
+    text = _re.sub(r'^(\s*)[-*]\s+', r'\1• ', text, flags=_re.MULTILINE)
+    text = _re.sub(r'^(\s*)\d+\.\s+', r'\1', text, flags=_re.MULTILINE)
+    return text
+
+
 def _fmt_dt(iso: str) -> str:
     """Format an ISO timestamp for display in the session list."""
     try:
@@ -1421,12 +1446,15 @@ class ConversationApp(tk.Tk):
 
     def _on_new_session(self) -> None:
         """Start a blank session and open settings so the user can fill it in."""
-        self._session = AgentSession()
-        self._session.chat_history = []
+        # Inherit the active LLM provider/model so the user doesn't have to
+        # re-enter them for every new session.  API keys are already in os.environ.
+        prev_provider = self._llm_provider_var.get() or "gemini"
+        prev_model    = self._llm_model_var.get() or "gemini-2.5-flash"
+        self._session = AgentSession(llm_provider=prev_provider, llm_model=prev_model)
         self._workspace_committed = False  # new session: workspace not yet locked
         self._file_listboxes = {}          # clear stale widget refs
-        self._init_setting_vars()          # reset all vars
-        self._sync_vars_from_session()
+        self._init_setting_vars()          # reset all vars (creates fresh StringVars)
+        self._sync_vars_from_session()     # pushes inherited provider/model into vars
         self._set_chat_active(True)
         self._header_course_var.set("New session")
         self._session_status_var.set("Fill in the settings and click Apply.")
@@ -1519,9 +1547,11 @@ class ConversationApp(tk.Tk):
         # Sessions loaded from disk already have a committed workspace.
         self._workspace_committed = True
 
-        # Restore embedding settings (stored as ui_extras in session.json)
+        # Restore UI extras (stored alongside session data in session.json)
+        export_fmt   = data.get("export_format", ExportFormat.markdown.value)
         emb_provider = data.get("embedding_provider", "gemini")
         local_model  = data.get("local_embedding_model", "all-MiniLM-L6-v2")
+        self._export_format_var.set(export_fmt)
         self._emb_provider_var.set(emb_provider)
         self._emb_provider_disp_var.set(
             self._EMB_PROVIDER_DISPLAY.get(emb_provider, emb_provider))
@@ -1544,9 +1574,6 @@ class ConversationApp(tk.Tk):
         # _refresh_session_list() automatically re-selects the active session
         # (matched by workspace_folder), so no manual re-selection needed here.
         self._refresh_session_list()
-
-    def _default_workspace(self) -> Path:
-        return (get_app_data_dir() / "sessions" / "default").resolve()
 
     # ------------------------------------------------------------------
     # Indexing  (shared core used by sidebar select and Apply)
@@ -1668,7 +1695,11 @@ class ConversationApp(tk.Tk):
                     self.after(0, lambda m=msg, s=session: self._on_session_loaded(m, s))
             except Exception as exc:
                 if not self._cancel_event.is_set():
-                    self.after(0, lambda e=str(exc): self._on_session_load_error(e, _show_err))
+                    self.after(
+                        0,
+                        lambda e=str(exc), s=session:
+                            self._on_session_load_error(e, s, _show_err),
+                    )
 
         threading.Thread(target=_work, daemon=True).start()
 
@@ -1758,7 +1789,11 @@ class ConversationApp(tk.Tk):
                     )
             except Exception as exc:  # noqa: BLE001
                 if not self._cancel_event.is_set():
-                    self.after(0, lambda e=str(exc): self._on_session_load_error(e, False))
+                    self.after(
+                        0,
+                        lambda e=str(exc), s=session:
+                            self._on_session_load_error(e, s, False),
+                    )
 
         threading.Thread(target=_work, daemon=True).start()
 
@@ -1778,7 +1813,10 @@ class ConversationApp(tk.Tk):
         # On the fast path the session is silently ready — no noise in chat.
         if not was_cached:
             self._append_chat("system", f"✓ Documents indexed. {status}")
-        self._save_current_session()
+        # Skip saving when the fast path was used: the session was loaded from
+        # disk unchanged, so re-writing it would only bump last_modified pointlessly.
+        if not was_cached:
+            self._save_current_session()
         self._refresh_session_list()
 
     def _on_session_loaded(self, status: str, session: object) -> None:
@@ -1797,8 +1835,14 @@ class ConversationApp(tk.Tk):
         self._save_current_session()
         self._refresh_session_list()
 
-    def _on_session_load_error(self, error: str, show_dialog: bool = True) -> None:
+    def _on_session_load_error(
+        self, error: str, session: object, show_dialog: bool = True
+    ) -> None:
+        # Always release the busy lock so the UI is never permanently stuck.
         self._set_busy(False)
+        # Discard stale errors from a session that is no longer active.
+        if self._session is not session:
+            return
         self._session_status_var.set(f"Error: {error}")
         self._append_chat("system", f"⚠️ Indexing failed: {error}")
         if not show_dialog:
@@ -1870,7 +1914,14 @@ class ConversationApp(tk.Tk):
             try:
                 response = self._get_agent().chat(message, self._session,
                                                    progress_cb=_progress)
-                if not self._cancel_event.is_set():
+                if self._cancel_event.is_set():
+                    # The LLM finished but the user cancelled before the response
+                    # was dispatched to the UI.  chat() already appended the turn
+                    # (human + AI) to session.chat_history — undo it so the
+                    # invisible response doesn't silently persist on disk.
+                    if len(self._session.chat_history) >= 2:
+                        self._session.chat_history = self._session.chat_history[:-2]
+                else:
                     self.after(0, lambda r=response, f=export_fmt:
                                self._on_chat_response(r, f))
             except Exception as exc:
@@ -1948,7 +1999,7 @@ class ConversationApp(tk.Tk):
             self._chat_text.insert(tk.END, text + "\n", "user_body")
         elif role == "assistant":
             self._chat_text.insert(tk.END, "Assistant\n", "assistant_label")
-            display = text.replace("**", "").replace("__", "")
+            display = _strip_markdown(text)
             self._chat_text.insert(tk.END, display + "\n", "assistant_body")
         else:
             self._chat_text.insert(tk.END, text + "\n", "system_body")

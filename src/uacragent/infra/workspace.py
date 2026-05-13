@@ -33,7 +33,6 @@ def ensure_workspace_dirs(paths: WorkspacePaths) -> None:
 
 
 def workspace_paths(
-    workspace_root: Path | None = None,
     workspace_id: str | None = None,
     *,
     workspace_folder: Path | None = None,
@@ -44,21 +43,18 @@ def workspace_paths(
     ----------------
     1. *workspace_folder* — used directly as the workspace root when provided.
        This is the normal path for any session that has been committed.
-    2. *workspace_root* / *workspace_id* — legacy / programmatic override.
-    3. ``get_app_data_dir()`` / *workspace_id* — default: auto folder inside
+    2. ``get_app_data_dir()`` / *workspace_id* — default: auto folder inside
        the user-configured app data directory.
 
     All agent artefacts (uploads, chroma_db, outputs, session.json) are
-    placed inside ``<workspace_root>/.uacragent/`` so they form a single,
+    placed inside ``<workspace>/.uacragent/`` so they form a single,
     clearly-labelled bundle that does not mix with the user's own files.
     """
     if workspace_folder is not None:
         ws = Path(workspace_folder)
     else:
-        if workspace_root is None:
-            from uacragent.infra.persistence import get_app_data_dir
-            workspace_root = get_app_data_dir()
-        ws = workspace_root / (workspace_id or "default")
+        from uacragent.infra.persistence import get_app_data_dir
+        ws = get_app_data_dir() / (workspace_id or "default")
 
     agent_dir = ws / AGENT_SUBDIR
     uploads = agent_dir / "uploads"

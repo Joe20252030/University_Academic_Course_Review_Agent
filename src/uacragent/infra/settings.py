@@ -57,14 +57,6 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("LOCAL_EMBEDDING_MODEL", "local_embedding_model"),
     )
 
-    chunk_size: int = Field(
-        default=1000,
-        validation_alias=AliasChoices("CHUNK_SIZE", "chunk_size"),
-    )
-    chunk_overlap: int = Field(
-        default=150,
-        validation_alias=AliasChoices("CHUNK_OVERLAP", "chunk_overlap"),
-    )
     retriever_k: int = Field(
         default=8,
         validation_alias=AliasChoices("RETRIEVER_K", "retriever_k"),

@@ -51,6 +51,9 @@ class AgentSession:
     retriever: BaseRetriever | None = field(default=None, repr=False)
     chat_history: list[BaseMessage] = field(default_factory=list)
 
+    # Cache for read_exam_info() — invalidated when exam_info_path changes.
+    _exam_info_cache: tuple[str, str] | None = field(default=None, repr=False)
+
     # ── Helpers ───────────────────────────────────────────────────────────
 
     def has_files(self) -> bool:
@@ -61,23 +64,34 @@ class AgentSession:
         return {k: v for k, v in self.classified_files.items() if v}
 
     def read_exam_info(self) -> str:
-        """Read and return the content of the exam info sheet file, or ''."""
+        """Read and return the content of the exam info sheet file, or ''.
+
+        The result is cached so that repeated calls within a single session
+        (e.g. one per chat turn) do not repeat expensive PDF/docx parsing.
+        The cache is invalidated automatically when *exam_info_path* changes.
+        """
         path = self.exam_info_path
         if not path:
             return ""
+        # Return cached value if the path hasn't changed since last read.
+        if self._exam_info_cache is not None and self._exam_info_cache[0] == path:
+            return self._exam_info_cache[1]
         try:
             p = Path(path)
             suffix = p.suffix.lower()
             if suffix == ".pdf":
                 from langchain_community.document_loaders import PyPDFLoader
                 docs = PyPDFLoader(path).load()
-                return "\n".join(d.page_content for d in docs).strip()
-            if suffix == ".docx":
+                content = "\n".join(d.page_content for d in docs).strip()
+            elif suffix == ".docx":
                 import docx2txt
-                return docx2txt.process(path).strip()
-            return p.read_text(encoding="utf-8", errors="replace").strip()
+                content = docx2txt.process(path).strip()
+            else:
+                content = p.read_text(encoding="utf-8", errors="replace").strip()
         except Exception:
-            return ""
+            content = ""
+        self._exam_info_cache = (path, content)
+        return content
 
     def to_user_prefs(self) -> dict:
         """Build the user_prefs dict expected by AgentService / pipeline."""

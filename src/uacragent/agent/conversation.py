@@ -305,7 +305,10 @@ class ConversationAgent:
             task_type=task_type,
             extra_instructions=prefs.get("extra_instructions", ""),
             workspace_id=session.workspace_id,
-            copy_to_workspace=True,
+            # Files are already in the workspace from the preceding prepare_session
+            # call (triggered by Apply / session load).  Skipping re-copy prevents
+            # duplicate upload copies from accumulating on each generation request.
+            copy_to_workspace=False,
             university_name=prefs.get("university_name", ""),
             major=prefs.get("major", ""),
             course_code=prefs.get("course_code", ""),
