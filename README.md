@@ -235,12 +235,14 @@ The GUI lets you:
 - Enter a **course name** and optional course details
 - Add files to different document type categories (Syllabus, Lecture Notes, etc.)
 - Choose exam settings and export format
+- Choose per-message effort level (`low`, `medium`, `high`) for chat and generated outputs
 - Pick a custom workspace folder before the first **Apply**, or let the app auto-create one
 - Use **Apply** to commit setting changes and re-index with the updated session configuration
 - Chat with the assistant about the course material
 - Use quick actions to generate a Review Summary, Practice Booklet, Mock Exam, or Exam Prediction
 - Open generated outputs directly from the chat transcript
 - Cancel an in-flight indexing or chat request from the main panel
+- Open global app settings to change color mode, font size, language (`en` / `zh_CN`), and the shared app data directory
 
 Works on macOS, Windows, and Linux.
 
@@ -264,8 +266,11 @@ The desktop app persists session state so you can return to previous work.
 - Per-session agent bundle: `<workspace>/.uacragent/`
 - Per-session state file: `<workspace>/.uacragent/session.json`
 
-Persisted data includes course settings, selected files, chosen provider/model,
-chat history, and UI extras such as export format. API keys are not saved.
+Persisted session data includes course settings, selected files, chosen
+provider/model, chat history, and session UI extras such as export format and
+embedding selection. App-level appearance preferences (color mode, font size,
+language) are stored separately in the bootstrap config. API keys are not
+saved.
 
 Notes:
 
@@ -273,6 +278,8 @@ Notes:
   workspaces do not collide with each other.
 - The app data directory can be changed from the session-list pane’s global
   app settings button and takes full effect after restarting the app.
+- Global appearance settings are persisted in the bootstrap config and include
+  light/dark mode, small/medium/large font size, and `en` / `zh_CN` UI language.
 - Local embedding models are cached under `<app_data_dir>/models/` via
   HuggingFace cache redirection.
 - All agent-generated files inside a workspace are grouped under
