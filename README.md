@@ -250,7 +250,8 @@ tries a fast attach path. If the saved Chroma index and indexed-file manifest
 still match the current file set, it reuses the existing retriever without
 re-embedding or making new embedding API calls. A full re-index runs when the
 files changed, the index is missing, or you click **Apply** to force current
-settings to take effect.
+settings to take effect. On this fast path the session becomes ready silently,
+without adding a new "documents indexed" notice to the chat transcript.
 
 ### Desktop Session Persistence
 
@@ -430,8 +431,8 @@ src/uacragent/
     pipeline.py          RAG pipeline with task-type dispatch
     prompts/
       conversation_system.md       System prompt for desktop chat sessions
-      planner.md                   Generic planner (fallback)
-      reviewer.md                  Generic writer (fallback)
+      planner.md                   Legacy generic planner prompt
+      reviewer.md                  Legacy generic writer prompt
       review_summary_planner.md    Review summary planner
       review_summary_writer.md     Review summary writer
       practice_booklet_planner.md  Practice booklet planner
