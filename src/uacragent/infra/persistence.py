@@ -113,6 +113,46 @@ def set_app_data_dir(path: Path) -> None:
         logger.warning("Could not save app config: %s", exc)
 
 
+def get_app_appearance() -> dict:
+    """Return persisted appearance settings with safe defaults.
+
+    Keys: ``color_mode`` ("light" | "dark"), ``font_size`` ("small" | "medium" | "large"),
+    ``language`` ("en" | "zh_CN").
+    """
+    try:
+        if _CONFIG_FILE.exists():
+            cfg = json.loads(_CONFIG_FILE.read_text(encoding="utf-8"))
+            return {
+                "color_mode": cfg.get("color_mode", "light"),
+                "font_size":  cfg.get("font_size",  "medium"),
+                "language":   cfg.get("language",   "en"),
+            }
+    except Exception:
+        pass
+    return {"color_mode": "light", "font_size": "medium", "language": "en"}
+
+
+def set_app_appearance(color_mode: str, font_size: str, language: str) -> None:
+    """Persist appearance settings to ``~/.uacragent/config.json``."""
+    try:
+        _UAR_DIR.mkdir(parents=True, exist_ok=True)
+        cfg: dict = {}
+        if _CONFIG_FILE.exists():
+            try:
+                cfg = json.loads(_CONFIG_FILE.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        cfg["color_mode"] = color_mode
+        cfg["font_size"]  = font_size
+        cfg["language"]   = language
+        _CONFIG_FILE.write_text(
+            json.dumps(cfg, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        logger.warning("Could not save appearance settings: %s", exc)
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------

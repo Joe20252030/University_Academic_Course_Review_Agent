@@ -21,6 +21,7 @@ import platform
 import subprocess
 import threading
 import tkinter as tk
+import tkinter.font as tkfont
 from datetime import datetime, timezone
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
@@ -32,8 +33,9 @@ from uacragent.domain.types import DocumentType, ExamFormat, ExamType, ExportFor
 from uacragent.export.docx import save_docx
 from uacragent.export.pdf import save_pdf
 from uacragent.infra.persistence import (
-    delete_session, dict_to_session, get_app_data_dir, list_sessions,
-    load_session, rename_session, save_session, set_app_data_dir,
+    delete_session, dict_to_session, get_app_appearance, get_app_data_dir,
+    list_sessions, load_session, rename_session, save_session,
+    set_app_appearance, set_app_data_dir,
 )
 from uacragent.infra.workspace import workspace_paths, ensure_workspace_dirs
 
@@ -62,12 +64,141 @@ _DOC_TYPE_LABELS = {
     DocumentType.past_exam: "Past Exams",
     DocumentType.other: "Other",
 }
+# (label_i18n_key, message_sent_to_llm)
 _QUICK_ACTIONS = [
-    ("Review Summary",   "Generate a review summary for this course."),
-    ("Practice Booklet", "Generate a practice booklet for this course."),
-    ("Mock Exam",        "Generate a mock exam for this course."),
-    ("Exam Prediction",  "Generate an exam prediction for this course."),
+    ("review_summary",    "Generate a review summary for this course."),
+    ("practice_booklet",  "Generate a practice booklet for this course."),
+    ("mock_exam",         "Generate a mock exam for this course."),
+    ("exam_prediction",   "Generate an exam prediction for this course."),
 ]
+
+# ---------------------------------------------------------------------------
+# Internationalisation — UI display strings
+# ---------------------------------------------------------------------------
+_STRINGS: dict[str, dict[str, str]] = {
+    "en": {
+        # Session list
+        "sessions":           "Sessions",
+        "new_session":        "+ New",
+        "rename":             "✏  Rename",
+        "delete":             "🗑  Delete",
+        # Chat pane
+        "settings_btn":       "⚙  Settings",
+        "quick_actions":      "Quick Actions",
+        "review_summary":     "Review Summary",
+        "practice_booklet":   "Practice Booklet",
+        "mock_exam":          "Mock Exam",
+        "exam_prediction":    "Exam Prediction",
+        "effort_label":       "Effort:",
+        "low":                "Low",
+        "medium":             "Medium",
+        "high":               "High",
+        "send":               "Send",
+        "cancel":             "✕ Cancel",
+        "placeholder":        "Select a session from the left panel\nor click  + New  to create a new one.",
+        # App Settings dialog
+        "app_settings_title": "App Settings",
+        "appearance_section": "Appearance",
+        "color_mode_label":   "Color mode:",
+        "light_mode":         "Light",
+        "dark_mode":          "Dark",
+        "font_size_label":    "Font size:",
+        "font_small":         "Small",
+        "font_medium":        "Medium",
+        "font_large":         "Large",
+        "language_label":     "Language:",
+        "app_data_label":     "App data folder:",
+        "app_data_hint":      (
+            "The index.json and any auto-created session workspaces\n"
+            "are stored here.  Changes take effect on next launch."
+        ),
+        "save":               "Save",
+        "cancel_btn":         "Cancel",
+    },
+    "zh_CN": {
+        # Session list
+        "sessions":           "会话",
+        "new_session":        "+ 新建",
+        "rename":             "✏  重命名",
+        "delete":             "🗑  删除",
+        # Chat pane
+        "settings_btn":       "⚙  设置",
+        "quick_actions":      "快速操作",
+        "review_summary":     "复习摘要",
+        "practice_booklet":   "练习册",
+        "mock_exam":          "模拟考试",
+        "exam_prediction":    "考试预测",
+        "effort_label":       "算力:",
+        "low":                "低",
+        "medium":             "中",
+        "high":               "高",
+        "send":               "发送",
+        "cancel":             "✕ 取消",
+        "placeholder":        "从左侧列表选择会话\n或点击  + 新建  创建新会话。",
+        # App Settings dialog
+        "app_settings_title": "应用设置",
+        "appearance_section": "外观",
+        "color_mode_label":   "颜色模式:",
+        "light_mode":         "浅色",
+        "dark_mode":          "深色",
+        "font_size_label":    "字体大小:",
+        "font_small":         "小",
+        "font_medium":        "中",
+        "font_large":         "大",
+        "language_label":     "语言:",
+        "app_data_label":     "应用数据目录:",
+        "app_data_hint":      (
+            "索引文件及自动创建的会话工作空间将存储在此处。\n"
+            "更改将在下次启动后生效。"
+        ),
+        "save":               "保存",
+        "cancel_btn":         "取消",
+    },
+}
+
+# ---------------------------------------------------------------------------
+# Appearance: color palettes and font sizes
+# ---------------------------------------------------------------------------
+_THEME_COLORS: dict[str, dict[str, str]] = {
+    "light": {
+        "window_bg":  "#f0f0f0",
+        "paned_bg":   "#cccccc",
+        "text_bg":    "#ffffff",
+        "text_fg":    "#000000",
+        "lb_bg":      "#ffffff",
+        "lb_fg":      "#000000",
+        "lb_sel_bg":  "#0078d4",
+        "lb_sel_fg":  "#ffffff",
+        "user_fg":    "#1a56a5",
+        "assist_fg":  "#2e7d32",
+        "assist_body":"#1a1a1a",
+        "system_fg":  "#7b5800",
+        "input_bg":   "#ffffff",
+        "input_fg":   "#000000",
+    },
+    "dark": {
+        "window_bg":  "#1e1e1e",
+        "paned_bg":   "#3c3c3c",
+        "text_bg":    "#252526",
+        "text_fg":    "#d4d4d4",
+        "lb_bg":      "#252526",
+        "lb_fg":      "#d4d4d4",
+        "lb_sel_bg":  "#094771",
+        "lb_sel_fg":  "#ffffff",
+        "user_fg":    "#6ab0f5",
+        "assist_fg":  "#4ec9b0",
+        "assist_body":"#d4d4d4",
+        "system_fg":  "#dcdcaa",
+        "input_bg":   "#3c3c3c",
+        "input_fg":   "#d4d4d4",
+    },
+}
+
+_FONT_SIZE_VALUES: dict[str, int] = {
+    "small":  10,
+    "medium": 11,
+    "large":  13,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +307,18 @@ class ConversationApp(tk.Tk):
         # even before the settings dialog is first opened)
         self._init_setting_vars()
 
+        # Save the platform's native ttk theme so we can restore it for light mode.
+        self._default_ttk_theme: str = ttk.Style(self).theme_use()
+
+        # Load persisted appearance BEFORE building UI so _t() uses the right
+        # language and theme vars are set when widgets are first created.
+        self._load_app_appearance()
+
         self._build_ui()
+
+        # Apply visual theme and font size now that all widgets exist.
+        self._apply_theme()
+        self._apply_font_size()
 
         # Populate the session list but do not auto-select anything.
         # The right panel stays blank until the user clicks a session.
@@ -283,6 +425,18 @@ class ConversationApp(tk.Tk):
         else:
             self._effort_var = tk.StringVar(value="medium")
 
+        # ── Appearance vars (created once; never reset by _on_new_session) ──
+        # Use hasattr so _on_new_session calling this method doesn't clobber them.
+        if not hasattr(self, "_color_mode_var"):
+            self._color_mode_var = tk.StringVar(value="light")
+        if not hasattr(self, "_font_size_var"):
+            self._font_size_var = tk.StringVar(value="medium")
+        if not hasattr(self, "_language_var"):
+            self._language_var = tk.StringVar(value="en")
+        # i18n widget registry: list of (widget, config_attr, string_key)
+        if not hasattr(self, "_i18n_widgets"):
+            self._i18n_widgets: list[tuple] = []
+
     # ------------------------------------------------------------------
     # UI layout
     # ------------------------------------------------------------------
@@ -313,12 +467,16 @@ class ConversationApp(tk.Tk):
         hdr = ttk.Frame(frame, padding=(6, 6, 6, 4))
         hdr.grid(row=0, column=0, sticky="ew")
         hdr.columnconfigure(0, weight=1)
-        ttk.Label(hdr, text="Sessions", font=("TkDefaultFont", 11, "bold")).grid(
-            row=0, column=0, sticky="w"
-        )
-        ttk.Button(hdr, text="+ New", width=7, command=self._on_new_session).grid(
-            row=0, column=1, padx=(0, 3)
-        )
+
+        _lbl = ttk.Label(hdr, text=self._t("sessions"), font=("TkDefaultFont", 11, "bold"))
+        _lbl.grid(row=0, column=0, sticky="w")
+        self._i18n_widgets.append((_lbl, "text", "sessions"))
+
+        _btn_new = ttk.Button(hdr, text=self._t("new_session"), width=7,
+                              command=self._on_new_session)
+        _btn_new.grid(row=0, column=1, padx=(0, 3))
+        self._i18n_widgets.append((_btn_new, "text", "new_session"))
+
         ttk.Button(hdr, text="⚙", width=3,
                    command=self._open_app_settings).grid(row=0, column=2)
 
@@ -355,12 +513,16 @@ class ConversationApp(tk.Tk):
         action_btns.grid(row=3, column=0, sticky="ew", padx=6, pady=6)
         action_btns.columnconfigure(0, weight=1)
         action_btns.columnconfigure(1, weight=1)
-        ttk.Button(
-            action_btns, text="✏  Rename", command=self._on_rename_session
-        ).grid(row=0, column=0, sticky="ew", padx=(0, 3))
-        ttk.Button(
-            action_btns, text="🗑  Delete", command=self._on_delete_session
-        ).grid(row=0, column=1, sticky="ew")
+
+        _btn_rename = ttk.Button(action_btns, text=self._t("rename"),
+                                 command=self._on_rename_session)
+        _btn_rename.grid(row=0, column=0, sticky="ew", padx=(0, 3))
+        self._i18n_widgets.append((_btn_rename, "text", "rename"))
+
+        _btn_delete = ttk.Button(action_btns, text=self._t("delete"),
+                                 command=self._on_delete_session)
+        _btn_delete.grid(row=0, column=1, sticky="ew")
+        self._i18n_widgets.append((_btn_delete, "text", "delete"))
 
         # Keep the workspace list in sync with what we display
         self._session_records: list[dict] = []   # parallel to listbox entries
@@ -395,9 +557,11 @@ class ConversationApp(tk.Tk):
         btn_frame = ttk.Frame(top_bar)
         btn_frame.grid(row=0, column=1, rowspan=2, sticky="e")
 
-        ttk.Button(
-            btn_frame, text="⚙  Settings", command=self._open_settings
-        ).pack(side="left")
+        _btn_sess_settings = ttk.Button(
+            btn_frame, text=self._t("settings_btn"), command=self._open_settings
+        )
+        _btn_sess_settings.pack(side="left")
+        self._i18n_widgets.append((_btn_sess_settings, "text", "settings_btn"))
 
         self._chat_separator = ttk.Separator(right, orient="horizontal")
         self._chat_separator.grid(row=0, column=0, sticky="ew", pady=(42, 0))
@@ -418,6 +582,9 @@ class ConversationApp(tk.Tk):
         self._chat_text.grid(row=0, column=0, sticky="nsew")
         chat_sb.grid(row=0, column=1, sticky="ns")
 
+        # Tag colours are set by _reconfigure_chat_tags(); defaults below
+        # match the light theme and will be overridden on startup if dark mode
+        # is loaded from config.
         self._chat_text.tag_configure(
             "user_label", font=("TkDefaultFont", 10, "bold"),
             foreground="#1a56a5", spacing1=10)
@@ -433,12 +600,15 @@ class ConversationApp(tk.Tk):
             font=("TkDefaultFont", 10, "italic"), spacing1=6)
 
         # ── Quick actions ─────────────────────────────────────────────
-        self._qa_frame = qa_frame = ttk.LabelFrame(right, text="Quick Actions", padding=4)
+        self._qa_frame = qa_frame = ttk.LabelFrame(
+            right, text=self._t("quick_actions"), padding=4)
         qa_frame.grid(row=2, column=0, sticky="ew", pady=(_PAD, 4))
-        for label, message in _QUICK_ACTIONS:
-            ttk.Button(qa_frame, text=label,
-                       command=lambda m=message: self._send_message(m)
-                       ).pack(side="left", padx=3, pady=2)
+        self._i18n_widgets.append((qa_frame, "text", "quick_actions"))
+        for _qa_key, _qa_msg in _QUICK_ACTIONS:
+            _qa_btn = ttk.Button(qa_frame, text=self._t(_qa_key),
+                                 command=lambda m=_qa_msg: self._send_message(m))
+            _qa_btn.pack(side="left", padx=3, pady=2)
+            self._i18n_widgets.append((_qa_btn, "text", _qa_key))
 
         # ── Input area ────────────────────────────────────────────────
         self._input_frame = input_frame = ttk.Frame(right)
@@ -455,23 +625,24 @@ class ConversationApp(tk.Tk):
         # ── Effort level selector (Low / Medium / High) ───────────────
         effort_row = ttk.Frame(input_frame)
         effort_row.grid(row=1, column=0, sticky="w", pady=(3, 0))
-        ttk.Label(effort_row, text="Effort:", foreground="gray").pack(
-            side="left", padx=(2, 4))
-        for _level in ("low", "medium", "high"):
-            ttk.Radiobutton(
-                effort_row,
-                text=_level.title(),
-                value=_level,
-                variable=self._effort_var,
-            ).pack(side="left", padx=(0, 6))
+        _effort_lbl = ttk.Label(effort_row, text=self._t("effort_label"), foreground="gray")
+        _effort_lbl.pack(side="left", padx=(2, 4))
+        self._i18n_widgets.append((_effort_lbl, "text", "effort_label"))
+        for _level, _key in [("low", "low"), ("medium", "medium"), ("high", "high")]:
+            _rb = ttk.Radiobutton(effort_row, text=self._t(_key),
+                                  value=_level, variable=self._effort_var)
+            _rb.pack(side="left", padx=(0, 6))
+            self._i18n_widgets.append((_rb, "text", _key))
 
         btn_col = ttk.Frame(input_frame)
         btn_col.grid(row=0, column=1, sticky="ns")
-        self._send_btn = ttk.Button(btn_col, text="Send", width=8,
+        self._send_btn = ttk.Button(btn_col, text=self._t("send"), width=8,
                                     command=self._on_send)
         self._send_btn.pack(fill="x", pady=(0, 4))
-        self._cancel_btn = ttk.Button(btn_col, text="✕ Cancel", width=8,
+        self._i18n_widgets.append((self._send_btn, "text", "send"))
+        self._cancel_btn = ttk.Button(btn_col, text=self._t("cancel"), width=8,
                                       command=self._on_cancel)
+        self._i18n_widgets.append((self._cancel_btn, "text", "cancel"))
         # _cancel_btn is pack()ed / pack_forget()en dynamically by _set_busy
         self._busy_label = ttk.Label(btn_col, text="", foreground="gray",
                                      font=("TkDefaultFont", 9), wraplength=72)
@@ -479,13 +650,15 @@ class ConversationApp(tk.Tk):
 
         # ── Placeholder (shown when no session is active) ─────────────
         self._placeholder_frame = ttk.Frame(right)
-        ttk.Label(
+        _ph_lbl = ttk.Label(
             self._placeholder_frame,
-            text="Select a session from the left panel\nor click  + New  to create a new one.",
+            text=self._t("placeholder"),
             foreground="#aaaaaa",
             font=("TkDefaultFont", 14),
             justify="center",
-        ).place(relx=0.5, rely=0.5, anchor="center")
+        )
+        _ph_lbl.place(relx=0.5, rely=0.5, anchor="center")
+        self._i18n_widgets.append((_ph_lbl, "text", "placeholder"))
 
         # Start in blank state — activated by session select or + New.
         self._set_chat_active(False)
@@ -934,33 +1107,262 @@ class ConversationApp(tk.Tk):
                    ).pack(side="left")
 
     # ------------------------------------------------------------------
+    # Appearance helpers  (theme / font / language)
+    # ------------------------------------------------------------------
+
+    def _t(self, key: str) -> str:
+        """Return the UI string for *key* in the current language."""
+        lang = self._language_var.get() if hasattr(self, "_language_var") else "en"
+        return (_STRINGS.get(lang) or _STRINGS["en"]).get(
+            key, _STRINGS["en"].get(key, key)
+        )
+
+    def _load_app_appearance(self) -> None:
+        """Load persisted appearance settings into the StringVars."""
+        try:
+            prefs = get_app_appearance()
+            self._color_mode_var.set(prefs.get("color_mode", "light"))
+            self._font_size_var.set(prefs.get("font_size",  "medium"))
+            self._language_var.set(prefs.get("language",   "en"))
+        except Exception:
+            pass  # keep defaults on any error
+
+    def _apply_theme(self) -> None:
+        """Apply the current color mode to all widgets."""
+        mode = self._color_mode_var.get()
+        c    = _THEME_COLORS.get(mode, _THEME_COLORS["light"])
+        style = ttk.Style(self)
+
+        if mode == "dark":
+            style.theme_use("clam")
+            # Base defaults propagate to all ttk widget types
+            style.configure(".",
+                background=c["window_bg"],
+                foreground=c["text_fg"],
+                fieldbackground=c["text_bg"],
+                troughcolor=c["window_bg"],
+                selectbackground=c["lb_sel_bg"],
+                selectforeground=c["lb_sel_fg"],
+                bordercolor="#555555",
+                darkcolor="#1e1e1e",
+                lightcolor="#3c3c3c",
+            )
+            style.configure("TFrame",       background=c["window_bg"])
+            style.configure("TLabel",       background=c["window_bg"],
+                                            foreground=c["text_fg"])
+            style.configure("TLabelframe",  background=c["window_bg"],
+                                            foreground=c["text_fg"])
+            style.configure("TLabelframe.Label",
+                            background=c["window_bg"], foreground=c["text_fg"])
+            style.configure("TButton",
+                background="#3c3c3c", foreground=c["text_fg"],
+                relief="flat", borderwidth=1, padding=4,
+            )
+            style.map("TButton",
+                background=[("active", "#505050"), ("pressed", "#404040")],
+                foreground=[("active", c["text_fg"])],
+            )
+            style.configure("TEntry",
+                fieldbackground=c["text_bg"],
+                foreground=c["text_fg"],
+                insertcolor=c["text_fg"],
+            )
+            style.configure("TCombobox",
+                fieldbackground=c["text_bg"],
+                foreground=c["text_fg"],
+                background="#3c3c3c",
+                selectbackground=c["lb_sel_bg"],
+                selectforeground=c["lb_sel_fg"],
+            )
+            style.map("TCombobox",
+                fieldbackground=[("readonly", c["text_bg"])],
+                foreground=[("readonly", c["text_fg"])],
+                selectbackground=[("readonly", c["lb_sel_bg"])],
+            )
+            style.configure("TScrollbar",
+                background="#3c3c3c",
+                troughcolor=c["window_bg"],
+                arrowcolor=c["text_fg"],
+            )
+            style.configure("TSeparator", background="#555555")
+            style.configure("TRadiobutton",
+                background=c["window_bg"], foreground=c["text_fg"])
+            style.map("TRadiobutton",
+                background=[("active", c["window_bg"])],
+                foreground=[("active", c["text_fg"])],
+            )
+            style.configure("TCheckbutton",
+                background=c["window_bg"], foreground=c["text_fg"])
+            # Window / paned sash
+            self.configure(background=c["window_bg"])
+            self._paned.configure(background=c["paned_bg"])
+        else:
+            # Restore the platform's native theme for light mode
+            try:
+                style.theme_use(self._default_ttk_theme)
+            except tk.TclError:
+                style.theme_use("default")
+            try:
+                self.configure(background=c["window_bg"])
+            except Exception:
+                pass
+            self._paned.configure(background=c["paned_bg"])
+
+        # Non-ttk widgets always need direct configuration
+        try:
+            self._chat_text.configure(
+                bg=c["text_bg"], fg=c["text_fg"],
+                insertbackground=c["text_fg"],
+            )
+        except Exception:
+            pass
+        try:
+            self._input_text.configure(
+                bg=c["input_bg"], fg=c["input_fg"],
+                insertbackground=c["input_fg"],
+            )
+        except Exception:
+            pass
+        try:
+            self._session_listbox.configure(
+                bg=c["lb_bg"], fg=c["lb_fg"],
+                selectbackground=c["lb_sel_bg"],
+                selectforeground=c["lb_sel_fg"],
+            )
+        except Exception:
+            pass
+        self._reconfigure_chat_tags()
+
+    def _reconfigure_chat_tags(self) -> None:
+        """Re-apply chat-bubble colours for the current theme and font size."""
+        c    = _THEME_COLORS.get(self._color_mode_var.get(), _THEME_COLORS["light"])
+        size = _FONT_SIZE_VALUES.get(self._font_size_var.get(), 11)
+        try:
+            self._chat_text.tag_configure(
+                "user_label", foreground=c["user_fg"],
+                font=("TkDefaultFont", size - 1, "bold"))
+            self._chat_text.tag_configure(
+                "user_body", foreground=c["user_fg"])
+            self._chat_text.tag_configure(
+                "assistant_label", foreground=c["assist_fg"],
+                font=("TkDefaultFont", size - 1, "bold"))
+            self._chat_text.tag_configure(
+                "assistant_body", foreground=c["assist_body"])
+            self._chat_text.tag_configure(
+                "system_body", foreground=c["system_fg"],
+                font=("TkDefaultFont", size - 1, "italic"))
+        except Exception:
+            pass
+
+    def _apply_font_size(self) -> None:
+        """Apply the selected font size to the named font and key widgets."""
+        size = _FONT_SIZE_VALUES.get(self._font_size_var.get(), 11)
+        # Update the named default font — propagates to all ttk widgets
+        try:
+            tkfont.nametofont("TkDefaultFont").configure(size=size)
+        except Exception:
+            pass
+        # Widgets with explicit font tuples must be updated individually
+        try:
+            self._chat_text.configure(font=("TkDefaultFont", size))
+        except Exception:
+            pass
+        try:
+            self._input_text.configure(font=("TkDefaultFont", size))
+        except Exception:
+            pass
+        try:
+            self._session_listbox.configure(font=("TkDefaultFont", max(size - 1, 9)))
+        except Exception:
+            pass
+        # Re-apply tag fonts with the new size
+        self._reconfigure_chat_tags()
+
+    def _apply_language(self) -> None:
+        """Update every registered i18n widget to the current language."""
+        for target, attr, key in self._i18n_widgets:
+            try:
+                target.configure(**{attr: self._t(key)})
+            except Exception:
+                pass
+
+    # ------------------------------------------------------------------
     # App Settings dialog  (global, not per-session)
     # ------------------------------------------------------------------
 
     def _open_app_settings(self) -> None:
-        """Open a small dialog to configure the global app data directory."""
+        """Open the App Settings dialog (appearance + data directory)."""
         win = tk.Toplevel(self)
-        win.title("App Settings")
+        win.title(self._t("app_settings_title"))
         win.resizable(False, False)
         win.grab_set()
+
+        # Snapshot current appearance so Cancel can revert live previews.
+        _saved_color = self._color_mode_var.get()
+        _saved_font  = self._font_size_var.get()
+        _saved_lang  = self._language_var.get()
 
         frm = ttk.Frame(win, padding=16)
         frm.pack(fill="both", expand=True)
         frm.columnconfigure(1, weight=1)
+        row = 0
 
-        ttk.Label(frm, text="App data folder:", font=("TkDefaultFont", 10, "bold")
-                  ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 6))
-        ttk.Label(
-            frm,
-            text="The index.json and any auto-created session workspaces\n"
-                 "are stored here.  Changes take effect on next launch.",
-            foreground="gray", font=("TkDefaultFont", 9),
-        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 10))
+        # ── Appearance section ────────────────────────────────────────
+        app_frm = ttk.LabelFrame(frm, text=self._t("appearance_section"), padding=10)
+        app_frm.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(0, 14))
+        app_frm.columnconfigure(1, weight=1)
+        row += 1
 
-        # Current path entry
+        # Color mode
+        ttk.Label(app_frm, text=self._t("color_mode_label")).grid(
+            row=0, column=0, sticky="w", padx=(0, 10), pady=(0, 6))
+        _cm_row = ttk.Frame(app_frm)
+        _cm_row.grid(row=0, column=1, sticky="w", pady=(0, 6))
+        for _val, _key in [("light", "light_mode"), ("dark", "dark_mode")]:
+            ttk.Radiobutton(
+                _cm_row, text=self._t(_key), value=_val,
+                variable=self._color_mode_var,
+                command=self._apply_theme,       # live preview
+            ).pack(side="left", padx=(0, 12))
+
+        # Font size
+        ttk.Label(app_frm, text=self._t("font_size_label")).grid(
+            row=1, column=0, sticky="w", padx=(0, 10), pady=(0, 6))
+        _fs_row = ttk.Frame(app_frm)
+        _fs_row.grid(row=1, column=1, sticky="w", pady=(0, 6))
+        for _val, _key in [("small", "font_small"), ("medium", "font_medium"),
+                            ("large", "font_large")]:
+            ttk.Radiobutton(
+                _fs_row, text=self._t(_key), value=_val,
+                variable=self._font_size_var,
+                command=self._apply_font_size,   # live preview
+            ).pack(side="left", padx=(0, 12))
+
+        # Language
+        ttk.Label(app_frm, text=self._t("language_label")).grid(
+            row=2, column=0, sticky="w", padx=(0, 10))
+        _lang_row = ttk.Frame(app_frm)
+        _lang_row.grid(row=2, column=1, sticky="w")
+        for _val, _display in [("en", "English"), ("zh_CN", "中文（简体）")]:
+            ttk.Radiobutton(
+                _lang_row, text=_display, value=_val,
+                variable=self._language_var,
+                # Language updates apply on Save only (avoids mid-dialog relabel)
+            ).pack(side="left", padx=(0, 12))
+
+        # ── App data folder section ───────────────────────────────────
+        ttk.Label(frm, text=self._t("app_data_label"),
+                  font=("TkDefaultFont", 10, "bold")
+                  ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 4))
+        row += 1
+        ttk.Label(frm, text=self._t("app_data_hint"),
+                  foreground="gray", font=("TkDefaultFont", 9),
+                  ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        row += 1
+
         path_var = tk.StringVar(value=self._app_data_dir_var.get())
         path_entry = ttk.Entry(frm, textvariable=path_var, width=42)
-        path_entry.grid(row=2, column=0, sticky="ew", padx=(0, 4))
+        path_entry.grid(row=row, column=0, sticky="ew", padx=(0, 4))
 
         def _browse() -> None:
             folder = filedialog.askdirectory(
@@ -971,35 +1373,48 @@ class ConversationApp(tk.Tk):
                 path_var.set(folder)
 
         ttk.Button(frm, text="Browse…", command=_browse
-                   ).grid(row=2, column=1, padx=(0, 4))
+                   ).grid(row=row, column=1, padx=(0, 4))
+        row += 1
+
+        # ── Buttons ───────────────────────────────────────────────────
+        btn_row = ttk.Frame(frm)
+        btn_row.grid(row=row, column=0, columnspan=3, sticky="e", pady=(14, 0))
 
         def _save() -> None:
-            chosen = path_var.get().strip()
-            if not chosen:
-                messagebox.showwarning("Invalid Path",
-                                       "Please enter a valid folder path.",
-                                       parent=win)
-                return
-            p = Path(chosen)
-            try:
-                p.mkdir(parents=True, exist_ok=True)
-            except Exception as exc:
-                messagebox.showerror("Cannot Create Folder", str(exc), parent=win)
-                return
-            set_app_data_dir(p)
-            self._app_data_dir_var.set(str(p.resolve()))
-            messagebox.showinfo(
-                "App Settings Saved",
-                f"App data folder set to:\n{p.resolve()}\n\n"
-                "Restart the application for the change to take full effect.",
-                parent=win,
+            # Persist appearance settings
+            set_app_appearance(
+                self._color_mode_var.get(),
+                self._font_size_var.get(),
+                self._language_var.get(),
             )
+            # Apply language now (was not applied live to avoid mid-dialog churn)
+            self._apply_language()
+            # Persist app data dir if changed
+            chosen = path_var.get().strip()
+            if chosen:
+                p = Path(chosen)
+                try:
+                    p.mkdir(parents=True, exist_ok=True)
+                except Exception as exc:
+                    messagebox.showerror("Cannot Create Folder", str(exc), parent=win)
+                    return
+                set_app_data_dir(p)
+                self._app_data_dir_var.set(str(p.resolve()))
             win.destroy()
 
-        btn_row = ttk.Frame(frm)
-        btn_row.grid(row=3, column=0, columnspan=2, sticky="e", pady=(12, 0))
-        ttk.Button(btn_row, text="Save", command=_save).pack(side="left", padx=(0, 6))
-        ttk.Button(btn_row, text="Cancel", command=win.destroy).pack(side="left")
+        def _cancel() -> None:
+            # Revert live-preview appearance changes
+            self._color_mode_var.set(_saved_color)
+            self._font_size_var.set(_saved_font)
+            self._language_var.set(_saved_lang)
+            self._apply_theme()
+            self._apply_font_size()
+            win.destroy()
+
+        ttk.Button(btn_row, text=self._t("save"), command=_save
+                   ).pack(side="left", padx=(0, 6))
+        ttk.Button(btn_row, text=self._t("cancel_btn"), command=_cancel
+                   ).pack(side="left")
 
     # ------------------------------------------------------------------
     # Settings field helpers
