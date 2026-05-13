@@ -245,6 +245,13 @@ The GUI lets you:
 
 Works on macOS, Windows, and Linux.
 
+When you reopen an existing desktop session from the sidebar, the app first
+tries a fast attach path. If the saved Chroma index and indexed-file manifest
+still match the current file set, it reuses the existing retriever without
+re-embedding or making new embedding API calls. A full re-index runs when the
+files changed, the index is missing, or you click **Apply** to force current
+settings to take effect.
+
 ### Desktop Session Persistence
 
 The desktop app persists session state so you can return to previous work.
@@ -285,7 +292,8 @@ matching API key from your environment.
 
 `--workspace-id` controls the workspace folder name under the app data
 directory. Reusing the same ID lets the CLI reuse the same persisted Chroma
-store and outputs for unchanged files.
+store and outputs for unchanged files, which can avoid re-embedding work and
+additional embedding API calls on later runs.
 
 CLI runs also respect `EMBEDDING_PROVIDER`. For example, you can use DeepSeek
 for chat/generation together with `EMBEDDING_PROVIDER=local` to avoid cloud
@@ -293,7 +301,7 @@ embedding costs.
 
 How the current CLI works:
 
-- It indexes the supplied files once at startup.
+- It indexes the supplied files at startup, or reuses the existing workspace index when the file set is unchanged.
 - It shows live progress updates while indexing documents and generating study documents.
 - It then enters an interactive chat loop in the terminal.
 - You can ask course questions or request a generated document in natural language.
