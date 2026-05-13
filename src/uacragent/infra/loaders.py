@@ -265,13 +265,6 @@ class DocumentLoader:
         except Exception as exc:  # noqa: BLE001
             raise IngestError(f"Failed to load {path}: {exc}") from exc
 
-    def load_documents(self, paths: list[str]) -> list[Document]:
-        """Load multiple files and return combined raw Documents."""
-        docs: list[Document] = []
-        for path in paths:
-            docs.extend(self.load_single_file(path))
-        return docs
-
     def copy_to_workspace(
         self,
         source_path: str,

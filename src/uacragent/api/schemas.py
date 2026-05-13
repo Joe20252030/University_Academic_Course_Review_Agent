@@ -61,26 +61,6 @@ class ReviewRequest(BaseModel):
     exam_info: str = ""
 
 
-class SimpleReviewRequest(BaseModel):
-    """Simplified request (backward compatible) - all files treated as 'other'."""
-    file_paths: list[str] = Field(..., min_length=1)
-    course_name: str = Field(..., min_length=1, description="Full course name (required)")
-    exam_format: ExamFormat = ExamFormat.written
-    exam_type: ExamType = ExamType.other
-    task_type: TaskType = TaskType.review_summary
-    extra_instructions: str = ""
-    workspace_id: str = "default"
-    # Optional course information
-    university_name: str = ""
-    major: str = ""
-    course_code: str = ""
-    professor_name: str = ""
-    semester: str = ""
-    # Optional exam details
-    exam_duration: str = ""
-    exam_info: str = ""
-
-
 class ReviewResponse(BaseModel):
     """Response from review generation."""
     markdown_path: str

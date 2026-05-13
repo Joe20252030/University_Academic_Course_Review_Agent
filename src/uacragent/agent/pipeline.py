@@ -527,39 +527,3 @@ class AgentPipeline:
                                                 classified_files=session.classified_files)
         return build_retriever(vectorstore, self.settings)
 
-    def run_simple(
-        self,
-        file_paths: list[str],
-        exam_format: str,
-        course_name: str,
-        exam_type: str = "other",
-        task_type: str = "review_summary",
-        extra_instructions: str = "",
-        workspace_id: str = "default",
-        university_name: str = "",
-        major: str = "",
-        course_code: str = "",
-        professor_name: str = "",
-        semester: str = "",
-        exam_duration: str = "",
-        exam_info: str = "",
-    ) -> tuple[ReviewPlan, str, str]:
-        """Simplified run method that treats all files as 'other' type."""
-        classified_files = {DocumentType.other: file_paths}
-        return self.run_end_to_end(
-            classified_files=classified_files,
-            exam_format=exam_format,
-            course_name=course_name,
-            exam_type=exam_type,
-            task_type=task_type,
-            extra_instructions=extra_instructions,
-            workspace_id=workspace_id,
-            copy_to_workspace=True,   # copy so manifest tracks files correctly
-            university_name=university_name,
-            major=major,
-            course_code=course_code,
-            professor_name=professor_name,
-            semester=semester,
-            exam_duration=exam_duration,
-            exam_info=exam_info,
-        )

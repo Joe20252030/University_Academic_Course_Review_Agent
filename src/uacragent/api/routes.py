@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from uacragent.agent.service import AgentService
 from uacragent.api.deps import get_agent_service
-from uacragent.api.schemas import ReviewRequest, SimpleReviewRequest, ReviewResponse
+from uacragent.api.schemas import ReviewRequest, ReviewResponse
 
 
 router = APIRouter()
@@ -43,30 +43,3 @@ def generate_review(
     )
     return ReviewResponse(markdown_path=result.markdown_path, plan=result.plan)
 
-
-@router.post("/review/simple", response_model=ReviewResponse)
-def generate_review_simple(
-    req: SimpleReviewRequest,
-    service: AgentService = Depends(get_agent_service),
-) -> ReviewResponse:
-    """Generate a review using simple file list (backward compatible).
-
-    All files are treated as 'other' document type.
-    """
-    result = service.run_simple(
-        file_paths=req.file_paths,
-        exam_format=req.exam_format.value,
-        course_name=req.course_name,
-        exam_type=req.exam_type.value,
-        task_type=req.task_type.value,
-        extra_instructions=req.extra_instructions,
-        workspace_id=req.workspace_id,
-        university_name=req.university_name,
-        major=req.major,
-        course_code=req.course_code,
-        professor_name=req.professor_name,
-        semester=req.semester,
-        exam_duration=req.exam_duration,
-        exam_info=req.exam_info,
-    )
-    return ReviewResponse(markdown_path=result.markdown_path, plan=result.plan)

@@ -94,7 +94,7 @@ class AgentSession:
         return content
 
     def to_user_prefs(self) -> dict:
-        """Build the user_prefs dict expected by AgentService / pipeline."""
+        """Build the user_prefs dict expected by the pipeline."""
         return {
             "course_name": self.course_name,
             "university_name": self.university_name,
