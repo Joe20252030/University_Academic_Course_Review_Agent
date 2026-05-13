@@ -33,6 +33,18 @@ class ExportFormat(str, Enum):
     pdf = "pdf"
 
 
+class EffortLevel(str, Enum):
+    """How much retrieval depth and context to use for each LLM call.
+
+    Low    — fewer chunks, smaller outline; faster and cheaper.
+    Medium — balanced defaults; suitable for most queries.
+    High   — maximum chunks and outline depth; best quality, higher cost.
+    """
+    low    = "low"
+    medium = "medium"
+    high   = "high"
+
+
 class DocumentType(str, Enum):
     """Classification of course materials for targeted processing."""
     syllabus = "syllabus"

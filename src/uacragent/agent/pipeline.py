@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from langchain_core.documents import Document
@@ -18,6 +19,38 @@ from uacragent.infra.loaders import DocumentLoader
 from uacragent.infra.settings import Settings
 from uacragent.infra.vectorstore import build_retriever, get_or_create_vectorstore
 from uacragent.infra.workspace import ensure_workspace_dirs, workspace_paths, WorkspacePaths
+
+
+# ---------------------------------------------------------------------------
+# Effort level configuration
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class EffortConfig:
+    """Retrieval and sampling parameters for a given effort level.
+
+    Attributes
+    ----------
+    retriever_k      : chunks returned per RAG query (chat context + section writing)
+    outline_max_docs : max documents sampled when building the plan outline
+    outline_chars    : max characters taken from each sampled document in the outline
+    """
+    retriever_k:      int
+    outline_max_docs: int
+    outline_chars:    int
+
+
+_EFFORT_CONFIGS: dict[str, EffortConfig] = {
+    "low":    EffortConfig(retriever_k=4,  outline_max_docs=10, outline_chars=500),
+    "medium": EffortConfig(retriever_k=8,  outline_max_docs=20, outline_chars=800),
+    "high":   EffortConfig(retriever_k=16, outline_max_docs=40, outline_chars=1500),
+}
+_DEFAULT_EFFORT = "medium"
+
+
+def get_effort_config(effort_level: str) -> EffortConfig:
+    """Return the ``EffortConfig`` for *effort_level*, falling back to medium."""
+    return _EFFORT_CONFIGS.get(effort_level, _EFFORT_CONFIGS[_DEFAULT_EFFORT])
 
 
 # ---------------------------------------------------------------------------
@@ -83,8 +116,10 @@ def generate_plan(
     docs: list[Document],
     user_prefs: dict,
     llm_client: LLMClient,
+    max_docs: int = 20,
+    chars_per_doc: int = 800,
 ) -> ReviewPlan:
-    outline_text = build_outline(docs)
+    outline_text = build_outline(docs, max_docs=max_docs, chars_per_doc=chars_per_doc)
 
     task_type = TaskType(user_prefs.get("task_type", "review_summary"))
     planner_file, _ = _get_prompt_files(task_type)
@@ -332,6 +367,7 @@ class AgentPipeline:
         exam_info: str = "",
         workspace_folder: "Path | None" = None,
         progress_cb: Callable[[str], None] | None = None,
+        effort_level: str = "medium",
     ) -> tuple[ReviewPlan, str, str]:
         """Run the full RAG pipeline with classified documents.
 
@@ -361,7 +397,10 @@ class AgentPipeline:
         _progress(f"Building vector index ({len(chunks)} chunks)…")
         vectorstore = get_or_create_vectorstore(chunks, self.settings, ws,
                                                 classified_files=classified_files)
-        retriever = build_retriever(vectorstore, self.settings)
+
+        # Build a retriever whose k is scaled to the chosen effort level.
+        effort = get_effort_config(effort_level)
+        retriever = vectorstore.as_retriever(search_kwargs={"k": effort.retriever_k})
 
         # Re-use the already-loaded chunks for plan generation instead of
         # reloading every file from disk a second time.  build_outline()
@@ -382,7 +421,11 @@ class AgentPipeline:
         }
 
         _progress("Generating study plan…")
-        plan = generate_plan(chunks, user_prefs, self.llm_client)
+        plan = generate_plan(
+            chunks, user_prefs, self.llm_client,
+            max_docs=effort.outline_max_docs,
+            chars_per_doc=effort.outline_chars,
+        )
 
         if not plan.sections:
             raise LLMError("Generated an empty plan (no sections). Try again or adjust the prompt.")

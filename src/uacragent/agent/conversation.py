@@ -135,8 +135,13 @@ class ConversationAgent:
         message: str,
         session: AgentSession,
         progress_cb: Callable[[str], None] | None = None,
+        effort_level: str = "medium",
     ) -> ChatResponse:
         """Process one user turn and return a :class:`ChatResponse`.
+
+        *effort_level* controls how much retrieved context is injected into the
+        system prompt and how deeply the generation pipeline samples the corpus.
+        Valid values: ``"low"``, ``"medium"`` (default), ``"high"``.
 
         Flow:
         1. Retrieve relevant context (if retriever is available).
@@ -148,7 +153,7 @@ class ConversationAgent:
         7. Return a ChatResponse.
         """
         # -- 1. Retrieve context -----------------------------------------------
-        context = self._retrieve_context(message, session)
+        context = self._retrieve_context(message, session, effort_level)
 
         # -- 2. Build message list ---------------------------------------------
         system_content = self._render_system_prompt(session, context)
@@ -185,7 +190,9 @@ class ConversationAgent:
                 )
             else:
                 try:
-                    output_path = self._run_task(task_type, session, progress_cb)
+                    output_path = self._run_task(
+                        task_type, session, progress_cb, effort_level
+                    )
                 except Exception as exc:  # noqa: BLE001
                     generation_error = f"Generation failed: {exc}"
 
@@ -221,12 +228,31 @@ class ConversationAgent:
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _retrieve_context(self, message: str, session: AgentSession) -> str:
-        """Return retrieved context text, or a placeholder if not available."""
+    def _retrieve_context(
+        self, message: str, session: AgentSession, effort_level: str = "medium"
+    ) -> str:
+        """Return retrieved context text scaled to *effort_level*.
+
+        Uses the vectorstore directly with an effort-calibrated *k* so that
+        Low/Medium/High effort controls how many chunks are injected into the
+        system prompt without rebuilding the retriever.
+        """
         if session.retriever is None:
             return "*(No documents loaded — answers are based on general knowledge only.)*"
         try:
-            docs = session.retriever.invoke(message)
+            from uacragent.agent.pipeline import get_effort_config
+            effort = get_effort_config(effort_level)
+
+            # Prefer direct vectorstore access so we can override k at call time.
+            # VectorStoreRetriever exposes `.vectorstore`; fall back to the
+            # retriever itself (with its fixed k) when that attribute is absent.
+            try:
+                docs = session.retriever.vectorstore.similarity_search(
+                    message, k=effort.retriever_k
+                )
+            except AttributeError:
+                docs = session.retriever.invoke(message)
+
             if not docs:
                 return "*(No relevant excerpts found in the uploaded documents.)*"
             return "\n\n".join(d.page_content for d in docs)
@@ -290,6 +316,7 @@ class ConversationAgent:
         task_type: str,
         session: AgentSession,
         progress_cb: Callable[[str], None] | None = None,
+        effort_level: str = "medium",
     ) -> str:
         """Run the generation pipeline and return the output markdown path."""
         from uacragent.agent.pipeline import AgentPipeline
@@ -318,5 +345,6 @@ class ConversationAgent:
             exam_info=prefs.get("exam_info", ""),
             workspace_folder=session.workspace_folder,
             progress_cb=progress_cb,
+            effort_level=effort_level,
         )
         return md_path

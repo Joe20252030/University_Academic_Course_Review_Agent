@@ -275,6 +275,14 @@ class ConversationApp(tk.Tk):
         self._export_format_var = tk.StringVar(value=ExportFormat.markdown.value)
         self._extra_instructions_var = tk.StringVar()
 
+        # Effort level for each chat turn (Low / Medium / High).
+        # Use .set() instead of replacing the var after the first init so that
+        # the radio buttons (built once in _build_chat_pane) keep their binding.
+        if hasattr(self, "_effort_var"):
+            self._effort_var.set("medium")
+        else:
+            self._effort_var = tk.StringVar(value="medium")
+
     # ------------------------------------------------------------------
     # UI layout
     # ------------------------------------------------------------------
@@ -443,6 +451,19 @@ class ConversationApp(tk.Tk):
         )
         self._input_text.grid(row=0, column=0, sticky="ew", padx=(0, 6))
         self._input_text.bind("<Return>", self._on_return_key)
+
+        # ── Effort level selector (Low / Medium / High) ───────────────
+        effort_row = ttk.Frame(input_frame)
+        effort_row.grid(row=1, column=0, sticky="w", pady=(3, 0))
+        ttk.Label(effort_row, text="Effort:", foreground="gray").pack(
+            side="left", padx=(2, 4))
+        for _level in ("low", "medium", "high"):
+            ttk.Radiobutton(
+                effort_row,
+                text=_level.title(),
+                value=_level,
+                variable=self._effort_var,
+            ).pack(side="left", padx=(0, 6))
 
         btn_col = ttk.Frame(input_frame)
         btn_col.grid(row=0, column=1, sticky="ns")
@@ -1898,10 +1919,11 @@ class ConversationApp(tk.Tk):
         self._append_chat("user", message)
         self._set_busy(True, "Thinking…")
 
-        # Capture export format NOW (before the background thread runs) so
-        # that changing the combobox while the LLM is thinking cannot affect
-        # which format is produced for this response (TOCTOU fix).
-        export_fmt = self._export_format_var.get()
+        # Capture export format and effort level NOW (before the background
+        # thread runs) so that UI changes while the LLM is thinking cannot
+        # affect which format / effort is used for this response (TOCTOU fix).
+        export_fmt   = self._export_format_var.get()
+        effort_level = self._effort_var.get()
 
         def _work() -> None:
             def _progress(msg: str) -> None:
@@ -1912,8 +1934,11 @@ class ConversationApp(tk.Tk):
                         pass  # window destroyed before callback fired
 
             try:
-                response = self._get_agent().chat(message, self._session,
-                                                   progress_cb=_progress)
+                response = self._get_agent().chat(
+                    message, self._session,
+                    progress_cb=_progress,
+                    effort_level=effort_level,
+                )
                 if self._cancel_event.is_set():
                     # The LLM finished but the user cancelled before the response
                     # was dispatched to the UI.  chat() already appended the turn
