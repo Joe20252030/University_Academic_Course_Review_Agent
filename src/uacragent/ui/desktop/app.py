@@ -968,15 +968,19 @@ class ConversationApp(tk.Tk):
         row += 1
 
         fields = [
-            ("Course Name *", "red",   self._course_name_var),
-            ("University",    "black", self._university_var),
-            ("Major / Department", "black", self._major_var),
-            ("Course Code",   "black", self._course_code_var),
-            ("Professor",     "black", self._professor_var),
-            ("Semester",      "black", self._semester_var),
+            ("Course Name *", "red", self._course_name_var),
+            ("University",    None,  self._university_var),
+            ("Major / Department", None, self._major_var),
+            ("Course Code",   None,  self._course_code_var),
+            ("Professor",     None,  self._professor_var),
+            ("Semester",      None,  self._semester_var),
         ]
         for fi, (lbl, fg, var) in enumerate(fields):
-            ttk.Label(inf, text=lbl + ":", foreground=fg).grid(
+            # Only set foreground when an explicit override is needed (e.g. red
+            # for required fields). Omitting it for regular labels lets the ttk
+            # style propagate correctly, including in dark mode.
+            lbl_kw = {"foreground": fg} if fg else {}
+            ttk.Label(inf, text=lbl + ":", **lbl_kw).grid(
                 row=fi, column=0, sticky="w", padx=(0, 6), pady=(3, 0))
             e = ttk.Entry(inf, textvariable=var)
             e.grid(row=fi, column=1, sticky="ew", pady=(3, 0))
