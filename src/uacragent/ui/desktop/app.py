@@ -2600,23 +2600,33 @@ class ConversationApp(tk.Tk):
         self._append_chat("user", message)
         self._set_busy(True, "Thinking…")
 
-        # Capture export format and effort level NOW (before the background
-        # thread runs) so that UI changes while the LLM is thinking cannot
-        # affect which format / effort is used for this response (TOCTOU fix).
+        # Capture export format, effort level, session, and agent NOW — before
+        # the background thread runs — so that UI changes mid-flight cannot
+        # affect which format/effort/session/settings are used (TOCTOU fix).
+        # Capturing the agent here (main thread) avoids calling get_settings()
+        # from the background thread while the main thread may be writing os.environ.
         export_fmt   = self._export_format_var.get()
         effort_level = self._effort_var.get()
+        captured_session = self._session
+        captured_agent   = self._get_agent()
 
         def _work() -> None:
             def _progress(msg: str) -> None:
                 if not self._cancel_event.is_set():
                     try:
-                        self.after(0, lambda m=msg: self._busy_label.configure(text=m))
+                        self.after(
+                            0,
+                            lambda m=msg: (
+                                self._busy_label.configure(text=m)
+                                if self.winfo_exists() else None
+                            ),
+                        )
                     except tk.TclError:
-                        pass  # window destroyed before callback fired
+                        pass  # window destroyed before after() was queued
 
             try:
-                response = self._get_agent().chat(
-                    message, self._session,
+                response = captured_agent.chat(
+                    message, captured_session,
                     progress_cb=_progress,
                     effort_level=effort_level,
                 )
@@ -2625,8 +2635,11 @@ class ConversationApp(tk.Tk):
                     # was dispatched to the UI.  chat() already appended the turn
                     # (human + AI) to session.chat_history — undo it so the
                     # invisible response doesn't silently persist on disk.
-                    if len(self._session.chat_history) >= 2:
-                        self._session.chat_history = self._session.chat_history[:-2]
+                    # Use the captured session so we never mutate a different
+                    # session that the user may have switched to mid-flight.
+                    if len(captured_session.chat_history) >= 2:
+                        captured_session.chat_history = (
+                            captured_session.chat_history[:-2])
                 else:
                     self.after(0, lambda r=response, f=export_fmt:
                                self._on_chat_response(r, f))
