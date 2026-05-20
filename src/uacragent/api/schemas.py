@@ -16,28 +16,16 @@ class ClassifiedFiles(BaseModel):
     other: list[str] = Field(default_factory=list)
 
     def to_dict(self) -> dict[DocumentType, list[str]]:
-        """Convert to dict[DocumentType, list[str]] format."""
-        result: dict[DocumentType, list[str]] = {}
-        if self.syllabus:
-            result[DocumentType.syllabus] = self.syllabus
-        if self.lecture_note:
-            result[DocumentType.lecture_note] = self.lecture_note
-        if self.textbook:
-            result[DocumentType.textbook] = self.textbook
-        if self.assignment:
-            result[DocumentType.assignment] = self.assignment
-        if self.past_exam:
-            result[DocumentType.past_exam] = self.past_exam
-        if self.other:
-            result[DocumentType.other] = self.other
-        return result
+        """Convert to ``dict[DocumentType, list[str]]``, omitting empty buckets."""
+        return {
+            dt: files
+            for dt in DocumentType
+            if (files := getattr(self, dt.value, []))
+        }
 
     def is_empty(self) -> bool:
-        """Check if no files are provided."""
-        return not any((
-            self.syllabus, self.lecture_note, self.textbook,
-            self.assignment, self.past_exam, self.other,
-        ))
+        """Return True when no files are provided across all document types."""
+        return not any(getattr(self, dt.value, []) for dt in DocumentType)
 
 
 class ReviewRequest(BaseModel):

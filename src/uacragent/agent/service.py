@@ -41,6 +41,7 @@ class AgentService:
         exam_info: str = "",
         workspace_folder: Path | None = None,
         progress_cb: Callable[[str], None] | None = None,
+        effort_level: str = "medium",
     ) -> ReviewResult:
         plan, markdown, markdown_path = self.pipeline.run_end_to_end(
             classified_files=classified_files,
@@ -60,6 +61,7 @@ class AgentService:
             exam_info=exam_info,
             workspace_folder=workspace_folder,
             progress_cb=progress_cb,
+            effort_level=effort_level,
         )
         return ReviewResult(plan=plan, markdown=markdown, markdown_path=markdown_path)
 

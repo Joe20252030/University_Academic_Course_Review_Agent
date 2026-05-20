@@ -34,8 +34,8 @@ from uacragent.export.docx import save_docx
 from uacragent.export.pdf import save_pdf
 from uacragent.infra.persistence import (
     delete_session, dict_to_session, get_app_appearance, get_app_data_dir,
-    list_sessions, load_session, rename_session, save_session,
-    set_app_appearance, set_app_data_dir,
+    get_missing_session_files, list_sessions, load_session, rename_session,
+    save_session, set_app_appearance, set_app_data_dir,
 )
 from uacragent.infra.workspace import workspace_paths, ensure_workspace_dirs
 
@@ -195,39 +195,51 @@ _THEME_COLORS: dict[str, dict[str, str]] = {
 }
 
 _FONT_SIZE_VALUES: dict[str, int] = {
-    "small":  10,
-    "medium": 11,
-    "large":  13,
+    "small":  11,
+    "medium": 13,
+    "large":  15,
 }
 
 
 # ---------------------------------------------------------------------------
 # OS helpers
 # ---------------------------------------------------------------------------
-def _open_file_in_os(path: str) -> None:
+def _open_in_os(path: str, *, reveal_folder: bool = False) -> None:
+    """Open *path* in the default OS application.
+
+    Parameters
+    ----------
+    path:
+        File or directory path to open.
+    reveal_folder:
+        When ``True`` and on Windows, open Explorer on *path* as a folder
+        rather than launching the folder's default handler.  On macOS and
+        Linux the same ``open`` / ``xdg-open`` command handles both files
+        and directories correctly so this flag has no effect there.
+    """
     system = platform.system()
     try:
         if system == "Darwin":
             subprocess.Popen(["open", path])
         elif system == "Windows":
-            os.startfile(path)  # type: ignore[attr-defined]
+            if reveal_folder:
+                subprocess.Popen(["explorer", path])
+            else:
+                os.startfile(path)  # type: ignore[attr-defined]
         else:
             subprocess.Popen(["xdg-open", path])
     except Exception:
         pass
+
+
+def _open_file_in_os(path: str) -> None:
+    """Open *path* in the OS default application for that file type."""
+    _open_in_os(path, reveal_folder=False)
 
 
 def _open_folder_in_os(path: str) -> None:
-    system = platform.system()
-    try:
-        if system == "Darwin":
-            subprocess.Popen(["open", path])
-        elif system == "Windows":
-            subprocess.Popen(["explorer", path])
-        else:
-            subprocess.Popen(["xdg-open", path])
-    except Exception:
-        pass
+    """Open *path* as a directory in the OS file manager."""
+    _open_in_os(path, reveal_folder=True)
 
 
 def _strip_markdown(text: str) -> str:
@@ -277,6 +289,17 @@ class ConversationApp(tk.Tk):
         self.title(_WINDOW_TITLE)
         self.minsize(_MIN_WIDTH, _MIN_HEIGHT)
 
+        # Centre the main window on the primary display before showing it.
+        # withdraw() hides it so the user never sees it in the wrong position.
+        self.withdraw()
+        self.update_idletasks()
+        sw = self.winfo_screenwidth()
+        sh = self.winfo_screenheight()
+        x = (sw - _MIN_WIDTH)  // 2
+        y = (sh - _MIN_HEIGHT) // 2
+        self.geometry(f"{_MIN_WIDTH}x{_MIN_HEIGHT}+{x}+{y}")
+        self.deiconify()
+
         # Active session
         self._session = AgentSession()
         self._agent: ConversationAgent | None = None
@@ -317,7 +340,9 @@ class ConversationApp(tk.Tk):
         self._build_ui()
 
         # Apply visual theme and font size now that all widgets exist.
-        self._apply_theme()
+        # Pass reconfigure_tags=False to _apply_theme so that chat tags are
+        # only configured once — by the _apply_font_size() call that follows.
+        self._apply_theme(reconfigure_tags=False)
         self._apply_font_size()
 
         # Populate the session list but do not auto-select anything.
@@ -477,8 +502,10 @@ class ConversationApp(tk.Tk):
         _btn_new.grid(row=0, column=1, padx=(0, 3))
         self._i18n_widgets.append((_btn_new, "text", "new_session"))
 
-        ttk.Button(hdr, text="⚙", width=3,
-                   command=self._open_app_settings).grid(row=0, column=2)
+        self._gear_btn = ttk.Button(hdr, text="⚙", width=3,
+                                    style="Gear.TButton",
+                                    command=self._open_app_settings)
+        self._gear_btn.grid(row=0, column=2)
 
         ttk.Separator(frame, orient="horizontal").grid(
             row=0, column=0, sticky="ew", pady=(36, 0)
@@ -549,10 +576,11 @@ class ConversationApp(tk.Tk):
         ).grid(row=0, column=0, sticky="w")
 
         self._session_status_var = tk.StringVar(value="")
-        ttk.Label(
+        self._session_status_lbl = ttk.Label(
             top_bar, textvariable=self._session_status_var,
-            foreground="gray", font=("TkDefaultFont", 9),
-        ).grid(row=1, column=0, sticky="w")
+            foreground="gray", font=("TkDefaultFont", 10),
+        )
+        self._session_status_lbl.grid(row=1, column=0, sticky="w")
 
         btn_frame = ttk.Frame(top_bar)
         btn_frame.grid(row=0, column=1, rowspan=2, sticky="e")
@@ -645,7 +673,7 @@ class ConversationApp(tk.Tk):
         self._i18n_widgets.append((self._cancel_btn, "text", "cancel"))
         # _cancel_btn is pack()ed / pack_forget()en dynamically by _set_busy
         self._busy_label = ttk.Label(btn_col, text="", foreground="gray",
-                                     font=("TkDefaultFont", 9), wraplength=72)
+                                     font=("TkDefaultFont", 10), wraplength=72)
         self._busy_label.pack()
 
         # ── Placeholder (shown when no session is active) ─────────────
@@ -690,6 +718,39 @@ class ConversationApp(tk.Tk):
     # Settings Toplevel dialog
     # ------------------------------------------------------------------
 
+    def _center_on_main(self, win: tk.Toplevel) -> None:
+        """Position *win* at the centre of the main application window.
+
+        Must be called after the dialog's widgets are built and packed so
+        that ``winfo_reqwidth`` / ``winfo_reqheight`` return real sizes.
+        We use ``after_idle`` to let tkinter finish its layout pass first.
+
+        Note: screen coordinates are intentionally *not* clamped to ≥ 0.
+        On multi-monitor setups, monitors to the left or above the primary
+        display have negative x/y coordinates, and clamping to 0 would
+        incorrectly snap the dialog to the primary monitor instead.
+        """
+        def _do_center() -> None:
+            try:
+                win.update_idletasks()          # flush pending geometry requests
+                # Dialog's natural size (may be 0×0 before layout; fall back)
+                dw = win.winfo_reqwidth()  or win.winfo_width()
+                dh = win.winfo_reqheight() or win.winfo_height()
+                # Main window position and size — winfo_rootx/y gives absolute
+                # screen coords, which are correct across all monitors.
+                mw = self.winfo_width()
+                mh = self.winfo_height()
+                mx = self.winfo_rootx()
+                my = self.winfo_rooty()
+                # Centre the dialog over the main window
+                x = mx + (mw - dw) // 2
+                y = my + (mh - dh) // 2
+                win.geometry(f"+{x}+{y}")
+            except tk.TclError:
+                pass  # window already destroyed
+
+        win.after_idle(_do_center)
+
     def _reset_setting_vars_from_committed(self) -> None:
         """Reset every setting StringVar to the last *committed* state.
 
@@ -731,6 +792,7 @@ class ConversationApp(tk.Tk):
         self._settings_win = win
 
         # ── Fixed banner (always visible, above the scroll area) ──────
+        _note_sz = max(self._font_size() - 1, 10)  # notice font: 1pt below body, min 10
         banner = tk.Frame(win, background="#fff8e1", padx=10, pady=6)
         banner.pack(side="top", fill="x")
         tk.Label(
@@ -738,7 +800,7 @@ class ConversationApp(tk.Tk):
             text="✏️  Edit any setting below, then scroll down and click  ✓ Apply  to save and re-index.",
             background="#fff8e1",
             foreground="#5d4037",
-            font=("TkDefaultFont", 9),
+            font=("TkDefaultFont", _note_sz),
             anchor="w",
         ).pack(side="left")
 
@@ -855,7 +917,7 @@ class ConversationApp(tk.Tk):
         self._api_key_hint_var = tk.StringVar()
         self._api_key_hint_lbl = ttk.Label(
             akf, textvariable=self._api_key_hint_var,
-            font=("TkDefaultFont", 9))
+            font=("TkDefaultFont", _note_sz))
         self._api_key_hint_lbl.grid(row=0, column=3, padx=(6, 0))
 
         # Wire entry to current provider's var and update hint
@@ -874,7 +936,7 @@ class ConversationApp(tk.Tk):
                 "Keys are never saved to disk — re-enter them each time you open the app, or add them to a .env file."
             ),
             background="#e8f4fd", foreground="#0d47a1",
-            font=("TkDefaultFont", 9), anchor="w", justify="left", wraplength=460,
+            font=("TkDefaultFont", _note_sz), anchor="w", justify="left", wraplength=460,
         ).pack(fill="x")
 
         # ── Embedding ─────────────────────────────────────────────────────
@@ -1005,7 +1067,7 @@ class ConversationApp(tk.Tk):
             warn_frame,
             text="⚠️  Deletion warning",
             background="#fff3e0", foreground="#bf360c",
-            font=("TkDefaultFont", 9, "bold"),
+            font=("TkDefaultFont", _note_sz, "bold"),
             anchor="w",
         ).pack(side="top", fill="x")
         tk.Label(
@@ -1019,7 +1081,7 @@ class ConversationApp(tk.Tk):
                 "not affected — only .uacragent/ is removed."
             ),
             background="#fff3e0", foreground="#4e342e",
-            font=("TkDefaultFont", 9),
+            font=("TkDefaultFont", _note_sz),
             anchor="w", justify="left", wraplength=460,
         ).pack(side="top", fill="x")
 
@@ -1060,6 +1122,13 @@ class ConversationApp(tk.Tk):
                 for p in paths:
                     lb.insert(tk.END, Path(p).name)
 
+        # ── Generated Outputs ─────────────────────────────────────────
+        out_frame = ttk.LabelFrame(inner, text="Generated Outputs", padding=_PAD)
+        out_frame.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
+        out_frame.columnconfigure(0, weight=1)
+        row += 1
+        self._build_outputs_panel(out_frame, win)
+
         # ── Bottom buttons ────────────────────────────────────────────
         btn_row_frame = ttk.Frame(inner)
         btn_row_frame.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
@@ -1068,7 +1137,7 @@ class ConversationApp(tk.Tk):
 
         self._settings_status_var = tk.StringVar(value="")
         ttk.Label(btn_row_frame, textvariable=self._settings_status_var,
-                  foreground="gray", font=("TkDefaultFont", 9),
+                  foreground="gray", font=("TkDefaultFont", _note_sz),
                   wraplength=440
                   ).grid(row=0, column=0, sticky="w", pady=(0, 6))
 
@@ -1080,6 +1149,146 @@ class ConversationApp(tk.Tk):
         ttk.Button(action_row, text="Close",
                    command=win.destroy
                    ).pack(side="right")
+
+        self._center_on_main(win)
+
+    def _build_outputs_panel(
+        self, parent: ttk.Frame, dialog_win: tk.Toplevel
+    ) -> None:
+        """Populate the Generated Outputs section inside the Settings dialog.
+
+        Lists every file in ``<workspace>/.uacragent/outputs/`` and provides
+        per-file Open, Copy, and Delete buttons plus an "Open folder" shortcut.
+        The panel re-renders itself after a deletion so the list stays current.
+        """
+        # Resolve the outputs folder for the current session.
+        ws_id     = self._session.workspace_id
+        ws_folder = self._session.workspace_folder
+        if not ws_id and not ws_folder:
+            ttk.Label(parent, text="No workspace assigned yet.",
+                      foreground="gray").pack(anchor="w")
+            return
+
+        ws = workspace_paths(workspace_id=ws_id, workspace_folder=ws_folder)
+        out_dir = Path(ws.outputs)
+
+        # Container that we re-fill on every refresh
+        list_frame = ttk.Frame(parent)
+        list_frame.pack(fill="x")
+        list_frame.columnconfigure(0, weight=1)
+
+        # "Open folder" shortcut below the list — disabled until the folder exists
+        footer = ttk.Frame(parent)
+        footer.pack(fill="x", pady=(6, 0))
+        open_folder_btn = ttk.Button(
+            footer, text="📂  Open outputs folder",
+            command=lambda: _open_folder_in_os(str(out_dir)),
+        )
+        open_folder_btn.pack(side="left")
+
+        def _refresh() -> None:
+            # Wipe and rebuild the file rows
+            for w in list_frame.winfo_children():
+                w.destroy()
+
+            files: list[Path] = []
+            if out_dir.exists():
+                files = sorted(out_dir.iterdir(), key=lambda p: p.stat().st_mtime,
+                               reverse=True)
+                files = [f for f in files if f.is_file()]
+
+            # Enable/disable the "Open folder" button based on folder existence
+            open_folder_btn.configure(
+                state="normal" if out_dir.exists() else "disabled")
+
+            if not files:
+                msg = ("No output files yet."
+                       if out_dir.exists()
+                       else "No output files yet — outputs folder will be created on first generation.")
+                ttk.Label(list_frame, text=msg,
+                          foreground="gray").grid(row=0, column=0, sticky="w",
+                                                  pady=(2, 0))
+                return
+
+            for row_idx, fpath in enumerate(files):
+                bg = "#f7f7f7" if row_idx % 2 == 0 else "#ffffff"
+
+                row_f = tk.Frame(list_frame, background=bg)
+                row_f.grid(row=row_idx, column=0, sticky="ew", pady=1)
+                row_f.columnconfigure(0, weight=1)
+                list_frame.rowconfigure(row_idx, weight=0)
+
+                # File icon + name
+                size_kb = fpath.stat().st_size / 1024
+                size_str = f"{size_kb:.1f} KB" if size_kb < 1024 else \
+                           f"{size_kb/1024:.1f} MB"
+                name_lbl = tk.Label(
+                    row_f,
+                    text=f"📄 {fpath.name}  ({size_str})",
+                    background=bg, anchor="w",
+                )
+                name_lbl.grid(row=0, column=0, sticky="ew", padx=(4, 8))
+
+                btn_cell = ttk.Frame(row_f)
+                btn_cell.grid(row=0, column=1, padx=(0, 4), pady=2)
+
+                # Open
+                ttk.Button(
+                    btn_cell, text="Open", width=6,
+                    command=lambda p=str(fpath): _open_file_in_os(p),
+                ).pack(side="left", padx=(0, 3))
+
+                # Copy to…
+                def _copy_to(src: Path = fpath) -> None:
+                    dest_dir = filedialog.askdirectory(
+                        title="Choose destination folder",
+                        parent=dialog_win,
+                    )
+                    if not dest_dir:
+                        return
+                    import shutil as _shutil
+                    dest = Path(dest_dir) / src.name
+                    # Avoid overwriting: append _1, _2 … if the file exists
+                    stem, suffix = src.stem, src.suffix
+                    counter = 1
+                    while dest.exists():
+                        dest = Path(dest_dir) / f"{stem}_{counter}{suffix}"
+                        counter += 1
+                    try:
+                        _shutil.copy2(str(src), str(dest))
+                        messagebox.showinfo(
+                            "Copied", f"Saved to:\n{dest}", parent=dialog_win)
+                    except Exception as exc:
+                        messagebox.showerror(
+                            "Copy failed", str(exc), parent=dialog_win)
+
+                ttk.Button(
+                    btn_cell, text="Copy to…", width=8,
+                    command=_copy_to,
+                ).pack(side="left", padx=(0, 3))
+
+                # Delete
+                def _delete(p: Path = fpath) -> None:
+                    if not messagebox.askyesno(
+                        "Delete file",
+                        f"Permanently delete:\n{p.name}?",
+                        icon="warning", parent=dialog_win,
+                    ):
+                        return
+                    try:
+                        p.unlink()
+                    except Exception as exc:
+                        messagebox.showerror(
+                            "Delete failed", str(exc), parent=dialog_win)
+                        return
+                    _refresh()
+
+                ttk.Button(
+                    btn_cell, text="Delete", width=7,
+                    command=_delete,
+                ).pack(side="left")
+
+        _refresh()
 
     def _create_doc_section(self, parent: ttk.Frame,
                             doc_type: DocumentType) -> None:
@@ -1127,8 +1336,17 @@ class ConversationApp(tk.Tk):
         except Exception:
             pass  # keep defaults on any error
 
-    def _apply_theme(self) -> None:
-        """Apply the current color mode to all widgets."""
+    def _apply_theme(self, reconfigure_tags: bool = True) -> None:
+        """Apply the current color mode to all widgets.
+
+        Parameters
+        ----------
+        reconfigure_tags:
+            When False, skip the final ``_reconfigure_chat_tags()`` call.
+            Pass False at startup when ``_apply_font_size()`` is called
+            immediately afterwards — it already calls ``_reconfigure_chat_tags()``
+            so the tags only need to be configured once.
+        """
         mode = self._color_mode_var.get()
         c    = _THEME_COLORS.get(mode, _THEME_COLORS["light"])
         style = ttk.Style(self)
@@ -1231,12 +1449,13 @@ class ConversationApp(tk.Tk):
             )
         except Exception:
             pass
-        self._reconfigure_chat_tags()
+        if reconfigure_tags:
+            self._reconfigure_chat_tags()
 
     def _reconfigure_chat_tags(self) -> None:
         """Re-apply chat-bubble colours for the current theme and font size."""
         c    = _THEME_COLORS.get(self._color_mode_var.get(), _THEME_COLORS["light"])
-        size = _FONT_SIZE_VALUES.get(self._font_size_var.get(), 11)
+        size = self._font_size()
         try:
             self._chat_text.tag_configure(
                 "user_label", foreground=c["user_fg"],
@@ -1254,12 +1473,22 @@ class ConversationApp(tk.Tk):
         except Exception:
             pass
 
+    def _font_size(self) -> int:
+        """Return the current font size as an integer."""
+        return _FONT_SIZE_VALUES.get(self._font_size_var.get(), 13)
+
     def _apply_font_size(self) -> None:
         """Apply the selected font size to the named font and key widgets."""
-        size = _FONT_SIZE_VALUES.get(self._font_size_var.get(), 11)
+        size = self._font_size()
         # Update the named default font — propagates to all ttk widgets
         try:
             tkfont.nametofont("TkDefaultFont").configure(size=size)
+        except Exception:
+            pass
+        # Gear button: use a dedicated style so it appears noticeably larger
+        # than the surrounding text buttons (size + 4 gives a prominent icon).
+        try:
+            ttk.Style(self).configure("Gear.TButton", font=("TkDefaultFont", size + 4))
         except Exception:
             pass
         # Widgets with explicit font tuples must be updated individually
@@ -1273,6 +1502,16 @@ class ConversationApp(tk.Tk):
             pass
         try:
             self._session_listbox.configure(font=("TkDefaultFont", max(size - 1, 9)))
+        except Exception:
+            pass
+        # Secondary info labels: 1pt below body text, minimum 10pt
+        _sub = max(size - 1, 10)
+        try:
+            self._session_status_lbl.configure(font=("TkDefaultFont", _sub))
+        except Exception:
+            pass
+        try:
+            self._busy_label.configure(font=("TkDefaultFont", _sub))
         except Exception:
             pass
         # Re-apply tag fonts with the new size
@@ -1292,7 +1531,16 @@ class ConversationApp(tk.Tk):
 
     def _open_app_settings(self) -> None:
         """Open the App Settings dialog (appearance + data directory)."""
+        # Prevent opening multiple simultaneous instances
+        if (hasattr(self, "_app_settings_win")
+                and self._app_settings_win is not None
+                and self._app_settings_win.winfo_exists()):
+            self._app_settings_win.lift()
+            self._app_settings_win.focus_set()
+            return
+
         win = tk.Toplevel(self)
+        self._app_settings_win = win
         win.title(self._t("app_settings_title"))
         win.resizable(False, False)
         win.grab_set()
@@ -1351,12 +1599,13 @@ class ConversationApp(tk.Tk):
             ).pack(side="left", padx=(0, 12))
 
         # ── App data folder section ───────────────────────────────────
+        _app_note_sz = max(self._font_size() - 1, 10)
         ttk.Label(frm, text=self._t("app_data_label"),
-                  font=("TkDefaultFont", 10, "bold")
+                  font=("TkDefaultFont", self._font_size(), "bold")
                   ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 4))
         row += 1
         ttk.Label(frm, text=self._t("app_data_hint"),
-                  foreground="gray", font=("TkDefaultFont", 9),
+                  foreground="gray", font=("TkDefaultFont", _app_note_sz),
                   ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 8))
         row += 1
 
@@ -1415,6 +1664,8 @@ class ConversationApp(tk.Tk):
                    ).pack(side="left", padx=(0, 6))
         ttk.Button(btn_row, text=self._t("cancel_btn"), command=_cancel
                    ).pack(side="left")
+
+        self._center_on_main(win)
 
     # ------------------------------------------------------------------
     # Settings field helpers
@@ -1521,7 +1772,8 @@ class ConversationApp(tk.Tk):
                 frame,
                 text="Downloaded from HuggingFace on first use, then cached in the app data folder. "
                      "Subsequent uses are instant with no internet required.",
-                foreground="gray", font=("TkDefaultFont", 9), wraplength=400,
+                foreground="gray", font=("TkDefaultFont", max(self._font_size() - 1, 10)),
+                wraplength=400,
             ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(3, 0))
         else:
             # API-based: show a key entry field for the embedding provider.
@@ -1553,7 +1805,8 @@ class ConversationApp(tk.Tk):
                 hint = f"⚠  {env_var} not set — enter it above or choose Free — Local."
                 fg   = "#cc4400"
             ttk.Label(frame, text=hint, foreground=fg,
-                      font=("TkDefaultFont", 9), wraplength=400,
+                      font=("TkDefaultFont", max(self._font_size() - 1, 10)),
+                      wraplength=400,
                       ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(3, 0))
 
     def _has_embedding_key(self) -> bool:
@@ -1983,6 +2236,17 @@ class ConversationApp(tk.Tk):
         # Sessions loaded from disk already have a committed workspace.
         self._workspace_committed = True
 
+        # Warn if any previously-indexed files are no longer on disk.
+        _missing = get_missing_session_files(data)
+        if _missing:
+            _names = "\n  • ".join(Path(p).name for p in _missing)
+            self._append_chat(
+                "system",
+                f"⚠️  {len(_missing)} file(s) saved in this session could not be "
+                f"found and will be skipped during indexing:\n  • {_names}\n"
+                "Re-add the files in ⚙ Settings if you need them.",
+            )
+
         # Restore UI extras (stored alongside session data in session.json)
         export_fmt   = data.get("export_format", ExportFormat.markdown.value)
         emb_provider = data.get("embedding_provider", "gemini")
@@ -2071,10 +2335,12 @@ class ConversationApp(tk.Tk):
             return
 
         if not self._session.has_files():
-            # No documents to index — wipe any workspace upload copies left over
-            # from files the user removed via the GUI before clicking Apply.
-            from uacragent.agent.pipeline import wipe_session_uploads
+            # No documents to index — wipe upload copies, the Chroma vector
+            # store, and reset the indexed-files manifest so nothing stale lingers.
+            from uacragent.agent.pipeline import (
+                wipe_session_uploads, wipe_session_vectorstore)
             wipe_session_uploads(self._session)
+            wipe_session_vectorstore(self._session)
             self._append_chat(
                 "system",
                 "⚠️ No documents loaded. Add files in ⚙ Settings → Course Documents, "

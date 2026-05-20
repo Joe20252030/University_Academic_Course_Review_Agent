@@ -52,12 +52,12 @@ def _add_markdown_to_docx(doc: DocxDocument, md_text: str) -> None:
                 run.font.size = Pt(11)
 
 
-def save_docx(md_text: str, work_space_paths: WorkspacePaths) -> str:
-    Path(work_space_paths.outputs).mkdir(parents=True, exist_ok=True)
+def save_docx(md_text: str, workspace_paths: WorkspacePaths) -> str:
+    Path(workspace_paths.outputs).mkdir(parents=True, exist_ok=True)
 
     doc = DocxDocument()
     _add_markdown_to_docx(doc, md_text)
 
-    path = Path(work_space_paths.outputs) / f"review_{safe_timestamp()}.docx"
+    path = Path(workspace_paths.outputs) / f"review_{safe_timestamp()}.docx"
     doc.save(str(path))
     return str(path)

@@ -92,6 +92,35 @@ def _get_prompt_files(task_type: TaskType) -> tuple[str, str]:
 # Pipeline functions
 # ---------------------------------------------------------------------------
 
+# Fields that must be present in every prompt template. Absent or empty values
+# are replaced with human-readable fallbacks before the prompt is rendered.
+_PROMPT_FIELD_DEFAULTS: dict[str, str] = {
+    "university_name": "Not specified",
+    "major":           "Not specified",
+    "course_code":     "Not specified",
+    "professor_name":  "Not specified",
+    "semester":        "Not specified",
+    "exam_duration":   "Not specified",
+    "exam_info":       "None provided",
+    "extra_instructions": "None",
+}
+
+
+def _expand_user_prefs(user_prefs: dict) -> dict:
+    """Return a copy of *user_prefs* with empty optional fields replaced by
+    human-readable fallbacks used in every prompt template.
+
+    Centralises the ``or "Not specified"`` pattern that previously appeared
+    three times across ``generate_plan``, ``write_section``, and
+    ``write_predicted_exam_paper``.
+    """
+    out = dict(user_prefs)
+    for key, default in _PROMPT_FIELD_DEFAULTS.items():
+        if not out.get(key):
+            out[key] = default
+    return out
+
+
 def build_outline(docs: list[Document], max_docs: int = 20, chars_per_doc: int = 800) -> str:
     """Build a representative outline from documents for plan generation.
 
@@ -125,19 +154,20 @@ def generate_plan(
     planner_file, _ = _get_prompt_files(task_type)
     prompt = ChatPromptTemplate.from_template(load_prompt(planner_file))
 
+    p = _expand_user_prefs(user_prefs)
     messages = prompt.format_messages(
         outline=outline_text,
-        exam_format=user_prefs.get("exam_format", "unknown"),
-        exam_type=user_prefs.get("exam_type", "other"),
-        extra_instructions=user_prefs.get("extra_instructions", "") or "None",
-        course_name=user_prefs.get("course_name", ""),
-        university_name=user_prefs.get("university_name", "") or "Not specified",
-        major=user_prefs.get("major", "") or "Not specified",
-        course_code=user_prefs.get("course_code", "") or "Not specified",
-        professor_name=user_prefs.get("professor_name", "") or "Not specified",
-        semester=user_prefs.get("semester", "") or "Not specified",
-        exam_duration=user_prefs.get("exam_duration", "") or "Not specified",
-        exam_info=user_prefs.get("exam_info", "") or "None provided",
+        exam_format=p.get("exam_format", "unknown"),
+        exam_type=p.get("exam_type", "other"),
+        extra_instructions=p["extra_instructions"],
+        course_name=p.get("course_name", ""),
+        university_name=p["university_name"],
+        major=p["major"],
+        course_code=p["course_code"],
+        professor_name=p["professor_name"],
+        semester=p["semester"],
+        exam_duration=p["exam_duration"],
+        exam_info=p["exam_info"],
     )
 
     plan: ReviewPlan = llm_client.generate_structured(ReviewPlan, messages)
@@ -167,22 +197,23 @@ def write_section(
     _, writer_file = _get_prompt_files(task_type)
     prompt = ChatPromptTemplate.from_template(load_prompt(writer_file))
 
+    p = _expand_user_prefs(user_prefs)
     resp = llm_client.invoke(
         prompt.format_messages(
             title=section.title,
             key_topics=key_topics_text,
             context=context,
-            exam_type=user_prefs.get("exam_type", "other"),
-            exam_format=user_prefs.get("exam_format", "unknown"),
-            extra_instructions=user_prefs.get("extra_instructions", "") or "None",
-            course_name=user_prefs.get("course_name", ""),
-            university_name=user_prefs.get("university_name", "") or "Not specified",
-            major=user_prefs.get("major", "") or "Not specified",
-            course_code=user_prefs.get("course_code", "") or "Not specified",
-            professor_name=user_prefs.get("professor_name", "") or "Not specified",
-            semester=user_prefs.get("semester", "") or "Not specified",
-            exam_duration=user_prefs.get("exam_duration", "") or "Not specified",
-            exam_info=user_prefs.get("exam_info", "") or "None provided",
+            exam_type=p.get("exam_type", "other"),
+            exam_format=p.get("exam_format", "unknown"),
+            extra_instructions=p["extra_instructions"],
+            course_name=p.get("course_name", ""),
+            university_name=p["university_name"],
+            major=p["major"],
+            course_code=p["course_code"],
+            professor_name=p["professor_name"],
+            semester=p["semester"],
+            exam_duration=p["exam_duration"],
+            exam_info=p["exam_info"],
         )
     )
     return getattr(resp, "content", str(resp))
@@ -243,19 +274,20 @@ def write_predicted_exam_paper(
     prompt = ChatPromptTemplate.from_template(
         load_prompt("exam_prediction_paper_writer.md")
     )
+    p = _expand_user_prefs(user_prefs)
     resp = llm_client.invoke(
         prompt.format_messages(
-            course_name=user_prefs.get("course_name", ""),
-            university_name=user_prefs.get("university_name", "") or "Not specified",
-            major=user_prefs.get("major", "") or "Not specified",
-            course_code=user_prefs.get("course_code", "") or "Not specified",
-            professor_name=user_prefs.get("professor_name", "") or "Not specified",
-            semester=user_prefs.get("semester", "") or "Not specified",
-            exam_type=user_prefs.get("exam_type", "other"),
-            exam_format=user_prefs.get("exam_format", "unknown"),
-            exam_duration=user_prefs.get("exam_duration", "") or "Not specified",
-            exam_info=user_prefs.get("exam_info", "") or "None provided",
-            extra_instructions=user_prefs.get("extra_instructions", "") or "None",
+            course_name=p.get("course_name", ""),
+            university_name=p["university_name"],
+            major=p["major"],
+            course_code=p["course_code"],
+            professor_name=p["professor_name"],
+            semester=p["semester"],
+            exam_type=p.get("exam_type", "other"),
+            exam_format=p.get("exam_format", "unknown"),
+            exam_duration=p["exam_duration"],
+            exam_info=p["exam_info"],
+            extra_instructions=p["extra_instructions"],
             predicted_sections=predicted_sections_text,
             context=context,
         )
@@ -336,6 +368,41 @@ def wipe_session_uploads(session: "AgentSession") -> None:  # type: ignore[name-
                 shutil.rmtree(folder)
     except Exception:  # noqa: BLE001
         pass  # non-fatal; worst case the old copies linger until the next run
+
+
+def wipe_session_vectorstore(session: "AgentSession") -> None:  # type: ignore[name-defined]
+    """Delete the Chroma vector store and reset the indexed-files manifest.
+
+    Called when the user removes **all** files and clicks Apply.  Without this,
+    the old chroma_db and its manifest linger on disk even though no documents
+    are associated with the session, wasting disk space and causing the
+    manifest to misreport a stale file set on the next indexing run.
+
+    Safe to call when the chroma_db or manifest do not exist yet.
+    """
+    if not session.workspace_id and not session.workspace_folder:
+        return
+    try:
+        ws = workspace_paths(
+            workspace_id=session.workspace_id,
+            workspace_folder=session.workspace_folder,
+        )
+        # Wipe the Chroma directory
+        chroma_dir = Path(ws.chroma)
+        if chroma_dir.exists():
+            shutil.rmtree(chroma_dir)
+        # Reset the manifest to an empty file set so the next indexing run
+        # starts from a clean slate rather than comparing against stale paths.
+        from uacragent.infra.vectorstore import _manifest_path, _MANIFEST_FILENAME  # noqa: PLC0415
+        import json as _json
+        mp = _manifest_path(ws)
+        if mp.exists():
+            mp.write_text(
+                _json.dumps({"files": []}, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+    except Exception:  # noqa: BLE001
+        pass  # non-fatal
 
 
 # ---------------------------------------------------------------------------

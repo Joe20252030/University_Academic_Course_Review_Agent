@@ -212,7 +212,7 @@ def get_or_create_vectorstore(
     if chunks:
         ids = [_chunk_id(c) for c in chunks]
         existing = db.get(ids=ids)
-        existing_ids = set(existing["ids"]) if existing and existing.get("ids") else set()
+        existing_ids = set(existing.get("ids") or [])
         new_chunks = [c for c, cid in zip(chunks, ids) if cid not in existing_ids]
         new_ids = [cid for cid in ids if cid not in existing_ids]
         if new_chunks:

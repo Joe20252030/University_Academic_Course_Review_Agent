@@ -167,12 +167,12 @@ def _sanitize_latin1(text: str) -> str:
     return text.encode("latin-1", errors="replace").decode("latin-1")
 
 
-def save_pdf(md_text: str, work_space_paths: WorkspacePaths) -> str:
-    Path(work_space_paths.outputs).mkdir(parents=True, exist_ok=True)
+def save_pdf(md_text: str, workspace_paths: WorkspacePaths) -> str:
+    Path(workspace_paths.outputs).mkdir(parents=True, exist_ok=True)
 
     pdf = _ReviewPDF()
     pdf.add_markdown(md_text)
 
-    path = Path(work_space_paths.outputs) / f"review_{safe_timestamp()}.pdf"
+    path = Path(workspace_paths.outputs) / f"review_{safe_timestamp()}.pdf"
     pdf.output(str(path))
     return str(path)

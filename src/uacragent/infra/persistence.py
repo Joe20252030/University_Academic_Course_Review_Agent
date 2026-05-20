@@ -77,34 +77,20 @@ def configure_hf_cache() -> None:
     os.environ["HF_HUB_CACHE"] = str(cache_dir)
 
 
-def get_app_data_dir() -> Path:
-    """Return the user-configured app data directory.
-
-    Reads ``~/.uacragent/config.json``.  Defaults to ``~/.uacragent`` when
-    the config is absent or the stored path is empty.
-    """
+def _load_config() -> dict:
+    """Return the parsed ``~/.uacragent/config.json`` dict, or ``{}`` on any error."""
     try:
         if _CONFIG_FILE.exists():
-            cfg = json.loads(_CONFIG_FILE.read_text(encoding="utf-8"))
-            p = cfg.get("app_data_dir", "").strip()
-            if p:
-                return Path(p)
+            return json.loads(_CONFIG_FILE.read_text(encoding="utf-8"))
     except Exception as exc:
         logger.warning("Could not read app config: %s", exc)
-    return _UAR_DIR
+    return {}
 
 
-def set_app_data_dir(path: Path) -> None:
-    """Persist the chosen app data directory to ``~/.uacragent/config.json``."""
+def _save_config(cfg: dict) -> None:
+    """Write *cfg* to ``~/.uacragent/config.json``, creating the directory if needed."""
     try:
         _UAR_DIR.mkdir(parents=True, exist_ok=True)
-        cfg: dict = {}
-        if _CONFIG_FILE.exists():
-            try:
-                cfg = json.loads(_CONFIG_FILE.read_text(encoding="utf-8"))
-            except Exception:
-                pass
-        cfg["app_data_dir"] = str(path.resolve())
         _CONFIG_FILE.write_text(
             json.dumps(cfg, indent=2, ensure_ascii=False),
             encoding="utf-8",
@@ -113,44 +99,44 @@ def set_app_data_dir(path: Path) -> None:
         logger.warning("Could not save app config: %s", exc)
 
 
+def get_app_data_dir() -> Path:
+    """Return the user-configured app data directory.
+
+    Reads ``~/.uacragent/config.json``.  Defaults to ``~/.uacragent`` when
+    the config is absent or the stored path is empty.
+    """
+    p = _load_config().get("app_data_dir", "").strip()
+    return Path(p) if p else _UAR_DIR
+
+
+def set_app_data_dir(path: Path) -> None:
+    """Persist the chosen app data directory to ``~/.uacragent/config.json``."""
+    cfg = _load_config()
+    cfg["app_data_dir"] = str(path.resolve())
+    _save_config(cfg)
+
+
 def get_app_appearance() -> dict:
     """Return persisted appearance settings with safe defaults.
 
     Keys: ``color_mode`` ("light" | "dark"), ``font_size`` ("small" | "medium" | "large"),
     ``language`` ("en" | "zh_CN").
     """
-    try:
-        if _CONFIG_FILE.exists():
-            cfg = json.loads(_CONFIG_FILE.read_text(encoding="utf-8"))
-            return {
-                "color_mode": cfg.get("color_mode", "light"),
-                "font_size":  cfg.get("font_size",  "medium"),
-                "language":   cfg.get("language",   "en"),
-            }
-    except Exception:
-        pass
-    return {"color_mode": "light", "font_size": "medium", "language": "en"}
+    cfg = _load_config()
+    return {
+        "color_mode": cfg.get("color_mode", "light"),
+        "font_size":  cfg.get("font_size",  "medium"),
+        "language":   cfg.get("language",   "en"),
+    }
 
 
 def set_app_appearance(color_mode: str, font_size: str, language: str) -> None:
     """Persist appearance settings to ``~/.uacragent/config.json``."""
-    try:
-        _UAR_DIR.mkdir(parents=True, exist_ok=True)
-        cfg: dict = {}
-        if _CONFIG_FILE.exists():
-            try:
-                cfg = json.loads(_CONFIG_FILE.read_text(encoding="utf-8"))
-            except Exception:
-                pass
-        cfg["color_mode"] = color_mode
-        cfg["font_size"]  = font_size
-        cfg["language"]   = language
-        _CONFIG_FILE.write_text(
-            json.dumps(cfg, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
-    except Exception as exc:
-        logger.warning("Could not save appearance settings: %s", exc)
+    cfg = _load_config()
+    cfg["color_mode"] = color_mode
+    cfg["font_size"]  = font_size
+    cfg["language"]   = language
+    _save_config(cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -202,6 +188,21 @@ def _deserialise_files(data: dict[str, list[str]]) -> dict[DocumentType, list[st
         valid = [p for p in paths if Path(p).exists()]
         result[dt] = valid
     return result
+
+
+def get_missing_session_files(data: dict) -> list[str]:
+    """Return a list of file paths stored in *data* that no longer exist on disk.
+
+    Call this after ``load_session()`` to detect files that were saved in a
+    previous session but have since been moved or deleted.  The list is empty
+    when all recorded files are still present.
+    """
+    missing: list[str] = []
+    for paths in data.get("classified_files", {}).values():
+        for p in paths:
+            if p and not Path(p).exists():
+                missing.append(p)
+    return missing
 
 
 # ---------------------------------------------------------------------------

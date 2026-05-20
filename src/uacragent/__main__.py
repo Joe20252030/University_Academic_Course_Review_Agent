@@ -192,7 +192,11 @@ def _cli(args: argparse.Namespace) -> None:
 
         _progress, _finish = _make_cli_progress()
         try:
-            response = agent.chat(user_input, session, progress_cb=_progress)
+            response = agent.chat(
+                user_input, session,
+                progress_cb=_progress,
+                effort_level=args.effort_level,
+            )
         except Exception as exc:          # noqa: BLE001
             _finish()
             print(f"\n⚠  Error: {exc}\n")
@@ -286,6 +290,13 @@ def main() -> None:
         default="",
         metavar="TEXT",
         help="Additional instructions passed to the LLM for every request",
+    )
+    parser.add_argument(
+        "--effort-level",
+        choices=["low", "medium", "high"],
+        default="medium",
+        metavar="LEVEL",
+        help="Retrieval depth for each chat turn: low | medium | high  (default: medium)",
     )
     parser.add_argument(
         "--workspace-id",

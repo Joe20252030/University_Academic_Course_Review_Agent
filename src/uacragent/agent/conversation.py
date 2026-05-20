@@ -38,6 +38,21 @@ _TASK_MARKER_RE = re.compile(
 )
 
 
+def _extract_task_marker(text: str) -> tuple[str | None, str]:
+    """Return ``(task_type_value, cleaned_text)`` after stripping the marker.
+
+    The LLM embeds a ``[TASK:xxx]`` token to signal that a generation pipeline
+    should be triggered.  This function detects the token, extracts the task
+    type, and removes the token from the text shown to the user.
+    """
+    match = _TASK_MARKER_RE.search(text)
+    if match is None:
+        return None, text.strip()
+    task_value = match.group(1).lower()
+    clean = _TASK_MARKER_RE.sub("", text).strip()
+    return task_value, clean
+
+
 @dataclass
 class ChatResponse:
     """Result returned by ConversationAgent.chat()."""
@@ -82,11 +97,12 @@ class ConversationAgent:
         if not session.has_files():
             session.retriever = None
             # When the user removed every file and clicked Apply, the pipeline
-            # is never entered — so workspace copies would never be cleaned up.
-            # Handle that here explicitly.
+            # is never entered — wipe uploads, chroma_db, and the manifest here.
             if force_reindex:
-                from uacragent.agent.pipeline import wipe_session_uploads
+                from uacragent.agent.pipeline import (
+                    wipe_session_uploads, wipe_session_vectorstore)
                 wipe_session_uploads(session)
+                wipe_session_vectorstore(session)
             return (
                 "No documents are loaded yet. "
                 "Add files in the Session Settings panel and click **Apply** to index them.",
@@ -171,7 +187,7 @@ class ConversationAgent:
             return ChatResponse(text=error_msg, error=error_msg)
 
         # -- 4. Detect and strip task marker -----------------------------------
-        task_type, clean_text = self._extract_task_marker(assistant_text)
+        task_type, clean_text = _extract_task_marker(assistant_text)
 
         # -- 5. Run generation pipeline if task was requested ------------------
         output_path: str | None = None
@@ -298,18 +314,6 @@ class ConversationAgent:
             has_files=has_files_text,
             context=context,
         )
-
-    @staticmethod
-    def _extract_task_marker(text: str) -> tuple[str | None, str]:
-        """Return (task_type_value, cleaned_text) after stripping the marker."""
-        match = _TASK_MARKER_RE.search(text)
-        if match is None:
-            return None, text.strip()
-
-        task_value = match.group(1).lower()
-        # Remove the entire marker line from the response
-        clean = _TASK_MARKER_RE.sub("", text).strip()
-        return task_value, clean
 
     def _run_task(
         self,
