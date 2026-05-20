@@ -306,6 +306,9 @@ CLI runs also respect `EMBEDDING_PROVIDER`. For example, you can use DeepSeek
 for chat/generation together with `EMBEDDING_PROVIDER=local` to avoid cloud
 embedding costs.
 
+The CLI also supports `--effort-level low|medium|high` to control retrieval
+depth for each chat turn and generated document request.
+
 How the current CLI works:
 
 - It indexes the supplied files at startup, or reuses the existing workspace index when the file set is unchanged.
@@ -318,7 +321,8 @@ Start an interactive CLI session with course files:
 ```bash
 python -m uacragent outline.pdf lecture.pdf \
   --course-name "Introduction to Algorithms" \
-  --exam-format written
+  --exam-format written \
+  --effort-level medium
 ```
 
 Use explicit document typing for all supplied files:
@@ -367,6 +371,10 @@ directory in the same way as the CLI.
 
 The API likewise respects `EMBEDDING_PROVIDER`, `EMBEDDING_MODEL`, and
 `LOCAL_EMBEDDING_MODEL`.
+
+`copy_to_workspace` controls whether uploaded source files are copied into the
+workspace's `.uacragent/uploads/` bundle during API generation. Leave it at
+`true` for the normal self-contained workspace behavior.
 
 Endpoints:
 

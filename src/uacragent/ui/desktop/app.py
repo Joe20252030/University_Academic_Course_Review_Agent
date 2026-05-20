@@ -970,7 +970,7 @@ class ConversationApp(tk.Tk):
         fields = [
             ("Course Name *", "red",   self._course_name_var),
             ("University",    "black", self._university_var),
-            ("Course Dept",   "black", self._major_var),
+            ("Major / Department", "black", self._major_var),
             ("Course Code",   "black", self._course_code_var),
             ("Professor",     "black", self._professor_var),
             ("Semester",      "black", self._semester_var),
