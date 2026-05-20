@@ -2382,10 +2382,22 @@ class ConversationApp(tk.Tk):
             def _progress(msg: str) -> None:
                 if not self._cancel_event.is_set():
                     try:
-                        self.after(0, lambda m=msg: self._busy_label.configure(text=m))
-                        self.after(0, lambda m=msg: self._session_status_var.set(m))
+                        self.after(
+                            0,
+                            lambda m=msg: (
+                                self._busy_label.configure(text=m)
+                                if self.winfo_exists() else None
+                            ),
+                        )
+                        self.after(
+                            0,
+                            lambda m=msg: (
+                                self._session_status_var.set(m)
+                                if self.winfo_exists() else None
+                            ),
+                        )
                     except tk.TclError:
-                        pass  # window destroyed before callback fired
+                        pass  # window destroyed before after() was queued
 
             try:
                 agent = self._get_agent()
@@ -2473,10 +2485,22 @@ class ConversationApp(tk.Tk):
             def _progress(msg: str) -> None:
                 if not self._cancel_event.is_set():
                     try:
-                        self.after(0, lambda m=msg: self._busy_label.configure(text=m))
-                        self.after(0, lambda m=msg: self._session_status_var.set(m))
+                        self.after(
+                            0,
+                            lambda m=msg: (
+                                self._busy_label.configure(text=m)
+                                if self.winfo_exists() else None
+                            ),
+                        )
+                        self.after(
+                            0,
+                            lambda m=msg: (
+                                self._session_status_var.set(m)
+                                if self.winfo_exists() else None
+                            ),
+                        )
                     except tk.TclError:
-                        pass  # window destroyed before callback fired
+                        pass  # window destroyed before after() was queued
 
             try:
                 agent = self._get_agent()
