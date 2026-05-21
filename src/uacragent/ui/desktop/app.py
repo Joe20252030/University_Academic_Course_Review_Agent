@@ -2805,9 +2805,15 @@ class ConversationApp(tk.Tk):
                     extra_path = (save_docx(md_text, ws)
                                   if export_fmt == ExportFormat.docx.value
                                   else save_pdf(md_text, ws))
-                    self.after(0, lambda p=extra_path: _finish_export(p, None))
+                    try:
+                        self.after(0, lambda p=extra_path: _finish_export(p, None))
+                    except tk.TclError:
+                        pass  # window destroyed before export completed
                 except Exception as exc:  # noqa: BLE001
-                    self.after(0, lambda e=str(exc): _finish_export(None, e))
+                    try:
+                        self.after(0, lambda e=str(exc): _finish_export(None, e))
+                    except tk.TclError:
+                        pass  # window destroyed before export completed
 
             def _finish_export(extra_path: str | None, error: str | None) -> None:
                 """Replace the placeholder with the final link or error text."""

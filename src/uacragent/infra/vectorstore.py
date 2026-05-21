@@ -229,6 +229,24 @@ def build_retriever(vectorstore: VectorStore, settings: Settings) -> BaseRetriev
     return vectorstore.as_retriever(search_kwargs={"k": settings.retriever_k})
 
 
+def reset_manifest(workspace_paths: WorkspacePaths) -> None:
+    """Overwrite the indexed-files manifest with an empty file set.
+
+    Called when all documents are removed from a session so the next
+    indexing run starts from a clean slate rather than comparing against
+    stale paths from the previous run.  Safe to call when the manifest
+    file does not exist yet.
+    """
+    mp = _manifest_path(workspace_paths)
+    try:
+        mp.write_text(
+            json.dumps({"files": []}, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except Exception:  # noqa: BLE001
+        pass  # non-fatal; worst case the next run rebuilds unnecessarily
+
+
 def chroma_is_current(
     workspace_paths: WorkspacePaths,
     classified_files: dict[DocumentType, list[str]],

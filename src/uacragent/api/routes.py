@@ -40,6 +40,7 @@ def generate_review(
         semester=req.semester,
         exam_duration=req.exam_duration,
         exam_info=req.exam_info,
+        effort_level=req.effort_level,
     )
     return ReviewResponse(markdown_path=result.markdown_path, plan=result.plan)
 

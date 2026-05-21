@@ -38,6 +38,9 @@ class ReviewRequest(BaseModel):
     extra_instructions: str = ""
     workspace_id: str = "default"
     copy_to_workspace: bool = True
+    # Retrieval / generation depth — controls how many chunks are retrieved
+    # and how much of the corpus is sampled for plan generation.
+    effort_level: str = Field(default="medium", pattern=r"^(low|medium|high)$")
     # Optional course information
     university_name: str = ""
     major: str = ""

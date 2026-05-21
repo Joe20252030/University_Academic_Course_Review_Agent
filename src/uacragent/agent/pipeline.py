@@ -12,12 +12,14 @@ from langchain_core.retrievers import BaseRetriever
 
 from uacragent.export.markdown import save_markdown
 from uacragent.domain.models import ReviewPlan, SectionSpec
-from uacragent.domain.errors import LLMError, ParseError
+from uacragent.domain.errors import IngestError, LLMError, ParseError
 from uacragent.domain.types import DocumentType, TaskType
 from uacragent.infra.llm import LLMClient
 from uacragent.infra.loaders import DocumentLoader
 from uacragent.infra.settings import Settings
-from uacragent.infra.vectorstore import build_retriever, get_or_create_vectorstore
+from uacragent.infra.vectorstore import (
+    build_retriever, get_or_create_vectorstore, reset_manifest,
+)
 from uacragent.infra.workspace import ensure_workspace_dirs, workspace_paths, WorkspacePaths
 
 
@@ -77,14 +79,36 @@ _TASK_TITLES: dict[TaskType, str] = {
 
 
 def load_prompt(name: str) -> str:
+    """Read a prompt template file by name from the prompts directory.
+
+    Raises :class:`~uacragent.domain.errors.LLMError` with a clear message
+    if the file is missing, rather than letting a bare ``FileNotFoundError``
+    escape the ``UACRAgentError`` hierarchy.
+    """
     prompt_path = _PROMPTS_DIR / name
-    return prompt_path.read_text(encoding="utf-8")
+    try:
+        return prompt_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise LLMError(
+            f"Prompt template '{name}' not found in {_PROMPTS_DIR}. "
+            "This is an installation error — please reinstall the package."
+        ) from None
+    except Exception as exc:  # noqa: BLE001
+        raise LLMError(f"Could not read prompt template '{name}': {exc}") from exc
 
 
 def _get_prompt_files(task_type: TaskType) -> tuple[str, str]:
-    """Return (planner_file, writer_file) for the given task type."""
+    """Return (planner_file, writer_file) for the given task type.
+
+    Raises :class:`~uacragent.domain.errors.LLMError` if no prompt pair is
+    registered for *task_type* — this would indicate an extension added a new
+    ``TaskType`` value without wiring up the corresponding prompt files.
+    """
     if task_type not in _PROMPT_FILES:
-        raise ValueError(f"No prompt files registered for task type: {task_type!r}")
+        raise LLMError(
+            f"No prompt files registered for task type: {task_type!r}. "
+            "Add an entry to _PROMPT_FILES in pipeline.py."
+        )
     return _PROMPT_FILES[task_type]
 
 
@@ -393,14 +417,7 @@ def wipe_session_vectorstore(session: "AgentSession") -> None:  # type: ignore[n
             shutil.rmtree(chroma_dir)
         # Reset the manifest to an empty file set so the next indexing run
         # starts from a clean slate rather than comparing against stale paths.
-        from uacragent.infra.vectorstore import _manifest_path, _MANIFEST_FILENAME  # noqa: PLC0415
-        import json as _json
-        mp = _manifest_path(ws)
-        if mp.exists():
-            mp.write_text(
-                _json.dumps({"files": []}, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
+        reset_manifest(ws)
     except Exception:  # noqa: BLE001
         pass  # non-fatal
 
@@ -459,7 +476,10 @@ class AgentPipeline:
         )
 
         if not chunks:
-            raise LLMError("No document chunks were created. Please check your input files.")
+            raise IngestError(
+                "No document chunks were created from the provided files. "
+                "Please check that the files are readable and not empty."
+            )
 
         _progress(f"Building vector index ({len(chunks)} chunks)…")
         vectorstore = get_or_create_vectorstore(chunks, self.settings, ws,
@@ -584,7 +604,7 @@ class AgentPipeline:
         )
 
         if not chunks:
-            raise ValueError(
+            raise IngestError(
                 "No document chunks were created from the provided files. "
                 "Please check that the files are readable."
             )
