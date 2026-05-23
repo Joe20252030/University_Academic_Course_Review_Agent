@@ -186,7 +186,8 @@ def _deserialise_files(data: dict[str, list[str]]) -> dict[DocumentType, list[st
         except ValueError:
             continue
         valid = [p for p in paths if Path(p).exists()]
-        result[dt] = valid
+        if valid:   # omit empty buckets — they only add noise to session state
+            result[dt] = valid
     return result
 
 

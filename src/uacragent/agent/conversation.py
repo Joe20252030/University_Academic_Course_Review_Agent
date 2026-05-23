@@ -31,6 +31,105 @@ def _settings_for_session(base: Settings, session: AgentSession) -> Settings:
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 
+# ---------------------------------------------------------------------------
+# Localised strings used inside agent responses
+# ---------------------------------------------------------------------------
+
+# Strings returned by initialize_session() as the session-status message.
+_INIT_STATUS: dict[str, dict[str, str]] = {
+    "en": {
+        "no_docs": (
+            "No documents are loaded yet. "
+            "Add files in the Session Settings panel and click **Apply** to index them."
+        ),
+        "ready_cached": (
+            "Session ready. {n_files} file(s) across {n_types} "
+            "document type(s) already indexed."
+        ),
+        "ready_indexed": (
+            "Session ready. Indexed {n_files} file(s) across {n_types} document "
+            "type(s). You can now ask questions or request a study document."
+        ),
+        "init_failed": "Failed to initialise session: {exc}",
+    },
+    "zh_CN": {
+        "no_docs": (
+            "尚未加载任何文档。"
+            "请在会话设置面板添加文件，然后点击**应用**进行索引。"
+        ),
+        "ready_cached": (
+            "会话就绪。已有 {n_files} 个文件（{n_types} 种文档类型）完成索引。"
+        ),
+        "ready_indexed": (
+            "会话就绪。已成功索引 {n_files} 个文件（{n_types} 种文档类型）。"
+            "您可以提问或请求生成学习文档。"
+        ),
+        "init_failed": "会话初始化失败：{exc}",
+    },
+}
+
+# Strings embedded in chat replies (generation errors, document-save notes).
+_CHAT_STRINGS: dict[str, dict[str, str]] = {
+    "en": {
+        "no_docs_err": (
+            "No documents are loaded. Please add files in the Session Settings "
+            "panel and index them before generating a document."
+        ),
+        "not_init_err": (
+            "The session has not been initialised yet. "
+            "Click **Apply** to index your documents first."
+        ),
+        "gen_failed": "Generation failed: {exc}",
+        "doc_saved": (
+            "\n\n📄 The document has been saved as **{name}** "
+            "in the outputs folder of your workspace.\n"
+            "Full path: `{path}`\n\n"
+            "*(This file remains on disk permanently — use the path above "
+            "to locate it if you close and reopen the app.)*"
+        ),
+    },
+    "zh_CN": {
+        "no_docs_err": (
+            "未加载任何文档。请在会话设置面板添加文件并完成索引后，再生成文档。"
+        ),
+        "not_init_err": (
+            "会话尚未初始化，请先点击**应用**对文档进行索引。"
+        ),
+        "gen_failed": "生成失败：{exc}",
+        "doc_saved": (
+            "\n\n📄 文档已保存为 **{name}**，"
+            "位于工作空间的 outputs 文件夹中。\n"
+            "完整路径：`{path}`\n\n"
+            "*(此文件将永久保存在磁盘上——关闭并重新打开应用后可通过上述路径找到。)*"
+        ),
+    },
+}
+
+# Language instructions injected into the system prompt.
+_LANGUAGE_INSTRUCTIONS: dict[str, str] = {
+    "en": "",   # English is the default; no explicit instruction needed.
+    "zh_CN": (
+        "## Language Requirement\n\n"
+        "You MUST respond entirely in Simplified Chinese (简体中文). "
+        "All replies, explanations, section headings, and any generated "
+        "document content must be written in Chinese. "
+        "Do not mix in English unless quoting technical terms that have no "
+        "standard Chinese translation."
+    ),
+}
+
+
+def _ls(lang: str, table: dict[str, dict[str, str]], key: str, **fmt: object) -> str:
+    """Look up *key* in *table* for *lang*, falling back to English.
+
+    Any *fmt* keyword arguments are passed to ``str.format`` so callers can
+    inline placeholders without a separate format call.
+    """
+    row = table.get(lang) or table["en"]
+    text = row.get(key) or table["en"][key]
+    return text.format(**fmt) if fmt else text
+
+
 # Regex that matches a [TASK:xxx] marker on its own line (optional trailing whitespace)
 _TASK_MARKER_RE = re.compile(
     r"\[TASK:(review_summary|practice_booklet|mock_exam|exam_prediction)\]",
@@ -82,6 +181,7 @@ class ConversationAgent:
         session: AgentSession,
         progress_cb: Callable[[str], None] | None = None,
         force_reindex: bool = False,
+        language: str = "en",
     ) -> tuple[str, bool]:
         """Build or reuse the retriever for *session*.
 
@@ -91,6 +191,9 @@ class ConversationAgent:
         When *force_reindex* is ``True`` the fast path is skipped and a full
         indexing run is always performed (used by the Apply button so that
         changes to embedding provider, model, or files always take effect).
+
+        *language* controls which locale is used for the returned status message
+        (``"en"`` or ``"zh_CN"``).
         """
         from uacragent.agent.pipeline import AgentPipeline
 
@@ -103,11 +206,7 @@ class ConversationAgent:
                     wipe_session_uploads, wipe_session_vectorstore)
                 wipe_session_uploads(session)
                 wipe_session_vectorstore(session)
-            return (
-                "No documents are loaded yet. "
-                "Add files in the Session Settings panel and click **Apply** to index them.",
-                False,
-            )
+            return (_ls(language, _INIT_STATUS, "no_docs"), False)
 
         try:
             settings = _settings_for_session(self.settings, session)
@@ -122,8 +221,8 @@ class ConversationAgent:
                         n_files = sum(len(v) for v in session.active_files().values())
                         n_types = len(session.active_files())
                         return (
-                            f"Session ready. {n_files} file(s) across {n_types} "
-                            f"document type(s) already indexed.",
+                            _ls(language, _INIT_STATUS, "ready_cached",
+                                n_files=n_files, n_types=n_types),
                             True,
                         )
                 except Exception:  # noqa: BLE001
@@ -134,13 +233,13 @@ class ConversationAgent:
             n_types = len(session.active_files())
             n_files = sum(len(v) for v in session.active_files().values())
             return (
-                f"Session ready. Indexed {n_files} file(s) across {n_types} document "
-                f"type(s). You can now ask questions or request a study document.",
+                _ls(language, _INIT_STATUS, "ready_indexed",
+                    n_files=n_files, n_types=n_types),
                 False,
             )
         except Exception as exc:  # noqa: BLE001
             session.retriever = None
-            return (f"Failed to initialise session: {exc}", False)
+            return (_ls(language, _INIT_STATUS, "init_failed", exc=exc), False)
 
     # ------------------------------------------------------------------
     # Chat
@@ -152,12 +251,17 @@ class ConversationAgent:
         session: AgentSession,
         progress_cb: Callable[[str], None] | None = None,
         effort_level: str = "medium",
+        language: str = "en",
     ) -> ChatResponse:
         """Process one user turn and return a :class:`ChatResponse`.
 
         *effort_level* controls how much retrieved context is injected into the
         system prompt and how deeply the generation pipeline samples the corpus.
         Valid values: ``"low"``, ``"medium"`` (default), ``"high"``.
+
+        *language* steers the LLM's response language via the system prompt
+        and is used to localise any agent-generated error or status text
+        embedded in the reply (``"en"`` or ``"zh_CN"``).
 
         Flow:
         1. Retrieve relevant context (if retriever is available).
@@ -172,7 +276,7 @@ class ConversationAgent:
         context = self._retrieve_context(message, session, effort_level)
 
         # -- 2. Build message list ---------------------------------------------
-        system_content = self._render_system_prompt(session, context)
+        system_content = self._render_system_prompt(session, context, language=language)
         messages: list = [SystemMessage(content=system_content)]
         messages.extend(session.chat_history)
         messages.append(HumanMessage(content=message))
@@ -195,34 +299,23 @@ class ConversationAgent:
 
         if task_type is not None:
             if not session.has_files():
-                generation_error = (
-                    "No documents are loaded. Please add files in the Session Settings "
-                    "panel and index them before generating a document."
-                )
+                generation_error = _ls(language, _CHAT_STRINGS, "no_docs_err")
             elif session.retriever is None:
-                generation_error = (
-                    "The session has not been initialised yet. "
-                    "Click **Apply** to index your documents first."
-                )
+                generation_error = _ls(language, _CHAT_STRINGS, "not_init_err")
             else:
                 try:
                     output_path = self._run_task(
                         task_type, session, progress_cb, effort_level
                     )
                 except Exception as exc:  # noqa: BLE001
-                    generation_error = f"Generation failed: {exc}"
+                    generation_error = _ls(language, _CHAT_STRINGS, "gen_failed", exc=exc)
 
         # -- 6. Build final reply text -----------------------------------------
         reply = clean_text
         if output_path:
             p = Path(output_path)
-            reply += (
-                f"\n\n📄 The document has been saved as **{p.name}** "
-                f"in the outputs folder of your workspace.\n"
-                f"Full path: `{output_path}`\n\n"
-                f"*(This file remains on disk permanently — use the path above "
-                f"to locate it if you close and reopen the app.)*"
-            )
+            reply += _ls(language, _CHAT_STRINGS, "doc_saved",
+                         name=p.name, path=output_path)
         if generation_error:
             reply += f"\n\n⚠️ {generation_error}"
 
@@ -275,8 +368,14 @@ class ConversationAgent:
         except Exception:  # noqa: BLE001
             return "*(Context retrieval failed — answers are based on general knowledge only.)*"
 
-    def _render_system_prompt(self, session: AgentSession, context: str) -> str:
-        """Fill the system prompt template with session values."""
+    def _render_system_prompt(
+        self, session: AgentSession, context: str, language: str = "en"
+    ) -> str:
+        """Fill the system prompt template with session values.
+
+        *language* is used to inject a language-steering instruction so the LLM
+        responds in the user's chosen locale (``"en"`` or ``"zh_CN"``).
+        """
         template = (_PROMPTS_DIR / "conversation_system.md").read_text(encoding="utf-8")
 
         prefs = session.to_user_prefs()
@@ -298,6 +397,8 @@ class ConversationAgent:
             else "None"
         )
 
+        response_language = _LANGUAGE_INSTRUCTIONS.get(language, "")
+
         return template.format(
             course_name=prefs.get("course_name") or "this course",
             course_meta=course_meta,
@@ -313,6 +414,7 @@ class ConversationAgent:
             extra_instructions=prefs.get("extra_instructions") or "None",
             has_files=has_files_text,
             context=context,
+            response_language=response_language,
         )
 
     def _run_task(

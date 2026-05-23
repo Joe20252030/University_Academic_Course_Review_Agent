@@ -114,6 +114,55 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
         "save":               "Save",
         "cancel_btn":         "Cancel",
+        # --- Notification / status strings ---
+        # New-session initial state
+        "new_session_header": "New session",
+        "new_session_hint":   "Fill in the settings and click Apply.",
+        # Busy / loading labels
+        "thinking":           "Thinking…",
+        "loading_session":    "Loading session…",
+        "indexing_docs":      "Indexing documents…",
+        "downloading_model":  "Downloading embedding model… (this may take a while)",
+        # Inline pre-flight warnings
+        "warn_no_api_key":    (
+            "⚠️ No {label} configured. "
+            "Open ⚙ Settings → API Key to enter one, then click Apply."
+        ),
+        "warn_no_embed_key":  (
+            "⚠️ Embedding key required. "
+            "Open ⚙ Settings → Embedding to configure, then click Apply."
+        ),
+        "warn_no_course":     (
+            "⚠️ Course name required. "
+            "Open ⚙ Settings to fill in course details, then click Apply."
+        ),
+        "warn_no_docs":       (
+            "⚠️ No documents loaded. "
+            "Add files in ⚙ Settings → Course Documents, then click Apply to index them."
+        ),
+        # Session-load warnings
+        "warn_load_fail":     (
+            "⚠️ Could not load session data from {ws}. "
+            "The session file may be missing or corrupt."
+        ),
+        "warn_missing_files": (
+            "⚠️  {n} file(s) saved in this session could not be found and will be "
+            "skipped during indexing:\n  • {names}\n"
+            "Re-add the files in ⚙ Settings if you need them."
+        ),
+        # Completion / error notices
+        "docs_indexed":       "✓ Documents indexed. {status}",
+        "error_status":       "Error: {error}",
+        "indexing_failed":    "⚠️ Indexing failed: {error}",
+        "chat_error":         "⚠️ Error: {error}",
+        "request_cancelled":  "Request cancelled.",
+        # Welcome message shown for a brand-new session
+        "welcome_msg": (
+            "Welcome! Open ⚙ Settings to fill in your course details and add "
+            "documents, then click Apply to save and index them.\n\n"
+            "After that you can ask me anything about the course or use the "
+            "quick action buttons to generate study documents."
+        ),
     },
     "zh_CN": {
         # Session list
@@ -153,6 +202,54 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
         "save":               "保存",
         "cancel_btn":         "取消",
+        # --- Notification / status strings ---
+        # New-session initial state
+        "new_session_header": "新建会话",
+        "new_session_hint":   "填写设置后点击应用。",
+        # Busy / loading labels
+        "thinking":           "思考中…",
+        "loading_session":    "正在加载会话…",
+        "indexing_docs":      "正在索引文档…",
+        "downloading_model":  "正在下载嵌入模型…（可能需要较长时间）",
+        # Inline pre-flight warnings
+        "warn_no_api_key":    (
+            "⚠️ 未配置 {label}。"
+            "请在 ⚙ 设置 → API Key 中输入，然后点击应用。"
+        ),
+        "warn_no_embed_key":  (
+            "⚠️ 需要嵌入密钥。"
+            "请在 ⚙ 设置 → 嵌入 中配置，然后点击应用。"
+        ),
+        "warn_no_course":     (
+            "⚠️ 需要课程名称。"
+            "请在 ⚙ 设置 中填写课程信息，然后点击应用。"
+        ),
+        "warn_no_docs":       (
+            "⚠️ 未加载文档。"
+            "请在 ⚙ 设置 → 课程文档 中添加文件，然后点击应用进行索引。"
+        ),
+        # Session-load warnings
+        "warn_load_fail":     (
+            "⚠️ 无法从 {ws} 加载会话数据。"
+            "会话文件可能丢失或损坏。"
+        ),
+        "warn_missing_files": (
+            "⚠️  此会话中保存的 {n} 个文件未找到，索引时将跳过：\n  • {names}\n"
+            "如有需要，请在 ⚙ 设置 中重新添加。"
+        ),
+        # Completion / error notices
+        "docs_indexed":       "✓ 文档已索引。{status}",
+        "error_status":       "错误：{error}",
+        "indexing_failed":    "⚠️ 索引失败：{error}",
+        "chat_error":         "⚠️ 错误：{error}",
+        "request_cancelled":  "请求已取消。",
+        # Welcome message shown for a brand-new session
+        "welcome_msg": (
+            "欢迎！请点击 ⚙ 设置 填写课程信息并添加文档，"
+            "然后点击应用进行保存和索引。\n\n"
+            "完成后，您可以向我提问课程相关问题，"
+            "或使用快速操作按钮生成学习文档。"
+        ),
     },
 }
 
@@ -2149,8 +2246,8 @@ class ConversationApp(tk.Tk):
         self._init_setting_vars()          # reset all vars (creates fresh StringVars)
         self._sync_vars_from_session()     # pushes inherited provider/model into vars
         self._set_chat_active(True)
-        self._header_course_var.set("New session")
-        self._session_status_var.set("Fill in the settings and click Apply.")
+        self._header_course_var.set(self._t("new_session_header"))
+        self._session_status_var.set(self._t("new_session_hint"))
         self._clear_chat()
         self._show_welcome()
         self._open_settings()
@@ -2232,8 +2329,7 @@ class ConversationApp(tk.Tk):
         if data is None:
             self._append_chat(
                 "system",
-                f"⚠️ Could not load session data from {ws}. "
-                "The session file may be missing or corrupt.",
+                self._t("warn_load_fail").format(ws=ws),
             )
             return
         self._session = dict_to_session(data)
@@ -2246,9 +2342,7 @@ class ConversationApp(tk.Tk):
             _names = "\n  • ".join(Path(p).name for p in _missing)
             self._append_chat(
                 "system",
-                f"⚠️  {len(_missing)} file(s) saved in this session could not be "
-                f"found and will be skipped during indexing:\n  • {_names}\n"
-                "Re-add the files in ⚙ Settings if you need them.",
+                self._t("warn_missing_files").format(n=len(_missing), names=_names),
             )
 
         # Restore UI extras (stored alongside session data in session.json)
@@ -2308,8 +2402,7 @@ class ConversationApp(tk.Tk):
             else:
                 self._append_chat(
                     "system",
-                    f"⚠️ No {label} configured. Open ⚙ Settings → API Key to enter "
-                    "one, then click Apply.")
+                    self._t("warn_no_api_key").format(label=label))
             return
 
         if not self._has_embedding_key():
@@ -2320,10 +2413,7 @@ class ConversationApp(tk.Tk):
                     "• Using Gemini or OpenAI as your LLM: the same key is used automatically.\n"
                     "• Using DeepSeek: enter a Gemini or OpenAI key in ⚙ Settings → Embedding.")
             else:
-                self._append_chat(
-                    "system",
-                    "⚠️ Embedding key required. Open ⚙ Settings → Embedding to "
-                    "configure, then click Apply.")
+                self._append_chat("system", self._t("warn_no_embed_key"))
             return
 
         if not self._session.course_name:
@@ -2332,10 +2422,7 @@ class ConversationApp(tk.Tk):
                                        "Please enter a course name in ⚙ Settings.")
                 self._open_settings()
             else:
-                self._append_chat(
-                    "system",
-                    "⚠️ Course name required. Open ⚙ Settings to fill in course "
-                    "details, then click Apply.")
+                self._append_chat("system", self._t("warn_no_course"))
             return
 
         if not self._session.has_files():
@@ -2345,10 +2432,7 @@ class ConversationApp(tk.Tk):
                 wipe_session_uploads, wipe_session_vectorstore)
             wipe_session_uploads(self._session)
             wipe_session_vectorstore(self._session)
-            self._append_chat(
-                "system",
-                "⚠️ No documents loaded. Add files in ⚙ Settings → Course Documents, "
-                "then click Apply to index them.")
+            self._append_chat("system", self._t("warn_no_docs"))
             return
 
         # ── Workspace assignment (once, then locked) ───────────────────
@@ -2369,15 +2453,17 @@ class ConversationApp(tk.Tk):
         if self._emb_provider_var.get() == "local" and not self._is_model_cached(
             self._local_model_var.get()
         ):
-            busy_label = "Downloading embedding model… (this may take a while)"
+            busy_label = self._t("downloading_model")
         else:
-            busy_label = "Indexing documents…"
+            busy_label = self._t("indexing_docs")
 
         self._set_busy(True, busy_label)
         self._session_status_var.set(busy_label)
         self._append_chat("system", busy_label)
 
         _show_err = show_error_dialog
+        # Capture language NOW (main thread) before the background thread runs.
+        captured_lang = self._language_var.get()
 
         def _work() -> None:
             # Capture session at thread-start so a mid-flight session swap
@@ -2408,7 +2494,8 @@ class ConversationApp(tk.Tk):
                 # force_reindex=True: Apply always runs the full pipeline so
                 # changes to files, embedding provider, or model take effect.
                 msg, _ = agent.initialize_session(
-                    session, progress_cb=_progress, force_reindex=True)
+                    session, progress_cb=_progress,
+                    force_reindex=True, language=captured_lang)
                 if not self._cancel_event.is_set():
                     self.after(0, lambda m=msg, s=session: self._on_session_loaded(m, s))
             except Exception as exc:
@@ -2442,29 +2529,19 @@ class ConversationApp(tk.Tk):
             label = self._PROVIDER_KEY_LABEL.get(provider, "API Key")
             self._append_chat(
                 "system",
-                f"⚠️ No {label} configured. Open ⚙ Settings → API Key to enter "
-                "one, then click Apply.")
+                self._t("warn_no_api_key").format(label=label))
             return
 
         if not self._has_embedding_key():
-            self._append_chat(
-                "system",
-                "⚠️ Embedding key required. Open ⚙ Settings → Embedding to "
-                "configure, then click Apply.")
+            self._append_chat("system", self._t("warn_no_embed_key"))
             return
 
         if not self._session.course_name:
-            self._append_chat(
-                "system",
-                "⚠️ Course name required. Open ⚙ Settings to fill in course "
-                "details, then click Apply.")
+            self._append_chat("system", self._t("warn_no_course"))
             return
 
         if not self._session.has_files():
-            self._append_chat(
-                "system",
-                "⚠️ No documents loaded. Add files in ⚙ Settings → Course Documents, "
-                "then click Apply to index them.")
+            self._append_chat("system", self._t("warn_no_docs"))
             return
 
         # Workspace is already committed for any loaded session.
@@ -2478,9 +2555,12 @@ class ConversationApp(tk.Tk):
         if not self._confirm_model_download():
             return
 
-        self._set_busy(True, "Loading session…")
-        self._session_status_var.set("Loading session…")
+        loading_label = self._t("loading_session")
+        self._set_busy(True, loading_label)
+        self._session_status_var.set(loading_label)
         self._session.retriever = None
+        # Capture language NOW (main thread) before the background thread runs.
+        captured_lang = self._language_var.get()
 
         def _work() -> None:
             # Capture session at thread-start so a mid-flight session swap
@@ -2510,7 +2590,7 @@ class ConversationApp(tk.Tk):
                 agent = self._get_agent()
                 # force_reindex=False: use fast path when Chroma is current.
                 status, was_cached = agent.initialize_session(
-                    session, progress_cb=_progress)
+                    session, progress_cb=_progress, language=captured_lang)
                 if not self._cancel_event.is_set():
                     self.after(
                         0,
@@ -2542,7 +2622,7 @@ class ConversationApp(tk.Tk):
         # Only add a chat notice when actual (re-)indexing was performed.
         # On the fast path the session is silently ready — no noise in chat.
         if not was_cached:
-            self._append_chat("system", f"✓ Documents indexed. {status}")
+            self._append_chat("system", self._t("docs_indexed").format(status=status))
         # Skip saving when the fast path was used: the session was loaded from
         # disk unchanged, so re-writing it would only bump last_modified pointlessly.
         if not was_cached:
@@ -2561,7 +2641,7 @@ class ConversationApp(tk.Tk):
         if self._settings_alive():
             self._settings_status_var.set(status)
         # History is already visible — just append the completion notice.
-        self._append_chat("system", f"✓ Documents indexed. {status}")
+        self._append_chat("system", self._t("docs_indexed").format(status=status))
         self._save_current_session()
         self._refresh_session_list()
 
@@ -2573,8 +2653,8 @@ class ConversationApp(tk.Tk):
         # Discard stale errors from a session that is no longer active.
         if self._session is not session:
             return
-        self._session_status_var.set(f"Error: {error}")
-        self._append_chat("system", f"⚠️ Indexing failed: {error}")
+        self._session_status_var.set(self._t("error_status").format(error=error))
+        self._append_chat("system", self._t("indexing_failed").format(error=error))
         if not show_dialog:
             return
         error_lower = error.lower()
@@ -2626,15 +2706,16 @@ class ConversationApp(tk.Tk):
             return
         self._input_text.delete("1.0", tk.END)
         self._append_chat("user", message)
-        self._set_busy(True, "Thinking…")
+        self._set_busy(True, self._t("thinking"))
 
-        # Capture export format, effort level, session, and agent NOW — before
-        # the background thread runs — so that UI changes mid-flight cannot
-        # affect which format/effort/session/settings are used (TOCTOU fix).
+        # Capture export format, effort level, language, session, and agent NOW
+        # — before the background thread runs — so that UI changes mid-flight
+        # cannot affect which format/effort/language/settings are used (TOCTOU fix).
         # Capturing the agent here (main thread) avoids calling get_settings()
         # from the background thread while the main thread may be writing os.environ.
-        export_fmt   = self._export_format_var.get()
-        effort_level = self._effort_var.get()
+        export_fmt      = self._export_format_var.get()
+        effort_level    = self._effort_var.get()
+        captured_lang   = self._language_var.get()
         captured_session = self._session
         captured_agent   = self._get_agent()
 
@@ -2657,6 +2738,7 @@ class ConversationApp(tk.Tk):
                     message, captured_session,
                     progress_cb=_progress,
                     effort_level=effort_level,
+                    language=captured_lang,
                 )
                 if self._cancel_event.is_set():
                     # The LLM finished but the user cancelled before the response
@@ -2691,7 +2773,7 @@ class ConversationApp(tk.Tk):
 
     def _on_chat_error(self, error: str) -> None:
         self._set_busy(False)
-        self._append_chat("system", f"⚠️ Error: {error}")
+        self._append_chat("system", self._t("chat_error").format(error=error))
         error_lower = error.lower()
         if any(k in error_lower for k in ("api key", "api_key", "invalid_argument",
                                            "authentication", "permission_denied",
@@ -2721,13 +2803,7 @@ class ConversationApp(tk.Tk):
         self._set_chat_active(False)
 
     def _show_welcome(self) -> None:
-        self._append_chat(
-            "assistant",
-            "Welcome! Open ⚙ Settings to fill in your course details and add "
-            "documents, then click Apply to save and index them.\n\n"
-            "After that you can ask me anything about the course or use the "
-            "quick action buttons to generate study documents.",
-        )
+        self._append_chat("assistant", self._t("welcome_msg"))
 
     def _replay_chat_history(self) -> None:
         """Re-render saved messages into the chat display. No status hints — those
@@ -2961,7 +3037,7 @@ class ConversationApp(tk.Tk):
         """Signal the in-flight background request to be discarded."""
         self._cancel_event.set()
         self._set_busy(False)
-        self._append_chat("system", "Request cancelled.")
+        self._append_chat("system", self._t("request_cancelled"))
 
 # ---------------------------------------------------------------------------
 # Entry point
