@@ -181,6 +181,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "Downloaded from HuggingFace on first use, then cached in the app data "
             "folder.  Subsequent uses are instant with no internet required."
         ),
+        "settings_applying":       "Applying settings and re-indexing…",
         # API key labels / hints
         "api_key_google":   "Google API Key:",
         "api_key_openai":   "OpenAI API Key:",
@@ -342,6 +343,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "首次使用时从 HuggingFace 下载，随后缓存在应用数据文件夹中。"
             "后续使用无需联网，速度即时。"
         ),
+        "settings_applying":       "正在应用设置并重新索引…",
         # API key labels / hints
         "api_key_google":   "Google API 密钥:",
         "api_key_openai":   "OpenAI API 密钥:",
@@ -1054,6 +1056,26 @@ class ConversationApp(tk.Tk):
             anchor="w",
         ).pack(side="left")
 
+        # ── Fixed bottom bar (always visible, below the scroll area) ─
+        bottom_bar = ttk.Frame(win, padding=(10, 6))
+        bottom_bar.pack(side="bottom", fill="x")
+        ttk.Separator(win, orient="horizontal").pack(side="bottom", fill="x")
+
+        self._settings_status_var = tk.StringVar(value="")
+        ttk.Label(bottom_bar, textvariable=self._settings_status_var,
+                  foreground="gray", font=("TkDefaultFont", _note_sz),
+                  wraplength=440
+                  ).pack(side="left", fill="x", expand=True)
+
+        _action_frame = ttk.Frame(bottom_bar)
+        _action_frame.pack(side="right")
+        ttk.Button(_action_frame, text=self._t("settings_apply_btn"),
+                   command=self._on_apply_settings
+                   ).pack(side="left", padx=(0, 8))
+        ttk.Button(_action_frame, text=self._t("settings_close_btn"),
+                   command=win.destroy
+                   ).pack(side="left")
+
         # ── Scrollable canvas inside the dialog ───────────────────────
         canvas = tk.Canvas(win, borderwidth=0, highlightthickness=0)
         sb = ttk.Scrollbar(win, orient="vertical", command=canvas.yview)
@@ -1372,27 +1394,6 @@ class ConversationApp(tk.Tk):
         out_frame.columnconfigure(0, weight=1)
         row += 1
         self._build_outputs_panel(out_frame, win)
-
-        # ── Bottom buttons ────────────────────────────────────────────
-        btn_row_frame = ttk.Frame(inner)
-        btn_row_frame.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
-        btn_row_frame.columnconfigure(0, weight=1)
-        row += 1
-
-        self._settings_status_var = tk.StringVar(value="")
-        ttk.Label(btn_row_frame, textvariable=self._settings_status_var,
-                  foreground="gray", font=("TkDefaultFont", _note_sz),
-                  wraplength=440
-                  ).grid(row=0, column=0, sticky="w", pady=(0, 6))
-
-        action_row = ttk.Frame(btn_row_frame)
-        action_row.grid(row=1, column=0, sticky="ew")
-        ttk.Button(action_row, text=self._t("settings_apply_btn"),
-                   command=self._on_apply_settings
-                   ).pack(side="left", padx=(0, 8))
-        ttk.Button(action_row, text=self._t("settings_close_btn"),
-                   command=win.destroy
-                   ).pack(side="right")
 
         self._center_on_main(win)
 
@@ -3139,7 +3140,7 @@ class ConversationApp(tk.Tk):
         self._refresh_session_list()
         if self._settings_alive():
             try:
-                self._settings_status_var.set("Applying settings and re-indexing…")
+                self._settings_status_var.set(self._t("settings_applying"))
             except tk.TclError:
                 pass
         self._start_indexing(show_error_dialog=True)
