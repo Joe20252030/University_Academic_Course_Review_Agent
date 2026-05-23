@@ -114,6 +114,86 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
         "save":               "Save",
         "cancel_btn":         "Cancel",
+        # --- Session Settings dialog ---
+        "settings_dialog_title":    "Session Settings",
+        "settings_banner":          (
+            "✏️  Edit any setting below, then scroll down and click  ✓ Apply  "
+            "to save and re-index."
+        ),
+        "settings_model_section":   "Model",
+        "settings_provider_label":  "Provider:",
+        "settings_model_label":     "Model:",
+        "settings_api_key_section": "API Key",
+        "settings_show_key":        "Show",
+        "settings_hide_key":        "Hide",
+        "settings_api_key_note": (
+            "ℹ️  API keys are shared across all sessions for the lifetime of this "
+            "app window.\n"
+            "A key entered here applies to every session until the app is closed "
+            "or the key is changed.\n"
+            "Keys are never saved to disk — re-enter them each time you open the "
+            "app, or add them to a .env file."
+        ),
+        "settings_embedding_section":    "Embedding",
+        "settings_course_section":       "Course Information",
+        "settings_course_name_field":    "Course Name *",
+        "settings_university_field":     "University",
+        "settings_major_field":          "Major / Department",
+        "settings_course_code_field":    "Course Code",
+        "settings_professor_field":      "Professor",
+        "settings_semester_field":       "Semester",
+        "settings_exam_section":         "Exam Options",
+        "settings_exam_type_label":      "Exam type:",
+        "settings_exam_format_label":    "Exam format:",
+        "settings_exam_duration_label":  "Exam duration:",
+        "settings_exam_info_label":      "Exam info sheet:",
+        "settings_browse_btn":           "Browse...",
+        "settings_clear_btn":            "Clear",
+        "settings_workspace_section":    "Workspace & Export",
+        "settings_workspace_label":      "Workspace folder:",
+        "settings_open_btn":             "Open",
+        "settings_reset_btn":            "Reset",
+        "settings_deletion_warning_title": "⚠️  Deletion warning",
+        "settings_deletion_warning_body": (
+            "When this session is deleted, the agent bundle (.uacragent/) inside "
+            "the workspace folder — including all session history, the vector store, "
+            "generated outputs, and uploaded file copies — is permanently removed.\n"
+            "If the workspace folder is empty afterwards, the folder itself is also "
+            "deleted.\n"
+            "If you choose a folder that already contains your own files, those "
+            "files are not affected — only .uacragent/ is removed."
+        ),
+        "settings_export_format_label":      "Export format:",
+        "settings_extra_instructions_label": "Extra instructions:",
+        "settings_docs_section":             "Course Documents",
+        "settings_outputs_section":          "Generated Outputs",
+        "settings_apply_btn":                "✓  Apply",
+        "settings_close_btn":                "Close",
+        "settings_add_files_btn":            "Add...",
+        "settings_remove_files_btn":         "Remove",
+        "settings_open_outputs_btn":         "📂  Open outputs folder",
+        "settings_no_workspace":             "No workspace assigned yet.",
+        "settings_no_outputs":               "No output files yet.",
+        "settings_no_outputs_folder": (
+            "No output files yet — outputs folder will be created on first generation."
+        ),
+        "settings_emb_local_hint": (
+            "Downloaded from HuggingFace on first use, then cached in the app data "
+            "folder.  Subsequent uses are instant with no internet required."
+        ),
+        # API key labels / hints
+        "api_key_google":   "Google API Key:",
+        "api_key_openai":   "OpenAI API Key:",
+        "api_key_deepseek": "DeepSeek API Key:",
+        "api_key_loaded":   "Loaded from .env",
+        "api_key_not_set":  "Not set",
+        # Document type section labels
+        "doctype_syllabus":     "Syllabus",
+        "doctype_lecture_note": "Lecture Notes",
+        "doctype_textbook":     "Textbook",
+        "doctype_assignment":   "Assignments",
+        "doctype_past_exam":    "Past Exams",
+        "doctype_other":        "Other",
         # --- Notification / status strings ---
         # New-session initial state
         "new_session_header": "New session",
@@ -202,6 +282,79 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
         "save":               "保存",
         "cancel_btn":         "取消",
+        # --- Session Settings dialog ---
+        "settings_dialog_title":    "会话设置",
+        "settings_banner":          (
+            "✏️  在下方编辑任意设置，然后滚动到底部点击  ✓ 应用  以保存并重新索引。"
+        ),
+        "settings_model_section":   "模型",
+        "settings_provider_label":  "提供商:",
+        "settings_model_label":     "模型:",
+        "settings_api_key_section": "API 密钥",
+        "settings_show_key":        "显示",
+        "settings_hide_key":        "隐藏",
+        "settings_api_key_note": (
+            "ℹ️  API 密钥在本次应用窗口的所有会话中共享。\n"
+            "在此输入的密钥将应用于所有会话，直到应用关闭或密钥被更改。\n"
+            "密钥不会保存到磁盘——每次打开应用时需重新输入，或将其添加到 .env 文件。"
+        ),
+        "settings_embedding_section":    "嵌入",
+        "settings_course_section":       "课程信息",
+        "settings_course_name_field":    "课程名称 *",
+        "settings_university_field":     "大学",
+        "settings_major_field":          "专业 / 院系",
+        "settings_course_code_field":    "课程代码",
+        "settings_professor_field":      "教授",
+        "settings_semester_field":       "学期",
+        "settings_exam_section":         "考试选项",
+        "settings_exam_type_label":      "考试类型:",
+        "settings_exam_format_label":    "考试形式:",
+        "settings_exam_duration_label":  "考试时长:",
+        "settings_exam_info_label":      "考试说明文件:",
+        "settings_browse_btn":           "浏览...",
+        "settings_clear_btn":            "清除",
+        "settings_workspace_section":    "工作空间与导出",
+        "settings_workspace_label":      "工作空间目录:",
+        "settings_open_btn":             "打开",
+        "settings_reset_btn":            "重置",
+        "settings_deletion_warning_title": "⚠️  删除警告",
+        "settings_deletion_warning_body": (
+            "删除此会话时，工作空间文件夹内的代理包（.uacragent/）——"
+            "包括所有会话历史、向量数据库、生成的输出及上传的文件副本——将被永久删除。\n"
+            "若删除后工作空间文件夹为空，该文件夹本身也将被删除。\n"
+            "若您选择的文件夹已包含其他文件，这些文件不受影响——仅 .uacragent/ 会被删除。"
+        ),
+        "settings_export_format_label":      "导出格式:",
+        "settings_extra_instructions_label": "额外说明:",
+        "settings_docs_section":             "课程文档",
+        "settings_outputs_section":          "生成的输出",
+        "settings_apply_btn":                "✓  应用",
+        "settings_close_btn":                "关闭",
+        "settings_add_files_btn":            "添加...",
+        "settings_remove_files_btn":         "删除",
+        "settings_open_outputs_btn":         "📂  打开输出文件夹",
+        "settings_no_workspace":             "尚未分配工作空间。",
+        "settings_no_outputs":               "暂无输出文件。",
+        "settings_no_outputs_folder": (
+            "暂无输出文件——将在首次生成时创建输出文件夹。"
+        ),
+        "settings_emb_local_hint": (
+            "首次使用时从 HuggingFace 下载，随后缓存在应用数据文件夹中。"
+            "后续使用无需联网，速度即时。"
+        ),
+        # API key labels / hints
+        "api_key_google":   "Google API 密钥:",
+        "api_key_openai":   "OpenAI API 密钥:",
+        "api_key_deepseek": "DeepSeek API 密钥:",
+        "api_key_loaded":   "已从 .env 加载",
+        "api_key_not_set":  "未设置",
+        # Document type section labels
+        "doctype_syllabus":     "教学大纲",
+        "doctype_lecture_note": "讲义",
+        "doctype_textbook":     "教材",
+        "doctype_assignment":   "作业",
+        "doctype_past_exam":    "历年试卷",
+        "doctype_other":        "其他",
         # --- Notification / status strings ---
         # New-session initial state
         "new_session_header": "新建会话",
@@ -883,7 +1036,7 @@ class ConversationApp(tk.Tk):
         self._reset_setting_vars_from_committed()
 
         win = tk.Toplevel(self)
-        win.title("Session Settings")
+        win.title(self._t("settings_dialog_title"))
         win.minsize(560, 600)
         win.resizable(True, True)
         self._settings_win = win
@@ -894,7 +1047,7 @@ class ConversationApp(tk.Tk):
         banner.pack(side="top", fill="x")
         tk.Label(
             banner,
-            text="✏️  Edit any setting below, then scroll down and click  ✓ Apply  to save and re-index.",
+            text=self._t("settings_banner"),
             background="#fff8e1",
             foreground="#5d4037",
             font=("TkDefaultFont", _note_sz),
@@ -970,12 +1123,12 @@ class ConversationApp(tk.Tk):
         row = 0
 
         # ── Model Selection ───────────────────────────────────────────
-        mf = ttk.LabelFrame(inner, text="Model", padding=_PAD)
+        mf = ttk.LabelFrame(inner, text=self._t("settings_model_section"), padding=_PAD)
         mf.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
         mf.columnconfigure(1, weight=1)
         row += 1
 
-        ttk.Label(mf, text="Provider:").grid(
+        ttk.Label(mf, text=self._t("settings_provider_label")).grid(
             row=0, column=0, sticky="w", padx=(0, 8))
         provider_cb = ttk.Combobox(
             mf, textvariable=self._llm_provider_var,
@@ -984,7 +1137,7 @@ class ConversationApp(tk.Tk):
         provider_cb.grid(row=0, column=1, sticky="w")
         provider_cb.bind("<<ComboboxSelected>>", self._on_provider_changed)
 
-        ttk.Label(mf, text="Model:").grid(
+        ttk.Label(mf, text=self._t("settings_model_label")).grid(
             row=1, column=0, sticky="w", padx=(0, 8), pady=(6, 0))
         self._model_cb = ttk.Combobox(
             mf, textvariable=self._llm_model_var, width=22)
@@ -992,12 +1145,12 @@ class ConversationApp(tk.Tk):
         self._update_model_list()   # populate for current provider
 
         # ── API Key (single row, changes with provider) ───────────────
-        akf = ttk.LabelFrame(inner, text="API Key", padding=_PAD)
+        akf = ttk.LabelFrame(inner, text=self._t("settings_api_key_section"), padding=_PAD)
         akf.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
         akf.columnconfigure(1, weight=1)
         row += 1
 
-        self._api_key_label_var = tk.StringVar(value="Google API Key:")
+        self._api_key_label_var = tk.StringVar(value=self._t("api_key_google"))
         ttk.Label(akf, textvariable=self._api_key_label_var).grid(
             row=0, column=0, sticky="w", padx=(0, 8))
 
@@ -1006,7 +1159,7 @@ class ConversationApp(tk.Tk):
         self._active_key_entry.grid(row=0, column=1, sticky="ew", padx=(0, 4))
 
         self._api_key_show_btn = ttk.Button(
-            akf, text="Show", width=5,
+            akf, text=self._t("settings_show_key"), width=5,
             command=lambda: self._toggle_key_entry(
                 self._active_key_entry, self._api_key_show_btn))
         self._api_key_show_btn.grid(row=0, column=2)
@@ -1027,22 +1180,18 @@ class ConversationApp(tk.Tk):
         note_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(8, 0))
         tk.Label(
             note_frame,
-            text=(
-                "ℹ️  API keys are shared across all sessions for the lifetime of this app window.\n"
-                "A key entered here applies to every session until the app is closed or the key is changed.\n"
-                "Keys are never saved to disk — re-enter them each time you open the app, or add them to a .env file."
-            ),
+            text=self._t("settings_api_key_note"),
             background="#e8f4fd", foreground="#0d47a1",
             font=("TkDefaultFont", _note_sz), anchor="w", justify="left", wraplength=460,
         ).pack(fill="x")
 
         # ── Embedding ─────────────────────────────────────────────────────
-        embf = ttk.LabelFrame(inner, text="Embedding", padding=_PAD)
+        embf = ttk.LabelFrame(inner, text=self._t("settings_embedding_section"), padding=_PAD)
         embf.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
         embf.columnconfigure(1, weight=1)
         row += 1
 
-        ttk.Label(embf, text="Provider:").grid(
+        ttk.Label(embf, text=self._t("settings_provider_label")).grid(
             row=0, column=0, sticky="w", padx=(0, 8))
         emb_cb = ttk.Combobox(
             embf, textvariable=self._emb_provider_disp_var,
@@ -1059,18 +1208,18 @@ class ConversationApp(tk.Tk):
         self._rebuild_emb_context()   # populate for current provider
 
         # ── Course Information ─────────────────────────────────────────
-        inf = ttk.LabelFrame(inner, text="Course Information", padding=_PAD)
+        inf = ttk.LabelFrame(inner, text=self._t("settings_course_section"), padding=_PAD)
         inf.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
         inf.columnconfigure(1, weight=1)
         row += 1
 
         fields = [
-            ("Course Name *", "red", self._course_name_var),
-            ("University",    None,  self._university_var),
-            ("Major / Department", None, self._major_var),
-            ("Course Code",   None,  self._course_code_var),
-            ("Professor",     None,  self._professor_var),
-            ("Semester",      None,  self._semester_var),
+            (self._t("settings_course_name_field"), "red", self._course_name_var),
+            (self._t("settings_university_field"),  None,  self._university_var),
+            (self._t("settings_major_field"),        None,  self._major_var),
+            (self._t("settings_course_code_field"), None,  self._course_code_var),
+            (self._t("settings_professor_field"),   None,  self._professor_var),
+            (self._t("settings_semester_field"),    None,  self._semester_var),
         ]
         for fi, (lbl, fg, var) in enumerate(fields):
             # Only set foreground when an explicit override is needed (e.g. red
@@ -1081,35 +1230,36 @@ class ConversationApp(tk.Tk):
                 row=fi, column=0, sticky="w", padx=(0, 6), pady=(3, 0))
             e = ttk.Entry(inf, textvariable=var)
             e.grid(row=fi, column=1, sticky="ew", pady=(3, 0))
-            if lbl.startswith("Course Name"):
+            if lbl == self._t("settings_course_name_field"):
                 self._course_name_entry = e
 
         # ── Exam Options ──────────────────────────────────────────────
-        ef = ttk.LabelFrame(inner, text="Exam Options", padding=_PAD)
+        ef = ttk.LabelFrame(inner, text=self._t("settings_exam_section"), padding=_PAD)
         ef.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
         ef.columnconfigure(1, weight=1)
         row += 1
 
-        ttk.Label(ef, text="Exam type:").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        ttk.Label(ef, text=self._t("settings_exam_type_label")).grid(
+            row=0, column=0, sticky="w", padx=(0, 6))
         ttk.Combobox(ef, textvariable=self._exam_type_var,
                      values=[e.value for e in ExamType],
                      state="readonly", width=14
                      ).grid(row=0, column=1, sticky="w")
 
-        ttk.Label(ef, text="Exam format:").grid(row=1, column=0, sticky="w",
-                                                padx=(0, 6), pady=(4, 0))
+        ttk.Label(ef, text=self._t("settings_exam_format_label")).grid(
+            row=1, column=0, sticky="w", padx=(0, 6), pady=(4, 0))
         ttk.Combobox(ef, textvariable=self._exam_format_var,
                      values=[e.value for e in ExamFormat],
                      state="readonly", width=14
                      ).grid(row=1, column=1, sticky="w", pady=(4, 0))
 
-        ttk.Label(ef, text="Exam duration:").grid(row=2, column=0, sticky="w",
-                                                  padx=(0, 6), pady=(4, 0))
+        ttk.Label(ef, text=self._t("settings_exam_duration_label")).grid(
+            row=2, column=0, sticky="w", padx=(0, 6), pady=(4, 0))
         ttk.Entry(ef, textvariable=self._exam_duration_var).grid(
             row=2, column=1, sticky="ew", pady=(4, 0))
 
-        ttk.Label(ef, text="Exam info sheet:").grid(row=3, column=0, sticky="w",
-                                                    padx=(0, 6), pady=(4, 0))
+        ttk.Label(ef, text=self._t("settings_exam_info_label")).grid(
+            row=3, column=0, sticky="w", padx=(0, 6), pady=(4, 0))
         ei_row = ttk.Frame(ef)
         ei_row.grid(row=3, column=1, sticky="ew", pady=(4, 0))
         ei_row.columnconfigure(0, weight=1)
@@ -1117,20 +1267,20 @@ class ConversationApp(tk.Tk):
             ei_row, textvariable=self._exam_info_path_var,
             foreground="gray", anchor="w", text="No file selected")
         self._exam_info_path_label.grid(row=0, column=0, sticky="ew")
-        ttk.Button(ei_row, text="Browse...", width=8,
+        ttk.Button(ei_row, text=self._t("settings_browse_btn"), width=8,
                    command=self._on_pick_exam_info
                    ).grid(row=0, column=1, padx=(4, 0))
-        ttk.Button(ei_row, text="Clear", width=6,
+        ttk.Button(ei_row, text=self._t("settings_clear_btn"), width=6,
                    command=self._on_clear_exam_info
                    ).grid(row=0, column=2, padx=(4, 0))
 
         # ── Workspace & Export ────────────────────────────────────────
-        wf = ttk.LabelFrame(inner, text="Workspace & Export", padding=_PAD)
+        wf = ttk.LabelFrame(inner, text=self._t("settings_workspace_section"), padding=_PAD)
         wf.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
         wf.columnconfigure(1, weight=1)
         row += 1
 
-        ttk.Label(wf, text="Workspace folder:").grid(
+        ttk.Label(wf, text=self._t("settings_workspace_label")).grid(
             row=0, column=0, sticky="w", padx=(0, 6))
         ws_row = ttk.Frame(wf)
         ws_row.grid(row=0, column=1, sticky="ew")
@@ -1140,7 +1290,7 @@ class ConversationApp(tk.Tk):
             path_text = self._workspace_var.get() or str(get_app_data_dir())
             ttk.Label(ws_row, text=path_text, foreground="#1a56a5",
                       anchor="w").grid(row=0, column=0, sticky="ew")
-            ttk.Button(ws_row, text="Open", width=6,
+            ttk.Button(ws_row, text=self._t("settings_open_btn"), width=6,
                        command=lambda: _open_folder_in_os(path_text)
                        ).grid(row=0, column=1, padx=(4, 0))
             ttk.Label(ws_row, text="🔒", foreground="gray"
@@ -1151,10 +1301,10 @@ class ConversationApp(tk.Tk):
                 ws_row, textvariable=self._workspace_var,
                 foreground="gray", anchor="w", text="Auto (app data folder)")
             self._workspace_label.grid(row=0, column=0, sticky="ew")
-            ttk.Button(ws_row, text="Browse...", width=9,
+            ttk.Button(ws_row, text=self._t("settings_browse_btn"), width=9,
                        command=self._on_pick_workspace
                        ).grid(row=0, column=1, padx=(4, 0))
-            ttk.Button(ws_row, text="Reset", width=6,
+            ttk.Button(ws_row, text=self._t("settings_reset_btn"), width=6,
                        command=self._on_reset_workspace
                        ).grid(row=0, column=2, padx=(4, 0))
 
@@ -1166,41 +1316,34 @@ class ConversationApp(tk.Tk):
         warn_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 2))
         tk.Label(
             warn_frame,
-            text="⚠️  Deletion warning",
+            text=self._t("settings_deletion_warning_title"),
             background="#fff3e0", foreground="#bf360c",
             font=("TkDefaultFont", _note_sz, "bold"),
             anchor="w",
         ).pack(side="top", fill="x")
         tk.Label(
             warn_frame,
-            text=(
-                "When this session is deleted, the agent bundle (.uacragent/) inside "
-                "the workspace folder — including all session history, the vector store, "
-                "generated outputs, and uploaded file copies — is permanently removed.\n"
-                "If the workspace folder is empty afterwards, the folder itself is also deleted.\n"
-                "If you choose a folder that already contains your own files, those files are "
-                "not affected — only .uacragent/ is removed."
-            ),
+            text=self._t("settings_deletion_warning_body"),
             background="#fff3e0", foreground="#4e342e",
             font=("TkDefaultFont", _note_sz),
             anchor="w", justify="left", wraplength=460,
         ).pack(side="top", fill="x")
 
-        ttk.Label(wf, text="Export format:").grid(
+        ttk.Label(wf, text=self._t("settings_export_format_label")).grid(
             row=2, column=0, sticky="w", padx=(0, 6), pady=(6, 0))
         ttk.Combobox(wf, textvariable=self._export_format_var,
                      values=[e.value for e in ExportFormat],
                      state="readonly", width=12
                      ).grid(row=2, column=1, sticky="w", pady=(6, 0))
 
-        ttk.Label(wf, text="Extra instructions:").grid(
+        ttk.Label(wf, text=self._t("settings_extra_instructions_label")).grid(
             row=3, column=0, sticky="nw", padx=(0, 6), pady=(6, 0))
         self._extra_text = tk.Text(wf, height=3, wrap="word")
         self._extra_text.grid(row=3, column=1, sticky="ew", pady=(6, 0))
         self._extra_text.insert("1.0", self._extra_instructions_var.get())
 
         # ── Course Documents ──────────────────────────────────────────
-        docs_frame = ttk.LabelFrame(inner, text="Course Documents", padding=_PAD)
+        docs_frame = ttk.LabelFrame(inner, text=self._t("settings_docs_section"), padding=_PAD)
         docs_frame.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
         docs_frame.columnconfigure(0, weight=1)
         row += 1
@@ -1224,7 +1367,7 @@ class ConversationApp(tk.Tk):
                     lb.insert(tk.END, Path(p).name)
 
         # ── Generated Outputs ─────────────────────────────────────────
-        out_frame = ttk.LabelFrame(inner, text="Generated Outputs", padding=_PAD)
+        out_frame = ttk.LabelFrame(inner, text=self._t("settings_outputs_section"), padding=_PAD)
         out_frame.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
         out_frame.columnconfigure(0, weight=1)
         row += 1
@@ -1244,10 +1387,10 @@ class ConversationApp(tk.Tk):
 
         action_row = ttk.Frame(btn_row_frame)
         action_row.grid(row=1, column=0, sticky="ew")
-        ttk.Button(action_row, text="✓  Apply",
+        ttk.Button(action_row, text=self._t("settings_apply_btn"),
                    command=self._on_apply_settings
                    ).pack(side="left", padx=(0, 8))
-        ttk.Button(action_row, text="Close",
+        ttk.Button(action_row, text=self._t("settings_close_btn"),
                    command=win.destroy
                    ).pack(side="right")
 
@@ -1266,7 +1409,7 @@ class ConversationApp(tk.Tk):
         ws_id     = self._session.workspace_id
         ws_folder = self._session.workspace_folder
         if not ws_id and not ws_folder:
-            ttk.Label(parent, text="No workspace assigned yet.",
+            ttk.Label(parent, text=self._t("settings_no_workspace"),
                       foreground="gray").pack(anchor="w")
             return
 
@@ -1282,7 +1425,7 @@ class ConversationApp(tk.Tk):
         footer = ttk.Frame(parent)
         footer.pack(fill="x", pady=(6, 0))
         open_folder_btn = ttk.Button(
-            footer, text="📂  Open outputs folder",
+            footer, text=self._t("settings_open_outputs_btn"),
             command=lambda: _open_folder_in_os(str(out_dir)),
         )
         open_folder_btn.pack(side="left")
@@ -1303,9 +1446,9 @@ class ConversationApp(tk.Tk):
                 state="normal" if out_dir.exists() else "disabled")
 
             if not files:
-                msg = ("No output files yet."
+                msg = (self._t("settings_no_outputs")
                        if out_dir.exists()
-                       else "No output files yet — outputs folder will be created on first generation.")
+                       else self._t("settings_no_outputs_folder"))
                 ttk.Label(list_frame, text=msg,
                           foreground="gray").grid(row=0, column=0, sticky="w",
                                                   pady=(2, 0))
@@ -1393,7 +1536,7 @@ class ConversationApp(tk.Tk):
 
     def _create_doc_section(self, parent: ttk.Frame,
                             doc_type: DocumentType) -> None:
-        label = _DOC_TYPE_LABELS.get(doc_type, doc_type.value)
+        label = self._t(f"doctype_{doc_type.value}")
         frame = ttk.LabelFrame(parent, text=label, padding=4)
         frame.pack(fill="x", pady=3)
         frame.columnconfigure(0, weight=1)
@@ -1409,10 +1552,10 @@ class ConversationApp(tk.Tk):
 
         btn_row = ttk.Frame(frame)
         btn_row.grid(row=1, column=0, columnspan=2, sticky="w", pady=(3, 4))
-        ttk.Button(btn_row, text="Add...", width=7,
+        ttk.Button(btn_row, text=self._t("settings_add_files_btn"), width=7,
                    command=lambda dt=doc_type: self._on_add_files(dt)
                    ).pack(side="left", padx=(0, 3))
-        ttk.Button(btn_row, text="Remove", width=7,
+        ttk.Button(btn_row, text=self._t("settings_remove_files_btn"), width=7,
                    command=lambda dt=doc_type: self._on_remove_files(dt)
                    ).pack(side="left")
 
@@ -1810,14 +1953,19 @@ class ConversationApp(tk.Tk):
         """
         # Label var is a plain StringVar — always safe to update
         provider = self._llm_provider_var.get()
-        labels = {"gemini": "Google API Key:", "openai": "OpenAI API Key:",
-                  "deepseek": "DeepSeek API Key:"}
+        labels = {
+            "gemini":   self._t("api_key_google"),
+            "openai":   self._t("api_key_openai"),
+            "deepseek": self._t("api_key_deepseek"),
+        }
         self._api_key_label_var.set(labels.get(provider, "API Key:"))
 
         # Update hint var (also a plain StringVar)
         env_var = self._PROVIDER_KEY_ENV.get(provider, "GOOGLE_API_KEY")
         env_key = os.environ.get(env_var, "").strip()
-        self._api_key_hint_var.set("Loaded from .env" if env_key else "Not set")
+        self._api_key_hint_var.set(
+            self._t("api_key_loaded") if env_key else self._t("api_key_not_set")
+        )
 
         # Widget-level updates only when the dialog is alive
         if not self._settings_alive():
@@ -1858,7 +2006,7 @@ class ConversationApp(tk.Tk):
 
         if provider == "local":
             # Free model selector
-            ttk.Label(frame, text="Model:").grid(
+            ttk.Label(frame, text=self._t("settings_model_label")).grid(
                 row=0, column=0, sticky="w", padx=(0, 8))
             local_cb = ttk.Combobox(
                 frame, textvariable=self._local_model_disp_var,
@@ -1871,8 +2019,7 @@ class ConversationApp(tk.Tk):
                                   self._local_model_disp_var.get(), "all-MiniLM-L6-v2")))
             ttk.Label(
                 frame,
-                text="Downloaded from HuggingFace on first use, then cached in the app data folder. "
-                     "Subsequent uses are instant with no internet required.",
+                text=self._t("settings_emb_local_hint"),
                 foreground="gray", font=("TkDefaultFont", max(self._font_size() - 1, 10)),
                 wraplength=400,
             ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(3, 0))
@@ -1882,7 +2029,7 @@ class ConversationApp(tk.Tk):
             # stay in sync when the user types in either one.
             env_var = "GOOGLE_API_KEY" if provider == "gemini" else "OPENAI_API_KEY"
             key_var = self._gemini_key_var if provider == "gemini" else self._openai_key_var
-            label   = "Google API Key:" if provider == "gemini" else "OpenAI API Key:"
+            label   = self._t("api_key_google") if provider == "gemini" else self._t("api_key_openai")
 
             frame.columnconfigure(1, weight=1)
             ttk.Label(frame, text=label).grid(
@@ -1893,7 +2040,7 @@ class ConversationApp(tk.Tk):
 
             show_btn_cell: list[ttk.Button] = []
             show_btn_cell.append(ttk.Button(
-                frame, text="Show", width=5,
+                frame, text=self._t("settings_show_key"), width=5,
                 command=lambda: self._toggle_key_entry(emb_entry, show_btn_cell[0])))
             show_btn_cell[0].grid(row=0, column=2)
 
@@ -1982,16 +2129,15 @@ class ConversationApp(tk.Tk):
         self._update_model_list()
         self._update_api_key_row()
 
-    @staticmethod
-    def _toggle_key_entry(entry: ttk.Entry, btn: ttk.Button | None = None) -> None:
+    def _toggle_key_entry(self, entry: ttk.Entry, btn: ttk.Button | None = None) -> None:
         if entry.cget("show") == "*":
             entry.configure(show="")
             if btn:
-                btn.configure(text="Hide")
+                btn.configure(text=self._t("settings_hide_key"))
         else:
             entry.configure(show="*")
             if btn:
-                btn.configure(text="Show")
+                btn.configure(text=self._t("settings_show_key"))
 
     def _on_pick_exam_info(self) -> None:
         path = filedialog.askopenfilename(
