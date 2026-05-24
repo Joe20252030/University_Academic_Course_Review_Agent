@@ -150,6 +150,10 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
         self._is_busy = False
         self._cancel_event = threading.Event()  # set to abort in-flight requests
 
+        # Sidebar collapse state
+        self._sidebar_visible: bool = True
+        self._saved_sash_pos: int = _SESSION_LIST_WIDTH
+
         # True once a session's workspace has been committed (Apply was clicked
         # with a course name, or a saved session was loaded). Prevents the
         # workspace from being changed.
@@ -279,8 +283,8 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
         self.columnconfigure(0, weight=1)
 
         paned = tk.PanedWindow(self, orient="horizontal",
-                               sashwidth=5, sashrelief="flat",
-                               background="#cccccc")
+                               sashwidth=4, sashrelief="flat",
+                               background="#c8d0e0")
         paned.grid(row=0, column=0, sticky="nsew")
         self._paned = paned
 
@@ -290,18 +294,22 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
     # ── Session list pane ─────────────────────────────────────────────
 
     def _build_session_list_pane(self) -> None:
-        frame = ttk.Frame(self._paned, width=_SESSION_LIST_WIDTH)
+        frame = ttk.Frame(self._paned, width=_SESSION_LIST_WIDTH,
+                          style="Sidebar.TFrame")
         frame.grid_propagate(False)
         frame.rowconfigure(1, weight=1)
         frame.columnconfigure(0, weight=1)
         self._paned.add(frame, minsize=160, stretch="never")
+        self._sidebar_frame = frame   # kept for direct bg update in _apply_theme
 
         # Header
         hdr = ttk.Frame(frame, padding=(6, 6, 6, 4))
         hdr.grid(row=0, column=0, sticky="ew")
         hdr.columnconfigure(0, weight=1)
 
-        _lbl = ttk.Label(hdr, text=self._t("sessions"), font=("TkDefaultFont", 11, "bold"))
+        _lbl = ttk.Label(hdr, text=self._t("sessions"),
+                         font=("TkDefaultFont", 11, "bold"),
+                         style="Sidebar.TLabel")
         _lbl.grid(row=0, column=0, sticky="w")
         self._i18n_widgets.append((_lbl, "text", "sessions"))
 
@@ -319,20 +327,41 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
             row=0, column=0, sticky="ew", pady=(36, 0)
         )
 
-        # Session listbox
-        list_frame = ttk.Frame(frame)
-        list_frame.grid(row=1, column=0, sticky="nsew", padx=4, pady=4)
-        list_frame.rowconfigure(0, weight=1)
-        list_frame.columnconfigure(0, weight=1)
+        # ── Rounded-corner session list ───────────────────────────────────────
+        # A Canvas paints a filled rounded-rectangle in the list background
+        # colour; the canvas bg matches the sidebar background so the curved
+        # corners look transparent.  The actual Listbox + Scrollbar live inside
+        # an inner Frame positioned over the rounded rect.
+        _mode0 = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
+        _c0 = _THEME_COLORS.get(_mode0, _THEME_COLORS["light"])
+
+        self._list_canvas = tk.Canvas(
+            frame,
+            bg=_c0["sidebar_bg"],
+            highlightthickness=0, bd=0,
+        )
+        self._list_canvas.grid(row=1, column=0, sticky="nsew", padx=6, pady=4)
+
+        # Inner frame: same background as the rounded-rect fill so its
+        # rectangular shape is invisible against the polygon fill.
+        self._list_inner = tk.Frame(self._list_canvas, bg=_c0["lb_bg"])
+        self._list_inner.rowconfigure(0, weight=1)
+        self._list_inner.columnconfigure(0, weight=1)
+        self._list_canvas_id = self._list_canvas.create_window(
+            3, 3, anchor="nw", window=self._list_inner,
+        )
+        self._list_canvas.bind(
+            "<Configure>", lambda _e: self._redraw_list_canvas()
+        )
 
         self._session_listbox = tk.Listbox(
-            list_frame, selectmode=tk.SINGLE,
+            self._list_inner, selectmode=tk.SINGLE,
             font=("TkDefaultFont", 10),
             activestyle="none",
             relief="flat", borderwidth=0,
             highlightthickness=0,
         )
-        sb = ttk.Scrollbar(list_frame, orient="vertical",
+        sb = ttk.Scrollbar(self._list_inner, orient="vertical",
                            command=self._session_listbox.yview)
         self._session_listbox.configure(yscrollcommand=sb.set)
         self._session_listbox.grid(row=0, column=0, sticky="nsew")
@@ -371,27 +400,36 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
         right.rowconfigure(3, weight=0)
         right.columnconfigure(0, weight=1)
         self._paned.add(right, minsize=500, stretch="always")
+        self._chat_frame = right   # kept so _toggle_sidebar can re-add it
 
         # ── Top bar ───────────────────────────────────────────────────
         self._chat_top_bar = top_bar = ttk.Frame(right)
         top_bar.grid(row=0, column=0, sticky="ew", pady=(0, 4))
-        top_bar.columnconfigure(0, weight=1)
+        top_bar.columnconfigure(1, weight=1)   # course label expands
+
+        # Sidebar toggle button (always visible, leftmost)
+        self._toggle_sidebar_btn = ttk.Button(
+            top_bar, text="‹", width=2,
+            command=self._toggle_sidebar,
+        )
+        self._toggle_sidebar_btn.grid(row=0, column=0, rowspan=2, sticky="w",
+                                      padx=(0, 6))
 
         self._header_course_var = tk.StringVar(value=self._t("no_session_loaded"))
         ttk.Label(
             top_bar, textvariable=self._header_course_var,
             font=("TkDefaultFont", 12, "bold"),
-        ).grid(row=0, column=0, sticky="w")
+        ).grid(row=0, column=1, sticky="w")
 
         self._session_status_var = tk.StringVar(value="")
         self._session_status_lbl = ttk.Label(
             top_bar, textvariable=self._session_status_var,
             foreground="gray", font=("TkDefaultFont", 10),
         )
-        self._session_status_lbl.grid(row=1, column=0, sticky="w")
+        self._session_status_lbl.grid(row=1, column=1, sticky="w")
 
         btn_frame = ttk.Frame(top_bar)
-        btn_frame.grid(row=0, column=1, rowspan=2, sticky="e")
+        btn_frame.grid(row=0, column=2, rowspan=2, sticky="e")
 
         _btn_sess_settings = ttk.Button(
             btn_frame, text=self._t("settings_btn"), command=self._open_settings
@@ -410,7 +448,7 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
 
         self._chat_text = tk.Text(
             hist_frame, wrap="word", state="disabled",
-            font=("TkDefaultFont", 11), padx=8, pady=8,
+            font=("TkDefaultFont", 11), padx=12, pady=10,
         )
         chat_sb = ttk.Scrollbar(hist_frame, orient="vertical",
                                 command=self._chat_text.yview)
@@ -423,17 +461,20 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
         # is loaded from config.
         self._chat_text.tag_configure(
             "user_label", font=("TkDefaultFont", 10, "bold"),
-            foreground="#1a56a5", spacing1=10)
+            foreground="#1b3167", spacing1=14, spacing3=2)
         self._chat_text.tag_configure(
-            "user_body", foreground="#1a56a5", lmargin1=8, lmargin2=8)
+            "user_body", foreground="#1b3167",
+            lmargin1=12, lmargin2=12, spacing3=10)
         self._chat_text.tag_configure(
             "assistant_label", font=("TkDefaultFont", 10, "bold"),
-            foreground="#2e7d32", spacing1=10)
+            foreground="#b06000", spacing1=14, spacing3=2)
         self._chat_text.tag_configure(
-            "assistant_body", foreground="#1a1a1a", lmargin1=8, lmargin2=8)
+            "assistant_body", foreground="#2d3748",
+            lmargin1=12, lmargin2=12, spacing3=10)
         self._chat_text.tag_configure(
-            "system_body", foreground="#7b5800", lmargin1=8, lmargin2=8,
-            font=("TkDefaultFont", 10, "italic"), spacing1=6)
+            "system_body", foreground="#6b7280",
+            lmargin1=12, lmargin2=12,
+            font=("TkDefaultFont", 10, "italic"), spacing1=4, spacing3=8)
 
         # ── Quick actions ─────────────────────────────────────────────
         self._qa_frame = qa_frame = ttk.LabelFrame(
@@ -452,7 +493,7 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
         input_frame.columnconfigure(0, weight=1)
 
         self._input_text = tk.Text(
-            input_frame, height=3, wrap="word",
+            input_frame, height=4, wrap="word",
             font=("TkDefaultFont", 11),
         )
         self._input_text.grid(row=0, column=0, sticky="ew", padx=(0, 6))
@@ -473,6 +514,7 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
         btn_col = ttk.Frame(input_frame)
         btn_col.grid(row=0, column=1, sticky="ns")
         self._send_btn = ttk.Button(btn_col, text=self._t("send"), width=8,
+                                    style="Primary.TButton",
                                     command=self._on_send)
         self._send_btn.pack(fill="x", pady=(0, 4))
         self._i18n_widgets.append((self._send_btn, "text", "send"))
@@ -498,6 +540,101 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
 
         # Start in blank state — activated by session select or + New.
         self._set_chat_active(False)
+
+    # ------------------------------------------------------------------
+    # Sidebar toggle
+    # ------------------------------------------------------------------
+
+    def _toggle_sidebar(self) -> None:
+        """Show or hide the session list panel.
+
+        When hiding, the current sash position is saved so the sidebar can be
+        restored to its previous width when shown again.  Because
+        ``tk.PanedWindow.add()`` always appends, we re-insert the sidebar at
+        position 0 by temporarily removing the chat pane, adding the sidebar,
+        then re-adding the chat pane.
+        """
+        if self._sidebar_visible:
+            # Snapshot sash position before removing the pane
+            try:
+                self._saved_sash_pos = self._paned.sash_coord(0)[0]
+            except Exception:
+                self._saved_sash_pos = _SESSION_LIST_WIDTH
+            self._paned.forget(self._sidebar_frame)
+            self._sidebar_visible = False
+            self._toggle_sidebar_btn.configure(text="›")
+        else:
+            # PanedWindow.add() appends, so remove chat first, then add
+            # sidebar (→ position 0), then re-add chat (→ position 1).
+            self._paned.forget(self._chat_frame)
+            self._paned.add(
+                self._sidebar_frame,
+                minsize=160,
+                width=self._saved_sash_pos,
+                stretch="never",
+            )
+            self._paned.add(self._chat_frame, minsize=500, stretch="always")
+            self._sidebar_visible = True
+            self._toggle_sidebar_btn.configure(text="‹")
+
+    # ------------------------------------------------------------------
+    # Rounded-corner list canvas
+    # ------------------------------------------------------------------
+
+    def _redraw_list_canvas(self) -> None:
+        """Repaint the rounded-rectangle background on the session list canvas.
+
+        Called on every ``<Configure>`` event of ``_list_canvas`` and after
+        each theme change.  The canvas background is set to the sidebar
+        colour; a filled rounded-rect polygon in the list-background colour
+        sits on top, and the inner Frame (which has the same list-background
+        colour) sits on top of that — so the rectangular corners of the Frame
+        are invisible and only the canvas corners (showing the sidebar bg)
+        reveal the rounded shape.
+        """
+        if not hasattr(self, "_list_canvas"):
+            return
+        w = self._list_canvas.winfo_width()
+        h = self._list_canvas.winfo_height()
+        if w <= 1 or h <= 1:
+            return
+
+        _mode = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
+        c = _THEME_COLORS.get(_mode, _THEME_COLORS["light"])
+        fill  = c["lb_bg"]
+        bg    = c["sidebar_bg"]
+
+        self._list_canvas.configure(bg=bg)
+        self._list_inner.configure(bg=fill)
+
+        # Draw (or redraw) the rounded-rectangle fill
+        self._list_canvas.delete("rrect")
+        r   = 10    # corner radius in px
+        pad = 3     # gap between canvas edge and rounded rect
+        x1, y1, x2, y2 = pad, pad, w - pad, h - pad
+        # Smooth polygon approximating a rounded rect:
+        pts = [
+            x1 + r, y1,   x2 - r, y1,
+            x2,     y1,   x2,     y1 + r,
+            x2,     y2 - r, x2,   y2,
+            x2 - r, y2,   x1 + r, y2,
+            x1,     y2,   x1,     y2 - r,
+            x1,     y1 + r, x1,   y1,
+        ]
+        self._list_canvas.create_polygon(
+            pts, smooth=True,
+            fill=fill, outline="", tags="rrect",
+        )
+        self._list_canvas.tag_lower("rrect")
+
+        # Keep inner Frame sized to fill the rounded-rect area
+        inner_pad = pad + 2
+        self._list_canvas.itemconfigure(
+            self._list_canvas_id,
+            width=max(1, w - 2 * inner_pad),
+            height=max(1, h - 2 * inner_pad),
+        )
+        self._list_canvas.coords(self._list_canvas_id, inner_pad, inner_pad)
 
     # ------------------------------------------------------------------
     # Chat pane show / hide

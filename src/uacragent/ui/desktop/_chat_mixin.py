@@ -502,8 +502,11 @@ class ChatMixin:
         self._chat_text.configure(state="normal")
         self._chat_text.insert(tk.END, f"\n📄 {label} generated: ", "assistant_body")
 
+        from ._ui_constants import _THEME_COLORS
+        _c = _THEME_COLORS.get(self._color_mode_var.get(), _THEME_COLORS["light"])
         tag_file = f"link_{id(output_path)}"
-        self._chat_text.tag_configure(tag_file, foreground="#1565c0", underline=True)
+        self._chat_text.tag_configure(
+            tag_file, foreground=_c["link_fg"], underline=True)
         self._chat_text.tag_bind(tag_file, "<Button-1>",
                                  lambda _e, p=output_path: _open_file_in_os(p))
         self._chat_text.tag_bind(tag_file, "<Enter>",
@@ -514,7 +517,8 @@ class ChatMixin:
 
         self._chat_text.insert(tk.END, "  ", "assistant_body")
         tag_folder = f"folder_{id(output_path)}"
-        self._chat_text.tag_configure(tag_folder, foreground="#555", underline=True)
+        self._chat_text.tag_configure(
+            tag_folder, foreground=_c["link_folder_fg"], underline=True)
         self._chat_text.tag_bind(tag_folder, "<Button-1>",
                                  lambda _e, p=output_path: _open_folder_in_os(
                                      str(Path(p).parent)))

@@ -7,6 +7,7 @@ interact with those materials through a persistent desktop chat assistant.
 - Classify documents by type for optimized processing
 - Chunk documents using type-specific multi-stage splitting strategies
 - Embed into a local Chroma vector store
+- Retrieve context with task-aware weighting across document types
 - Ask an LLM to answer questions in a session-aware chat workflow
 - Ask an LLM to create a structured plan tailored to the chosen study-document task
 - For each planned section, retrieve relevant content and generate material sequentially
@@ -243,6 +244,7 @@ The GUI lets you:
 - Open generated outputs directly from the chat transcript
 - Cancel an in-flight indexing or chat request from the main panel
 - Open global app settings to change color mode, font size, language (`en` / `zh_CN`), and the shared app data directory
+- Use the selected desktop language to steer assistant replies and generated document headings in English or Simplified Chinese
 
 Works on macOS, Windows, and Linux.
 
@@ -451,11 +453,13 @@ src/uacragent/
   domain/
     models.py            Core data models (ReviewPlan, SectionSpec)
     errors.py            Custom exception hierarchy
+    providers.py         Provider metadata, labels, and env-var mapping
+    rate_tiers.py        API plan tier presets for request pacing
     types.py             Enums (DocumentType, ExamFormat, ExamType, TaskType, ExportFormat)
   infra/
     settings.py          Pydantic-based configuration (.env)
     loaders.py           Document loading with multi-stage type-specific splitting
-    vectorstore.py       Chroma vector store with cloud or local embeddings
+    vectorstore.py       Chroma vector store, manifest tracking, and weighted retriever
     llm.py               Provider-aware LLM client wrapper (Gemini / OpenAI / DeepSeek)
     auth.py              Provider-specific API key validation
     persistence.py       Desktop session persistence, app-data config, and HF cache management
@@ -466,7 +470,12 @@ src/uacragent/
     pdf.py               PDF export (fpdf2, Unicode font auto-detection)
   ui/
     desktop/
-      app.py             Tkinter conversational desktop GUI with session manager
+      app.py             Tkinter desktop entrypoint that composes the GUI mixins
+      _ui_constants.py   Shared UI strings, themes, OS helpers, and i18n tables
+      _appearance_mixin.py Theme, font-size, language, and App Settings logic
+      _settings_mixin.py Session Settings dialog and validation flow
+      _session_mixin.py  Session list management and persistence hooks
+      _chat_mixin.py     Chat send/receive flow, indexing, and output-link UI
 tests/
   test_domain.py         Domain model and enum tests
   test_export.py         Markdown / DOCX / PDF export tests

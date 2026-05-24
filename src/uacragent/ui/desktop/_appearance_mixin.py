@@ -35,23 +35,27 @@ class AppearanceMixin:
             pass  # keep defaults on any error
 
     def _apply_theme(self, reconfigure_tags: bool = True) -> None:
-        """Apply the current color mode to all widgets.
-
-        Parameters
-        ----------
-        reconfigure_tags:
-            When False, skip the final ``_reconfigure_chat_tags()`` call.
-            Pass False at startup when ``_apply_font_size()`` is called
-            immediately afterwards — it already calls ``_reconfigure_chat_tags()``
-            so the tags only need to be configured once.
-        """
+        """Apply the current color mode to all widgets."""
         mode = self._color_mode_var.get()
         c    = _THEME_COLORS.get(mode, _THEME_COLORS["light"])
         style = ttk.Style(self)
 
+        # ── Shared Primary.TButton style (gold, used for Send / Apply) ────
+        style.configure("Primary.TButton",
+            background=c["btn_primary_bg"],
+            foreground=c["btn_primary_fg"],
+            relief="flat", borderwidth=0, padding=(10, 6),
+        )
+        style.map("Primary.TButton",
+            background=[("active", "#e8961a"), ("pressed", "#d4880f"),
+                        ("disabled", "#c8c8c8")],
+            foreground=[("active",  c["btn_primary_fg"]),
+                        ("disabled", "#888888")],
+        )
+
         if mode == "dark":
             style.theme_use("clam")
-            # Base defaults propagate to all ttk widget types
+            # Base defaults
             style.configure(".",
                 background=c["window_bg"],
                 foreground=c["text_fg"],
@@ -59,48 +63,65 @@ class AppearanceMixin:
                 troughcolor=c["window_bg"],
                 selectbackground=c["lb_sel_bg"],
                 selectforeground=c["lb_sel_fg"],
-                bordercolor="#555555",
-                darkcolor="#1e1e1e",
-                lightcolor="#3c3c3c",
+                bordercolor="#1e3566",
+                darkcolor=c["window_bg"],
+                lightcolor=c["text_bg"],
             )
-            style.configure("TFrame",       background=c["window_bg"])
-            style.configure("TLabel",       background=c["window_bg"],
-                                            foreground=c["text_fg"])
-            style.configure("TLabelframe",  background=c["window_bg"],
-                                            foreground=c["text_fg"])
+            style.configure("TFrame",      background=c["window_bg"])
+            style.configure("TLabel",      background=c["window_bg"],
+                                           foreground=c["text_fg"])
+            style.configure("TLabelframe", background=c["window_bg"],
+                                           foreground=c["text_fg"])
             style.configure("TLabelframe.Label",
                             background=c["window_bg"], foreground=c["text_fg"])
+
+            # Sidebar panel
+            style.configure("Sidebar.TFrame", background=c["sidebar_bg"])
+            style.configure("Sidebar.TLabel",
+                            background=c["sidebar_bg"], foreground=c["lb_fg"])
+
+            # Standard buttons — flat, navy tinted
             style.configure("TButton",
-                background="#3c3c3c", foreground=c["text_fg"],
-                relief="flat", borderwidth=1, padding=4,
+                background=c["text_bg"], foreground=c["text_fg"],
+                relief="flat", borderwidth=0, padding=(8, 5),
             )
             style.map("TButton",
-                background=[("active", "#505050"), ("pressed", "#404040")],
+                background=[("active", "#1e3a6e"), ("pressed", "#162f58")],
                 foreground=[("active", c["text_fg"])],
             )
+            style.configure("Gear.TButton",
+                background=c["window_bg"], foreground=c["text_fg"],
+                relief="flat", borderwidth=0, padding=(4, 2),
+            )
+            style.map("Gear.TButton",
+                background=[("active", "#162f58")],
+            )
+
             style.configure("TEntry",
-                fieldbackground=c["text_bg"],
+                fieldbackground=c["input_bg"],
                 foreground=c["text_fg"],
                 insertcolor=c["text_fg"],
+                bordercolor="#1e3566",
             )
             style.configure("TCombobox",
-                fieldbackground=c["text_bg"],
+                fieldbackground=c["input_bg"],
                 foreground=c["text_fg"],
-                background="#3c3c3c",
+                background=c["text_bg"],
                 selectbackground=c["lb_sel_bg"],
                 selectforeground=c["lb_sel_fg"],
             )
             style.map("TCombobox",
-                fieldbackground=[("readonly", c["text_bg"])],
+                fieldbackground=[("readonly", c["input_bg"])],
                 foreground=[("readonly", c["text_fg"])],
                 selectbackground=[("readonly", c["lb_sel_bg"])],
             )
             style.configure("TScrollbar",
-                background="#3c3c3c",
+                background=c["sidebar_bg"],
                 troughcolor=c["window_bg"],
-                arrowcolor=c["text_fg"],
+                arrowcolor=c["status_fg"],
+                borderwidth=0,
             )
-            style.configure("TSeparator", background="#555555")
+            style.configure("TSeparator", background="#1e3566")
             style.configure("TRadiobutton",
                 background=c["window_bg"], foreground=c["text_fg"])
             style.map("TRadiobutton",
@@ -109,22 +130,30 @@ class AppearanceMixin:
             )
             style.configure("TCheckbutton",
                 background=c["window_bg"], foreground=c["text_fg"])
-            # Window / paned sash
+
             self.configure(background=c["window_bg"])
             self._paned.configure(background=c["paned_bg"])
+
         else:
             # Restore the platform's native theme for light mode
             try:
                 style.theme_use(self._default_ttk_theme)
             except tk.TclError:
                 style.theme_use("default")
+
+            # Re-apply custom styles that survive a theme change
+            style.configure("Sidebar.TFrame", background=c["sidebar_bg"])
+            style.configure("Sidebar.TLabel",
+                            background=c["sidebar_bg"], foreground=c["lb_fg"])
+            style.configure("Gear.TButton", padding=(4, 2))
+
             try:
                 self.configure(background=c["window_bg"])
             except Exception:
                 pass
             self._paned.configure(background=c["paned_bg"])
 
-        # Non-ttk widgets always need direct configuration
+        # ── Non-ttk widgets need direct configuration ─────────────────
         try:
             self._chat_text.configure(
                 bg=c["text_bg"], fg=c["text_fg"],
@@ -147,6 +176,17 @@ class AppearanceMixin:
             )
         except Exception:
             pass
+        # Sidebar frame direct background (covers macOS native theme which
+        # ignores ttk style background on TFrame)
+        try:
+            self._sidebar_frame.configure(background=c["sidebar_bg"])
+        except Exception:
+            pass
+        # Rounded-corner list canvas — repaint with updated theme colours
+        try:
+            self._redraw_list_canvas()
+        except Exception:
+            pass
         if reconfigure_tags:
             self._reconfigure_chat_tags()
 
@@ -154,20 +194,40 @@ class AppearanceMixin:
         """Re-apply chat-bubble colours for the current theme and font size."""
         c    = _THEME_COLORS.get(self._color_mode_var.get(), _THEME_COLORS["light"])
         size = self._font_size()
+        lbl_font  = ("TkDefaultFont", size - 1, "bold")
+        sys_font  = ("TkDefaultFont", size - 1, "italic")
         try:
             self._chat_text.tag_configure(
-                "user_label", foreground=c["user_fg"],
-                font=("TkDefaultFont", size - 1, "bold"))
+                "user_label",
+                foreground=c["user_fg"],
+                font=lbl_font,
+                spacing1=14, spacing3=2,
+            )
             self._chat_text.tag_configure(
-                "user_body", foreground=c["user_fg"])
+                "user_body",
+                foreground=c["user_fg"],
+                lmargin1=12, lmargin2=12,
+                spacing3=10,
+            )
             self._chat_text.tag_configure(
-                "assistant_label", foreground=c["assist_fg"],
-                font=("TkDefaultFont", size - 1, "bold"))
+                "assistant_label",
+                foreground=c["assist_fg"],
+                font=lbl_font,
+                spacing1=14, spacing3=2,
+            )
             self._chat_text.tag_configure(
-                "assistant_body", foreground=c["assist_body"])
+                "assistant_body",
+                foreground=c["assist_body"],
+                lmargin1=12, lmargin2=12,
+                spacing3=10,
+            )
             self._chat_text.tag_configure(
-                "system_body", foreground=c["system_fg"],
-                font=("TkDefaultFont", size - 1, "italic"))
+                "system_body",
+                foreground=c["system_fg"],
+                font=sys_font,
+                lmargin1=12, lmargin2=12,
+                spacing1=4, spacing3=8,
+            )
         except Exception:
             pass
 

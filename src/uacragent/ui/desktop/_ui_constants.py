@@ -586,36 +586,60 @@ _STRINGS: dict[str, dict[str, str]] = {
 # ---------------------------------------------------------------------------
 _THEME_COLORS: dict[str, dict[str, str]] = {
     "light": {
-        "window_bg":  "#f0f0f0",
-        "paned_bg":   "#cccccc",
-        "text_bg":    "#ffffff",
-        "text_fg":    "#000000",
-        "lb_bg":      "#ffffff",
-        "lb_fg":      "#000000",
-        "lb_sel_bg":  "#0078d4",
-        "lb_sel_fg":  "#ffffff",
-        "user_fg":    "#1a56a5",
-        "assist_fg":  "#2e7d32",
-        "assist_body":"#1a1a1a",
-        "system_fg":  "#7b5800",
-        "input_bg":   "#ffffff",
-        "input_fg":   "#000000",
+        # Surfaces
+        "window_bg":      "#f0f3f9",   # soft blue-tinted main surface
+        "sidebar_bg":     "#e8ecf5",   # cooler sidebar panel
+        "paned_bg":       "#c8d0e0",   # thin sash divider
+        "text_bg":        "#ffffff",   # chat area
+        "input_bg":       "#ffffff",   # input box
+        # Text
+        "text_fg":        "#1a2744",   # dark navy body text
+        "input_fg":       "#1a2744",
+        "status_fg":      "#6b7280",   # muted secondary label
+        # Session listbox
+        "lb_bg":          "#e8ecf5",
+        "lb_fg":          "#1a2744",
+        "lb_sel_bg":      "#1b3167",   # logo navy selection
+        "lb_sel_fg":      "#ffffff",
+        # Chat bubbles
+        "user_fg":        "#1b3167",   # logo navy for user messages
+        "assist_fg":      "#b06000",   # warm amber for assistant label
+        "assist_body":    "#2d3748",   # dark slate body text
+        "system_fg":      "#6b7280",   # muted gray system messages
+        # Links inside chat
+        "link_fg":        "#1b3167",
+        "link_folder_fg": "#6b7280",
+        # Primary action button (Send, Apply)
+        "btn_primary_bg": "#f5a623",   # logo gold
+        "btn_primary_fg": "#1a2744",
     },
     "dark": {
-        "window_bg":  "#1e1e1e",
-        "paned_bg":   "#3c3c3c",
-        "text_bg":    "#252526",
-        "text_fg":    "#d4d4d4",
-        "lb_bg":      "#252526",
-        "lb_fg":      "#d4d4d4",
-        "lb_sel_bg":  "#094771",
-        "lb_sel_fg":  "#ffffff",
-        "user_fg":    "#6ab0f5",
-        "assist_fg":  "#4ec9b0",
-        "assist_body":"#d4d4d4",
-        "system_fg":  "#dcdcaa",
-        "input_bg":   "#3c3c3c",
-        "input_fg":   "#d4d4d4",
+        # Surfaces — navy palette from the logo
+        "window_bg":      "#0d1b3e",   # logo deep navy
+        "sidebar_bg":     "#091528",   # darker sidebar
+        "paned_bg":       "#091528",
+        "text_bg":        "#13254e",   # chat area: medium navy
+        "input_bg":       "#0f1f42",   # input slightly darker
+        # Text
+        "text_fg":        "#dde6f5",   # soft-white text
+        "input_fg":       "#dde6f5",
+        "status_fg":      "#7f96bc",   # muted blue-gray
+        # Session listbox
+        "lb_bg":          "#091528",
+        "lb_fg":          "#b8cde8",   # light blue-gray items
+        "lb_sel_bg":      "#2952c4",   # accent blue selection
+        "lb_sel_fg":      "#ffffff",
+        # Chat bubbles
+        "user_fg":        "#81b4f5",   # soft cornflower blue
+        "assist_fg":      "#f5a623",   # logo gold for assistant label
+        "assist_body":    "#c0d4ee",   # light blue-gray body text
+        "system_fg":      "#7f96bc",   # muted blue-gray system messages
+        # Links inside chat
+        "link_fg":        "#81b4f5",
+        "link_folder_fg": "#7f96bc",
+        # Primary action button
+        "btn_primary_bg": "#f5a623",   # same gold
+        "btn_primary_fg": "#1a2744",
     },
 }
 

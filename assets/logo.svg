@@ -1,26 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
 <defs>
-
-  <!-- Background gradient: deep navy → slightly lighter navy -->
   <linearGradient id="gBg" x1="0" y1="0" x2="1" y2="1">
-    <stop offset="0%"   stop-color="#0d1b3e"/>
+    <stop offset="0%" stop-color="#0d1b3e"/>
     <stop offset="100%" stop-color="#1b3167"/>
   </linearGradient>
 
-  <!-- Soft radial spotlight centred behind the cap -->
-  <radialGradient id="gSpot" cx="50%" cy="44%" r="52%">
-    <stop offset="0%"   stop-color="#2952c4" stop-opacity="0.40"/>
-    <stop offset="100%" stop-color="#0d1b3e" stop-opacity="0"/>
-  </radialGradient>
-
-  <!-- Gold gradient: pale gold → amber -->
   <linearGradient id="gGold" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="0%"   stop-color="#ffe57f"/>
+    <stop offset="0%" stop-color="#ffe57f"/>
     <stop offset="100%" stop-color="#f59f00"/>
   </linearGradient>
 
-  <!-- Gentle glow used on the centre button -->
-  <filter id="fGlow" x="-70%" y="-70%" width="240%" height="240%">
+  <filter id="fShadow" x="-20%" y="-20%" width="140%" height="160%">
+    <feDropShadow dx="0" dy="10" stdDeviation="12"
+                  flood-color="#000820" flood-opacity="0.28"/>
+  </filter>
+
+  <filter id="fGlow" x="-80%" y="-80%" width="260%" height="260%">
     <feGaussianBlur stdDeviation="10" result="blur"/>
     <feMerge>
       <feMergeNode in="blur"/>
@@ -28,63 +23,51 @@
     </feMerge>
   </filter>
 
-  <!-- Drop shadow used under the cap shapes -->
-  <filter id="fShadow" x="-10%" y="-10%" width="120%" height="135%">
-    <feDropShadow dx="0" dy="6" stdDeviation="8"
-                  flood-color="#000820" flood-opacity="0.45"/>
-  </filter>
-
-  <!--
-    iconClip: clips the entire composition to a rounded square so the
-    transparent corners are produced inside SVG itself, giving renderers
-    (qlmanage, browsers, etc.) an explicit clip rather than relying on
-    the background rect's rx attribute.
-  -->
   <clipPath id="iconClip">
     <rect width="512" height="512" rx="110" ry="110"/>
   </clipPath>
-
 </defs>
 
-<!-- ═══════ Everything inside the rounded-square clip ══════════════════ -->
 <g clip-path="url(#iconClip)">
-
-  <!-- Background -->
   <rect width="512" height="512" fill="url(#gBg)"/>
-  <rect width="512" height="512" fill="url(#gSpot)"/>
 
-  <!-- ── Mortarboard cap ─────────────────────────────────────────────── -->
+  <!-- Cap base -->
+  <path d="M142 236
+           L256 292
+           L370 236
+           L324 334
+           L256 370
+           L188 334
+           Z"
+        fill="#f6f8fd" filter="url(#fShadow)"/>
 
-  <!--
-    Cap board: flat diamond (top-down mortarboard view).
-    Scaled to ~60 % of canvas width so the icon has natural breathing room.
-    Diamond centre shifted slightly left of canvas centre to balance the
-    tassel that hangs from the right vertex.
-    Vertices: top(246,100), right(400,208), bottom(246,316), left(92,208)
-  -->
-  <polygon points="246,100  400,208  246,316  92,208"
-           fill="white" opacity="0.97" filter="url(#fShadow)"/>
+  <!-- Board -->
+  <polygon points="256,102 414,204 256,306 98,204"
+           fill="#ffffff" opacity="0.985" filter="url(#fShadow)"/>
 
-  <!-- Gold centre button -->
-  <circle cx="246" cy="208" r="22" fill="url(#gGold)" filter="url(#fGlow)"/>
-  <circle cx="246" cy="208" r="10" fill="#fffde7"/>
+  <!-- Underside shadow cast by the top board -->
+  <path d="M154 238
+           L256 288
+           L358 238
+           L256 334
+           Z"
+        fill="#d8dfec" opacity="0.9"/>
 
-  <!-- ── Tassel ──────────────────────────────────────────────────────── -->
+  <!-- Centre button -->
+  <circle cx="256" cy="204" r="22" fill="url(#gGold)" filter="url(#fGlow)"/>
+  <circle cx="256" cy="204" r="9.5" fill="#fff8dc"/>
 
-  <!-- Cord from right vertex, curving down-right -->
-  <path d="M400,208 C418,230 420,306 414,372"
+  <!-- Tassel -->
+  <path d="M414 204
+           C426 220 432 274 430 328
+           C429 356 425 379 420 400"
         stroke="url(#gGold)" stroke-width="7" fill="none" stroke-linecap="round"/>
-
-  <!-- Knot -->
-  <circle cx="414" cy="372" r="12" fill="url(#gGold)"/>
-
-  <!-- Fringe: three strands -->
-  <line x1="401" y1="384" x2="394" y2="422"
+  <circle cx="418" cy="372" r="12.5" fill="url(#gGold)"/>
+  <line x1="405" y1="385" x2="398" y2="423"
         stroke="#ffe57f" stroke-width="5.5" stroke-linecap="round"/>
-  <line x1="414" y1="384" x2="414" y2="426"
+  <line x1="418" y1="385" x2="418" y2="427"
         stroke="#f59f00" stroke-width="5.5" stroke-linecap="round"/>
-  <line x1="427" y1="384" x2="434" y2="422"
+  <line x1="431" y1="385" x2="438" y2="423"
         stroke="#ffe57f" stroke-width="5.5" stroke-linecap="round"/>
-
 </g>
 </svg>
