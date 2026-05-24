@@ -1,0 +1,208 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<defs>
+
+  <!-- ── Gradients ──────────────────────────────────────────────────── -->
+
+  <!-- Background: deep navy → indigo -->
+  <linearGradient id="gBg" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%"   stop-color="#0b1a3d"/>
+    <stop offset="100%" stop-color="#162d5e"/>
+  </linearGradient>
+
+  <!-- Soft radial bloom centred behind the cap board -->
+  <radialGradient id="gBloom" cx="50%" cy="44%" r="48%">
+    <stop offset="0%"   stop-color="#1a5fff" stop-opacity="0.28"/>
+    <stop offset="100%" stop-color="#0b1a3d" stop-opacity="0"/>
+  </radialGradient>
+
+  <!-- White → pale lavender for cap shapes -->
+  <linearGradient id="gCap" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%"   stop-color="#ffffff"/>
+    <stop offset="100%" stop-color="#dde6ff"/>
+  </linearGradient>
+
+  <!-- Pale ice-blue for book pages -->
+  <linearGradient id="gPage" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%"   stop-color="#eef2ff"/>
+    <stop offset="100%" stop-color="#d4dcff"/>
+  </linearGradient>
+
+  <!-- Gold gradient for tassel, button, centre node -->
+  <linearGradient id="gGold" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%"   stop-color="#ffe57f"/>
+    <stop offset="100%" stop-color="#f5a623"/>
+  </linearGradient>
+
+  <!-- Indigo → blue for book spine -->
+  <linearGradient id="gSpine" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0%"   stop-color="#3d5afe"/>
+    <stop offset="100%" stop-color="#536dfe"/>
+  </linearGradient>
+
+  <!-- ── Filters ────────────────────────────────────────────────────── -->
+
+  <!-- Elevation shadow for major shapes -->
+  <filter id="fShadow" x="-20%" y="-20%" width="140%" height="160%">
+    <feDropShadow dx="0" dy="6" stdDeviation="10"
+                  flood-color="#000430" flood-opacity="0.50"/>
+  </filter>
+
+  <!-- Bright halo glow — used on gold and outer cyan nodes -->
+  <filter id="fGlow" x="-80%" y="-80%" width="260%" height="260%">
+    <feGaussianBlur stdDeviation="6" result="blur"/>
+    <feMerge>
+      <feMergeNode in="blur"/>
+      <feMergeNode in="SourceGraphic"/>
+    </feMerge>
+  </filter>
+
+  <!-- Gentle glow — used on inner nodes and AI micro-dots -->
+  <filter id="fSoftGlow" x="-40%" y="-40%" width="180%" height="180%">
+    <feGaussianBlur stdDeviation="3" result="blur"/>
+    <feMerge>
+      <feMergeNode in="blur"/>
+      <feMergeNode in="SourceGraphic"/>
+    </feMerge>
+  </filter>
+
+</defs>
+
+<!-- ═══════════════════════════ BACKGROUND ════════════════════════════ -->
+
+<rect width="512" height="512" rx="88" fill="url(#gBg)"/>
+<!-- Radial bloom sits behind the entire composition -->
+<rect width="512" height="512" rx="88" fill="url(#gBloom)"/>
+
+<!-- ═══════════════════════════ OPEN BOOK ═════════════════════════════ -->
+<!-- Book rests in the lower half; spine is at x=248-264, y=270-424.
+     Each page curves naturally from the spine toward the outer edges.  -->
+
+<!-- Spine glow (drawn first so pages render on top) -->
+<rect x="242" y="265" width="28" height="164" rx="7"
+      fill="#3d5afe" opacity="0.30" filter="url(#fGlow)"/>
+
+<!-- Left page -->
+<path d="M254,278 C196,272 126,286 68,314 L68,422 C126,398 196,390 254,396 Z"
+      fill="url(#gPage)" filter="url(#fShadow)"/>
+
+<!-- Left page — four text lines (slight inward slope matching the page curve) -->
+<line x1="92"  y1="338" x2="236" y2="332" stroke="#7986cb" stroke-width="5" stroke-linecap="round" opacity="0.65"/>
+<line x1="92"  y1="358" x2="236" y2="352" stroke="#7986cb" stroke-width="5" stroke-linecap="round" opacity="0.65"/>
+<line x1="92"  y1="378" x2="236" y2="372" stroke="#7986cb" stroke-width="5" stroke-linecap="round" opacity="0.65"/>
+<line x1="92"  y1="397" x2="190" y2="392" stroke="#7986cb" stroke-width="5" stroke-linecap="round" opacity="0.42"/>
+
+<!-- Left page — AI micro-network (three nodes above first text line) -->
+<circle cx="118" cy="318" r="3"   fill="#40c4ff" opacity="0.60"/>
+<circle cx="142" cy="316" r="4.5" fill="#40c4ff" filter="url(#fSoftGlow)" opacity="0.80"/>
+<circle cx="168" cy="318" r="3"   fill="#40c4ff" opacity="0.60"/>
+<line x1="121" y1="318" x2="138" y2="316" stroke="#82b1ff" stroke-width="1.5" opacity="0.50"/>
+<line x1="146" y1="316" x2="165" y2="318" stroke="#82b1ff" stroke-width="1.5" opacity="0.50"/>
+
+<!-- Right page (mirror of left) -->
+<path d="M258,278 C316,272 386,286 444,314 L444,422 C386,398 316,390 258,396 Z"
+      fill="url(#gPage)" filter="url(#fShadow)"/>
+
+<!-- Right page — four text lines -->
+<line x1="276" y1="332" x2="420" y2="338" stroke="#7986cb" stroke-width="5" stroke-linecap="round" opacity="0.65"/>
+<line x1="276" y1="352" x2="420" y2="358" stroke="#7986cb" stroke-width="5" stroke-linecap="round" opacity="0.65"/>
+<line x1="276" y1="372" x2="420" y2="378" stroke="#7986cb" stroke-width="5" stroke-linecap="round" opacity="0.65"/>
+<line x1="322" y1="392" x2="420" y2="397" stroke="#7986cb" stroke-width="5" stroke-linecap="round" opacity="0.42"/>
+
+<!-- Right page — AI micro-network -->
+<circle cx="344" cy="318" r="3"   fill="#40c4ff" opacity="0.60"/>
+<circle cx="368" cy="316" r="4.5" fill="#40c4ff" filter="url(#fSoftGlow)" opacity="0.80"/>
+<circle cx="394" cy="318" r="3"   fill="#40c4ff" opacity="0.60"/>
+<line x1="347" y1="318" x2="364" y2="316" stroke="#82b1ff" stroke-width="1.5" opacity="0.50"/>
+<line x1="372" y1="316" x2="391" y2="318" stroke="#82b1ff" stroke-width="1.5" opacity="0.50"/>
+
+<!-- Spine (rendered on top of both pages) -->
+<rect x="248" y="270" width="16" height="154" rx="4" fill="url(#gSpine)"/>
+
+<!-- Thin divider rule between cap assembly and book -->
+<line x1="68" y1="267" x2="444" y2="267" stroke="#3d5afe" stroke-width="1.5" opacity="0.22"/>
+
+<!-- ═══════════════════════════ CAP BOARD ═════════════════════════════ -->
+<!-- Wide flat board — the iconic mortarboard shelf.
+     Neural-network chain spans its full width with a gold hub at centre.  -->
+
+<!-- Board ambient halo -->
+<rect x="56" y="83" width="400" height="54" rx="11"
+      fill="#3d5afe" opacity="0.12"/>
+
+<!-- Board body -->
+<rect x="63" y="89" width="386" height="44" rx="8"
+      fill="url(#gCap)" filter="url(#fShadow)"/>
+
+<!-- Neural chain — lines drawn first so nodes sit on top -->
+<line x1="122" y1="111" x2="182" y2="111" stroke="#00b0ff" stroke-width="3"   opacity="0.55"/>
+<line x1="196" y1="111" x2="247" y2="111" stroke="#00b0ff" stroke-width="3"   opacity="0.55"/>
+<line x1="265" y1="111" x2="316" y2="111" stroke="#00b0ff" stroke-width="3"   opacity="0.55"/>
+<line x1="330" y1="111" x2="390" y2="111" stroke="#00b0ff" stroke-width="3"   opacity="0.55"/>
+
+<!-- Nodes on board -->
+<circle cx="114" cy="111" r="8"  fill="#40c4ff"      filter="url(#fSoftGlow)"/>
+<circle cx="188" cy="111" r="7"  fill="#29b6f6"/>
+<circle cx="256" cy="111" r="13" fill="url(#gGold)"  filter="url(#fGlow)"/>    <!-- gold hub -->
+<circle cx="324" cy="111" r="7"  fill="#29b6f6"/>
+<circle cx="398" cy="111" r="8"  fill="#40c4ff"      filter="url(#fSoftGlow)"/>
+
+<!-- ═══════════════════════════ CAP CROWN ═════════════════════════════ -->
+<!-- Cylindrical crown — narrower than the board, sits directly below it.
+     Contains a five-node neural cluster mirroring the AI motif.          -->
+
+<!-- Crown ambient halo -->
+<rect x="160" y="130" width="192" height="138" rx="19"
+      fill="#3d5afe" opacity="0.09"/>
+
+<!-- Crown body -->
+<rect x="166" y="133" width="180" height="132" rx="16"
+      fill="url(#gCap)" filter="url(#fShadow)"/>
+
+<!-- Crown neural — lines first -->
+<line x1="218" y1="163" x2="294" y2="163" stroke="#7986cb" stroke-width="2" opacity="0.42"/>
+<line x1="218" y1="163" x2="256" y2="191" stroke="#7986cb" stroke-width="2" opacity="0.42"/>
+<line x1="294" y1="163" x2="256" y2="191" stroke="#7986cb" stroke-width="2" opacity="0.42"/>
+<line x1="256" y1="191" x2="218" y2="219" stroke="#7986cb" stroke-width="2" opacity="0.42"/>
+<line x1="256" y1="191" x2="294" y2="219" stroke="#7986cb" stroke-width="2" opacity="0.42"/>
+<line x1="218" y1="219" x2="294" y2="219" stroke="#7986cb" stroke-width="2" opacity="0.42"/>
+
+<!-- Crown neural nodes — diamond + centre arrangement -->
+<circle cx="218" cy="163" r="7"  fill="#5c6bc0" opacity="0.82"/>
+<circle cx="294" cy="163" r="7"  fill="#5c6bc0" opacity="0.82"/>
+<circle cx="256" cy="191" r="10" fill="#3f51b5" opacity="0.92" filter="url(#fSoftGlow)"/>
+<circle cx="218" cy="219" r="7"  fill="#5c6bc0" opacity="0.82"/>
+<circle cx="294" cy="219" r="7"  fill="#5c6bc0" opacity="0.82"/>
+
+<!-- ═══════════════════════════ BUTTON & TASSEL ═══════════════════════ -->
+
+<!-- Button — centre-top of board (where cord attaches) -->
+<circle cx="256" cy="89" r="13" fill="url(#gGold)"  filter="url(#fSoftGlow)"/>
+<circle cx="256" cy="89" r="6"  fill="#fffde7"/>
+
+<!-- Tassel cord — left side, "moved" position (post-graduation).
+     Starts at the left corner of the board, sweeps leftward and down.   -->
+<path d="M63,111 Q42,152 46,262 Q47,322 52,368"
+      stroke="url(#gGold)" stroke-width="5" fill="none"
+      stroke-linecap="round"/>
+
+<!-- Tassel knot -->
+<circle cx="52" cy="368" r="9" fill="url(#gGold)" filter="url(#fSoftGlow)"/>
+
+<!-- Tassel fringe (five strands) -->
+<line x1="41" y1="377" x2="36"  y2="415" stroke="#ffe57f" stroke-width="3.5" stroke-linecap="round"/>
+<line x1="46" y1="377" x2="43"  y2="418" stroke="#f5a623" stroke-width="3.5" stroke-linecap="round"/>
+<line x1="52" y1="377" x2="52"  y2="420" stroke="#ffe57f" stroke-width="3.5" stroke-linecap="round"/>
+<line x1="58" y1="377" x2="61"  y2="417" stroke="#f5a623" stroke-width="3.5" stroke-linecap="round"/>
+<line x1="63" y1="377" x2="68"  y2="413" stroke="#ffe57f" stroke-width="3.5" stroke-linecap="round"/>
+
+<!-- ═══════════════════════════ ACCENT DETAILS ════════════════════════ -->
+
+<!-- Four-point sparkle — upper-right, near crown corner -->
+<path d="M424,107 L427,99 L430,107 L438,110 L430,113 L427,121 L424,113 L416,110 Z"
+      fill="#ffe57f" opacity="0.38"/>
+
+<!-- Subtle highlight arc on the board (top inner edge) -->
+<path d="M80,97 Q256,90 432,97"
+      stroke="white" stroke-width="1.5" fill="none" opacity="0.18"/>
+
+</svg>

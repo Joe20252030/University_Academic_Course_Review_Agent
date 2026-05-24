@@ -97,6 +97,11 @@ class SettingsMixin:
         self._openai_key_var.set(os.environ.get("OPENAI_API_KEY", "").strip())
         self._deepseek_key_var.set(os.environ.get("DEEPSEEK_API_KEY", "").strip())
 
+        # Rate tier — ground truth is RATE_TIER env var (written by _inject_api_keys).
+        from uacragent.domain.rate_tiers import get_rate_tier
+        _committed_tier = get_rate_tier(os.environ.get("RATE_TIER", "free"))
+        self._rate_tier_disp_var.set(_committed_tier.display_name)
+
         # Session fields — ground truth is self._session
         # _sync_vars_from_session() is safe to call before the dialog is built:
         # the file-listbox and _extra_text updates inside it are guarded by
@@ -243,6 +248,54 @@ class SettingsMixin:
             mf, textvariable=self._llm_model_var, width=22)
         self._model_cb.grid(row=1, column=1, sticky="w", pady=(6, 0))
         self._update_model_list()   # populate for current provider
+
+        # ── Request Frequency ─────────────────────────────────────────
+        rf = ttk.LabelFrame(
+            inner, text=self._t("settings_rate_section"), padding=_PAD)
+        rf.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
+        rf.columnconfigure(1, weight=1)
+        row += 1
+
+        ttk.Label(rf, text=self._t("settings_rate_tier_label")).grid(
+            row=0, column=0, sticky="w", padx=(0, 8))
+
+        from uacragent.domain.rate_tiers import (
+            RATE_TIER_BY_DISPLAY, display_names, get_rate_tier)
+        _rate_cb = ttk.Combobox(
+            rf, textvariable=self._rate_tier_disp_var,
+            values=display_names(),
+            state="readonly", width=14)
+        _rate_cb.grid(row=0, column=1, sticky="w")
+
+        # Dynamic hint label — updated immediately when the combobox changes.
+        self._rate_hint_var = tk.StringVar()
+        _rate_hint_lbl = ttk.Label(
+            rf, textvariable=self._rate_hint_var,
+            foreground="gray",
+            font=("TkDefaultFont", max(self._font_size() - 1, 10)),
+            wraplength=460,
+        )
+        _rate_hint_lbl.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
+
+        def _update_rate_hint(*_: object) -> None:
+            disp = self._rate_tier_disp_var.get()
+            tier_id = RATE_TIER_BY_DISPLAY.get(disp, "free")
+            tier    = get_rate_tier(tier_id)
+            self._rate_hint_var.set(self._t(tier.hint_i18n_key))
+            # Refresh the suggestion label whenever the tier selection changes.
+            self._update_rate_suggestion()
+
+        _rate_cb.bind("<<ComboboxSelected>>", _update_rate_hint)
+        _update_rate_hint()   # populate immediately for the current selection
+
+        # Suggestion label — blue info tone; only visible when current ≠ suggested.
+        self._rate_suggestion_var = tk.StringVar()
+        ttk.Label(
+            rf, textvariable=self._rate_suggestion_var,
+            foreground="#1565c0",
+            font=("TkDefaultFont", max(self._font_size() - 1, 10)),
+            wraplength=460,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(2, 0))
 
         # ── API Key (single row, changes with provider) ───────────────
         akf = ttk.LabelFrame(inner, text=self._t("settings_api_key_section"), padding=_PAD)
@@ -845,9 +898,45 @@ class SettingsMixin:
             icon=messagebox.QUESTION,
         )
 
+    def _update_rate_suggestion(self) -> None:
+        """Refresh the rate-tier suggestion label for the current provider.
+
+        Compares the user's current tier selection against the provider's
+        recommended default (stored in ``ProviderConfig.default_rate_tier``).
+        Shows a blue suggestion line when they differ, a green confirmation
+        when they match, and does nothing when the dialog is closed.
+        """
+        if not hasattr(self, "_rate_suggestion_var"):
+            return  # dialog not yet built — nothing to update
+
+        from uacragent.domain.providers import get_provider
+        from uacragent.domain.rate_tiers import RATE_TIER_BY_DISPLAY, get_rate_tier
+
+        provider_id  = self._llm_provider_var.get() or "gemini"
+        provider_cfg = get_provider(provider_id)
+        suggested_id = provider_cfg.default_rate_tier
+        suggested    = get_rate_tier(suggested_id)
+
+        current_disp = self._rate_tier_disp_var.get()
+        current_id   = RATE_TIER_BY_DISPLAY.get(current_disp, "free")
+
+        if current_id == suggested_id:
+            text = self._t("rate_suggest_match").format(
+                provider=provider_cfg.display_name)
+        else:
+            text = self._t("rate_suggest_mismatch").format(
+                provider=provider_cfg.display_name,
+                tier=suggested.display_name,
+            )
+        try:
+            self._rate_suggestion_var.set(text)
+        except Exception:  # noqa: BLE001
+            pass  # StringVar destroyed between check and set — harmless
+
     def _on_provider_changed(self, _event: object = None) -> None:
         self._update_model_list()
         self._update_api_key_row()
+        self._update_rate_suggestion()
 
     def _toggle_key_entry(self, entry: ttk.Entry, btn: ttk.Button | None = None) -> None:
         if entry.cget("show") == "*":
@@ -1038,6 +1127,18 @@ class SettingsMixin:
         if emb_provider == "local":
             local_model = self._local_model_var.get() or "all-MiniLM-L6-v2"
             os.environ["LOCAL_EMBEDDING_MODEL"] = local_model
+
+        # Propagate rate tier → env so Settings() picks it up on next build.
+        # The model_validator in Settings translates the tier id into the three
+        # concrete pipeline parameters (request_delay / max_retries / base_delay)
+        # automatically, so we only need to persist the tier id here.
+        from uacragent.domain.rate_tiers import RATE_TIER_BY_DISPLAY
+        disp     = self._rate_tier_disp_var.get()
+        tier_id  = RATE_TIER_BY_DISPLAY.get(disp, "free")
+        os.environ["RATE_TIER"] = tier_id
+        # Force the agent to be reconstructed so the new rate parameters take
+        # effect immediately on the next chat or generation request.
+        self._agent = None
 
         # Check that the active LLM provider has its key
         env_var = env_var_for(provider)

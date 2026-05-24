@@ -37,6 +37,12 @@ class ProviderConfig:
     models: tuple[str, ...]
     base_url: str | None = None
     label_i18n_key: str = ""
+    # Recommended rate tier for a typical user of this provider.
+    # Used to show a "suggested tier" hint in the Settings dialog when the
+    # user's current selection differs from the provider's sensible default.
+    # Gemini Free is 15 RPM → "free".  OpenAI and DeepSeek require a paid
+    # account to obtain an API key → "standard" is the realistic floor.
+    default_rate_tier: str = "free"
 
 
 # ---------------------------------------------------------------------------
@@ -57,6 +63,9 @@ PROVIDERS: dict[str, ProviderConfig] = {
             "gemini-1.5-flash",
         ),
         label_i18n_key="api_key_google",
+        # Gemini Free tier is 15 RPM (gemini-2.5-flash) / 5 RPM (gemini-2.5-pro).
+        # Most users start on the free tier, so "free" is the safest default.
+        default_rate_tier="free",
     ),
     "openai": ProviderConfig(
         id="openai",
@@ -70,6 +79,8 @@ PROVIDERS: dict[str, ProviderConfig] = {
             "gpt-3.5-turbo",
         ),
         label_i18n_key="api_key_openai",
+        # OpenAI requires a funded account; Tier 1 baseline is ~60-100 RPM.
+        default_rate_tier="standard",
     ),
     "deepseek": ProviderConfig(
         id="deepseek",
@@ -82,6 +93,8 @@ PROVIDERS: dict[str, ProviderConfig] = {
         ),
         base_url="https://api.deepseek.com",
         label_i18n_key="api_key_deepseek",
+        # DeepSeek standard plan is 60 RPM → "standard" is appropriate.
+        default_rate_tier="standard",
     ),
 }
 

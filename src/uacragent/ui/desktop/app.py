@@ -83,6 +83,21 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
         self.title(_WINDOW_TITLE)
         self.minsize(_MIN_WIDTH, _MIN_HEIGHT)
 
+        # ── App icon ─────────────────────────────────────────────────────────
+        # Look for the icon relative to this file so it works whether the app
+        # is run from source or installed as a package.
+        _assets = Path(__file__).parent.parent.parent.parent.parent / "assets"
+        try:
+            from PIL.ImageTk import PhotoImage as _PILPhotoImage
+            _icon_path = _assets / "logo_256.png"
+            if _icon_path.exists():
+                _icon_img = _PILPhotoImage(file=str(_icon_path))
+                self.iconphoto(True, _icon_img)
+                # Keep a reference so it isn't garbage-collected
+                self._app_icon = _icon_img
+        except Exception:  # noqa: BLE001
+            pass  # icon is cosmetic — never crash on failure
+
         # Centre the main window on the primary display before showing it.
         # withdraw() hides it so the user never sees it in the wrong position.
         self.withdraw()
@@ -208,6 +223,14 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
             self._font_size_var = tk.StringVar(value="medium")
         if not hasattr(self, "_language_var"):
             self._language_var = tk.StringVar(value="en")
+        # Rate-tier var: global, survives session switches.
+        # Initialise from RATE_TIER env var so a .env override is honoured on
+        # startup; fall back to "Free" (the safe default) when absent.
+        if not hasattr(self, "_rate_tier_disp_var"):
+            from uacragent.domain.rate_tiers import RATE_TIERS, get_rate_tier
+            _tier_id = os.environ.get("RATE_TIER", "free")
+            _tier_cfg = get_rate_tier(_tier_id)
+            self._rate_tier_disp_var = tk.StringVar(value=_tier_cfg.display_name)
         # i18n widget registry: list of (widget, config_attr, string_key)
         if not hasattr(self, "_i18n_widgets"):
             self._i18n_widgets: list[tuple] = []

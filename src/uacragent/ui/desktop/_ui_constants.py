@@ -159,6 +159,28 @@ _STRINGS: dict[str, dict[str, str]] = {
             "folder.  Subsequent uses are instant with no internet required."
         ),
         "settings_applying":       "Applying settings and re-indexing…",
+        # Rate-frequency tier section
+        "settings_rate_section":   "Request Frequency",
+        "settings_rate_tier_label": "API plan tier:",
+        "rate_hint_free": (
+            "6 s delay · 3 retries  —  for free-tier plans (e.g. Gemini Free, 15 RPM). "
+            "Safe for the slowest APIs; generation takes longer."
+        ),
+        "rate_hint_standard": (
+            "1.5 s delay · 2 retries  —  for entry-level paid plans "
+            "(e.g. DeepSeek standard, OpenAI Tier 1, ~60–100 RPM)."
+        ),
+        "rate_hint_pro": (
+            "0.3 s delay · 2 retries  —  for professional paid plans "
+            "(e.g. OpenAI Tier 2–3, Gemini Pay-as-you-go, ~500–2 000 RPM)."
+        ),
+        "rate_hint_unlimited": (
+            "No delay · 1 retry  —  for high-capacity or enterprise plans "
+            "(e.g. OpenAI Tier 4–5, Gemini Enterprise, 10 000+ RPM)."
+        ),
+        # Rate-tier suggestion labels (shown when current ≠ provider's default)
+        "rate_suggest_mismatch": "💡 Suggested for {provider}: {tier}",
+        "rate_suggest_match":    "✓  Matches the suggested tier for {provider}",
         # API key labels / hints
         "api_key_google":   "Google API Key:",
         "api_key_openai":   "OpenAI API Key:",
@@ -398,6 +420,28 @@ _STRINGS: dict[str, dict[str, str]] = {
             "后续使用无需联网，速度即时。"
         ),
         "settings_applying":       "正在应用设置并重新索引…",
+        # Rate-frequency tier section
+        "settings_rate_section":   "请求频率",
+        "settings_rate_tier_label": "API 计划等级:",
+        "rate_hint_free": (
+            "6 秒延迟 · 重试 3 次  —  适用于免费计划（如 Gemini 免费版，15 RPM）。"
+            "对最慢的 API 安全可靠，但生成时间较长。"
+        ),
+        "rate_hint_standard": (
+            "1.5 秒延迟 · 重试 2 次  —  适用于入门付费计划"
+            "（如 DeepSeek 标准版、OpenAI Tier 1，约 60–100 RPM）。"
+        ),
+        "rate_hint_pro": (
+            "0.3 秒延迟 · 重试 2 次  —  适用于专业付费计划"
+            "（如 OpenAI Tier 2–3、Gemini 按量计费，约 500–2 000 RPM）。"
+        ),
+        "rate_hint_unlimited": (
+            "无延迟 · 重试 1 次  —  适用于高容量或企业计划"
+            "（如 OpenAI Tier 4–5、Gemini Enterprise，10 000+ RPM）。"
+        ),
+        # Rate-tier suggestion labels
+        "rate_suggest_mismatch": "💡 {provider} 建议等级：{tier}",
+        "rate_suggest_match":    "✓  当前等级与 {provider} 的建议匹配",
         # API key labels / hints
         "api_key_google":   "Google API 密钥:",
         "api_key_openai":   "OpenAI API 密钥:",
