@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import shutil
 from pathlib import Path
 from typing import Any
@@ -11,11 +12,12 @@ try:
 except ImportError:
     from langchain_community.vectorstores import Chroma
 
+from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.vectorstores import VectorStore
 
-from uacragent.domain.types import DocumentType
+from uacragent.domain.types import DocumentType, TaskType
 from uacragent.infra.settings import Settings
 from uacragent.infra.workspace import WorkspacePaths
 
@@ -236,6 +238,128 @@ def get_or_create_vectorstore(
 
 def build_retriever(vectorstore: VectorStore, settings: Settings) -> BaseRetriever:
     return vectorstore.as_retriever(search_kwargs={"k": settings.retriever_k})
+
+
+# ---------------------------------------------------------------------------
+# Weighted retriever
+# ---------------------------------------------------------------------------
+
+class WeightedDocTypeRetriever(BaseRetriever):
+    """Retriever that proportionally allocates *k* slots to each doc type.
+
+    For each document type present in the session, the number of chunks
+    fetched is proportional to that type's weight in the priority matrix.
+    Per-type similarity searches are merged and deduplicated so the final
+    result contains at most *k* unique chunks.
+
+    Falls back gracefully: if the vector store does not support metadata
+    filtering (e.g. an in-memory store in tests), each per-type search
+    silently returns an empty list and the caller receives fewer than *k*
+    chunks rather than raising an error.
+
+    Attributes
+    ----------
+    vectorstore:
+        The underlying Chroma (or compatible) vector store.
+    k:
+        Total number of chunks to return.
+    weights:
+        ``{doc_type_value: relative_weight}`` for the types that are
+        actually present in the session.  Only types listed here are
+        queried.  Types with weight ``0.0`` are skipped.
+    """
+
+    # Pydantic field declarations (compatible with both v1 and v2 base classes
+    # used by different LangChain versions).
+    vectorstore: Any  # VectorStore — declared as Any to avoid Pydantic issues
+    k: int = 8
+    weights: dict = {}  # {doc_type_value: float}
+
+    class Config:
+        arbitrary_types_allowed = True
+
+    def _get_relevant_documents(
+        self,
+        query: str,
+        *,
+        run_manager: CallbackManagerForRetrieverRun,
+    ) -> list[Document]:
+        active = {dt: w for dt, w in self.weights.items() if w > 0.0}
+        if not active:
+            # No weighted doc types — fall back to unfiltered search
+            return self.vectorstore.similarity_search(query, k=self.k)
+
+        total_weight = sum(active.values())
+
+        # Allocate slots proportionally; ensure each active type gets ≥ 1 slot
+        allocations: dict[str, int] = {
+            dt_val: max(1, math.ceil(self.k * w / total_weight))
+            for dt_val, w in active.items()
+        }
+
+        seen_hashes: set[str] = set()
+        results: list[Document] = []
+
+        for dt_val, k_i in allocations.items():
+            try:
+                docs = self.vectorstore.similarity_search(
+                    query,
+                    k=k_i,
+                    filter={"doc_type": dt_val},
+                )
+            except Exception:  # noqa: BLE001
+                # Filtering not supported or no matching docs — skip silently
+                docs = []
+
+            for doc in docs:
+                # Deduplicate by content hash so overlapping results from
+                # different per-type searches don't inflate the context
+                h = hashlib.sha256(doc.page_content.encode("utf-8")).hexdigest()
+                if h not in seen_hashes:
+                    seen_hashes.add(h)
+                    results.append(doc)
+
+        return results[: self.k]
+
+
+def build_weighted_retriever(
+    vectorstore: VectorStore,
+    k: int,
+    task_type: TaskType,
+    classified_files: dict[DocumentType, list[str]],
+) -> BaseRetriever:
+    """Return a task-type-aware retriever that weights chunks by doc type.
+
+    When only one doc type is present (or *classified_files* is empty) the
+    function falls back to a plain ``similarity_search``-based retriever so
+    the caller always receives a valid ``BaseRetriever``.
+
+    Parameters
+    ----------
+    vectorstore:
+        The session's Chroma vector store.
+    k:
+        Total number of chunks to retrieve per query.
+    task_type:
+        Determines the weight matrix to use.
+    classified_files:
+        Maps each :class:`~uacragent.domain.types.DocumentType` to the list
+        of file paths present in the session.  Types with an empty list are
+        excluded from the weight allocation.
+    """
+    from uacragent.domain.doc_priorities import get_present_weights
+
+    present_weights = get_present_weights(task_type, classified_files)
+
+    # With only one active doc type weighting adds no value — plain retriever
+    if len(present_weights) <= 1:
+        return vectorstore.as_retriever(search_kwargs={"k": k})
+
+    return WeightedDocTypeRetriever(
+        vectorstore=vectorstore,
+        k=k,
+        weights=present_weights,
+    )
 
 
 def reset_manifest(workspace_paths: WorkspacePaths) -> None:

@@ -21,7 +21,8 @@ from uacragent.infra.llm import LLMClient
 from uacragent.infra.loaders import DocumentLoader
 from uacragent.infra.settings import Settings
 from uacragent.infra.vectorstore import (
-    build_retriever, get_or_create_vectorstore, reset_manifest,
+    build_retriever, build_weighted_retriever,
+    get_or_create_vectorstore, reset_manifest,
 )
 from uacragent.infra.workspace import ensure_workspace_dirs, workspace_paths, WorkspacePaths
 
@@ -509,9 +510,17 @@ class AgentPipeline:
         vectorstore = get_or_create_vectorstore(chunks, self.settings, ws,
                                                 classified_files=classified_files)
 
-        # Build a retriever whose k is scaled to the chosen effort level.
+        # Build a task-type-aware retriever whose k is scaled to effort level.
+        # WeightedDocTypeRetriever allocates more k slots to higher-priority
+        # doc types (e.g. past_exam gets 3× weight for exam_prediction tasks).
         effort = get_effort_config(effort_level)
-        retriever = vectorstore.as_retriever(search_kwargs={"k": effort.retriever_k})
+        tt = TaskType(task_type)
+        retriever = build_weighted_retriever(
+            vectorstore,
+            k=effort.retriever_k,
+            task_type=tt,
+            classified_files=classified_files,
+        )
 
         # Re-use the already-loaded chunks for plan generation instead of
         # reloading every file from disk a second time.  build_outline()
