@@ -86,15 +86,50 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
         # ── App icon ─────────────────────────────────────────────────────────
         # Look for the icon relative to this file so it works whether the app
         # is run from source or installed as a package.
+        import sys as _sys
         _assets = Path(__file__).parent.parent.parent.parent.parent / "assets"
         try:
             from PIL.ImageTk import PhotoImage as _PILPhotoImage
-            _icon_path = _assets / "logo_256.png"
+
+            if _sys.platform == "darwin":
+                # macOS does NOT apply its squircle mask to programmatically-
+                # set icons — only to proper .app bundle ICNS resources.
+                # We therefore use the pre-rounded 512 px PNG (transparent
+                # corners baked in) so the Dock shows a correctly shaped icon.
+                # 512 px ensures macOS scales *down* to Dock size rather than
+                # upscaling a small image, which previously caused it to look
+                # slightly oversized.
+                _icon_path = _assets / "logo_512.png"
+                if not _icon_path.exists():
+                    _icon_path = _assets / "logo_256.png"
+            else:
+                # Other platforms: 64 px pre-rounded image for the title bar.
+                _icon_path = _assets / "logo_64.png"
+                if not _icon_path.exists():
+                    _icon_path = _assets / "logo_256.png"
+
             if _icon_path.exists():
                 _icon_img = _PILPhotoImage(file=str(_icon_path))
                 self.iconphoto(True, _icon_img)
-                # Keep a reference so it isn't garbage-collected
-                self._app_icon = _icon_img
+                self._app_icon = _icon_img  # keep ref — prevents GC
+
+            # macOS: also set the Dock icon via AppKit when pyobjc is
+            # available — this is the most reliable path on macOS.
+            if _sys.platform == "darwin":
+                try:
+                    from AppKit import NSApplication, NSImage  # type: ignore
+                    _dock_path = _assets / "logo_512.png"
+                    if not _dock_path.exists():
+                        _dock_path = _assets / "logo_256.png"
+                    if _dock_path.exists():
+                        _ns_img = NSImage.alloc().initByReferencingFile_(
+                            str(_dock_path)
+                        )
+                        NSApplication.sharedApplication().setApplicationIconImage_(
+                            _ns_img
+                        )
+                except Exception:  # noqa: BLE001
+                    pass  # pyobjc not installed — iconphoto path used instead
         except Exception:  # noqa: BLE001
             pass  # icon is cosmetic — never crash on failure
 
