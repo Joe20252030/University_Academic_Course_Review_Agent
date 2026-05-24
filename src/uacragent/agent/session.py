@@ -1,13 +1,107 @@
 """AgentSession — all mutable state for one conversation session."""
 from __future__ import annotations
 
+import logging
+import threading
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from langchain_core.messages import BaseMessage
 from langchain_core.retrievers import BaseRetriever
 
+logger = logging.getLogger(__name__)
+
 from uacragent.domain.types import DocumentType
+
+
+# ---------------------------------------------------------------------------
+# Thread-safe chat-history store
+# ---------------------------------------------------------------------------
+
+class _HistoryStore:
+    """Thread-safe wrapper around a list of LangChain messages.
+
+    Plain list mutations (two sequential ``.append()`` calls for one turn,
+    then ``history = history[:-2]`` for cancel) are individually atomic in
+    CPython but the *sequence* is not — a cancel arriving between the two
+    appends would leave a dangling human message with no AI reply.
+
+    ``_HistoryStore`` exposes atomic operations for the two multi-step cases:
+
+    * ``append_turn(human, ai)``   — inserts both messages under one lock.
+    * ``pop_last_turn()``          — removes the last pair under one lock.
+
+    All other access (``len``, ``__iter__``, ``__getitem__``) is also guarded.
+    ``snapshot()`` returns a shallow copy that is safe to iterate outside the
+    lock (the typical use-case: building the message list for an LLM call).
+    """
+
+    __slots__ = ("_lock", "_messages")
+
+    def __init__(self, messages: list[BaseMessage] | None = None) -> None:
+        self._lock: threading.Lock = threading.Lock()
+        self._messages: list[BaseMessage] = list(messages) if messages else []
+
+    # ── Atomic multi-step operations ──────────────────────────────────────
+
+    def append_turn(self, human: BaseMessage, ai: BaseMessage) -> None:
+        """Atomically append one human message followed by one AI message."""
+        with self._lock:
+            self._messages.append(human)
+            self._messages.append(ai)
+
+    def pop_last_turn(self) -> bool:
+        """Atomically remove the last (human, AI) pair.
+
+        Returns ``True`` when a pair was removed, ``False`` when fewer than
+        two messages were present (no-op).
+        """
+        with self._lock:
+            if len(self._messages) >= 2:
+                del self._messages[-2:]
+                return True
+            return False
+
+    def trim(self, max_turns: int = 20) -> None:
+        """Truncate the history to at most *max_turns* turns under the lock."""
+        max_msgs = max_turns * 2  # one turn = 1 human + 1 AI message
+        with self._lock:
+            if len(self._messages) > max_msgs:
+                self._messages = self._messages[-max_msgs:]
+
+    # ── Safe read operations ──────────────────────────────────────────────
+
+    def snapshot(self) -> list[BaseMessage]:
+        """Return a shallow copy that is safe to iterate without holding the lock."""
+        with self._lock:
+            return list(self._messages)
+
+    def clear(self) -> None:
+        """Remove all messages."""
+        with self._lock:
+            self._messages.clear()
+
+    # ── Protocol / dunder helpers ─────────────────────────────────────────
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._messages)
+
+    def __bool__(self) -> bool:
+        with self._lock:
+            return bool(self._messages)
+
+    def __iter__(self):
+        """Iterate over a point-in-time snapshot — safe outside the lock."""
+        return iter(self.snapshot())
+
+    def __getitem__(self, key):
+        with self._lock:
+            return self._messages[key]
+
+    def __repr__(self) -> str:  # pragma: no cover
+        with self._lock:
+            return f"_HistoryStore({self._messages!r})"
 
 
 @dataclass
@@ -49,10 +143,20 @@ class AgentSession:
 
     # ── Runtime (not serialised) ───────────────────────────────────────────
     retriever: BaseRetriever | None = field(default=None, repr=False)
-    chat_history: list[BaseMessage] = field(default_factory=list)
+    # Accepts a list[BaseMessage] for backward-compatibility (e.g. dict_to_session
+    # passes the plain list returned by _deserialise_history).  __post_init__
+    # wraps it in _HistoryStore so all callers always see the thread-safe API.
+    chat_history: _HistoryStore = field(default_factory=_HistoryStore)
 
     # Cache for read_exam_info() — invalidated when exam_info_path changes.
     _exam_info_cache: tuple[str, str] | None = field(default=None, repr=False)
+
+    # ── Initialisation ────────────────────────────────────────────────────
+
+    def __post_init__(self) -> None:
+        # Wrap a plain list passed at construction time (e.g. from dict_to_session).
+        if isinstance(self.chat_history, list):
+            self.chat_history = _HistoryStore(self.chat_history)
 
     # ── Helpers ───────────────────────────────────────────────────────────
 
@@ -88,7 +192,8 @@ class AgentSession:
                 content = docx2txt.process(path).strip()
             else:
                 content = p.read_text(encoding="utf-8", errors="replace").strip()
-        except Exception:
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not read exam info sheet %r: %s", path, exc)
             content = ""
         self._exam_info_cache = (path, content)
         return content
@@ -112,6 +217,4 @@ class AgentSession:
 
     def trim_history(self, max_turns: int = 20) -> None:
         """Keep the chat history from growing without bound."""
-        max_msgs = max_turns * 2          # each turn = 1 human + 1 AI message
-        if len(self.chat_history) > max_msgs:
-            self.chat_history = self.chat_history[-max_msgs:]
+        self.chat_history.trim(max_turns)

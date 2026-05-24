@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import Any
 
 from uacragent.domain.errors import LLMError
+from uacragent.domain.providers import PROVIDERS, get_provider
 from uacragent.infra.auth import require_api_key
 from uacragent.infra.settings import Settings
 
@@ -15,45 +16,74 @@ _RETRYABLE_MARKERS = (
     "quota", "overloaded", "rate limit",
 )
 
-_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
-
 
 def _build_chat_model(settings: Settings) -> Any:
-    """Instantiate the appropriate LangChain chat model for the configured provider."""
-    provider = (settings.llm_provider or "gemini").lower()
+    """Instantiate the appropriate LangChain chat model for the configured provider.
+
+    Dispatches via the provider registry so adding a new provider only requires
+    a new ``ProviderConfig`` entry in ``domain/providers.py`` *and* a new branch
+    in the ``_LANGCHAIN_FACTORIES`` dict below (both in a single file).
+    """
+    provider_id = (settings.llm_provider or "gemini").lower()
     model = settings.llm_model
 
-    if provider == "gemini":
-        require_api_key(settings, "gemini")
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(
-            model=model,
-            google_api_key=settings.google_api_key,  # type: ignore[arg-type]
-            temperature=0,
+    factory = _LANGCHAIN_FACTORIES.get(provider_id)
+    if factory is None:
+        known = ", ".join(PROVIDERS)
+        raise LLMError(
+            f"Unknown LLM provider: '{provider_id}'. "
+            f"Registered providers: {known}."
         )
 
-    if provider == "openai":
-        require_api_key(settings, "openai")
-        from langchain_openai import ChatOpenAI
-        return ChatOpenAI(
-            model=model,
-            api_key=settings.openai_api_key,  # type: ignore[arg-type]
-            temperature=0,
-        )
+    require_api_key(settings, provider_id)
+    return factory(settings, model)
 
-    if provider == "deepseek":
-        require_api_key(settings, "deepseek")
-        from langchain_openai import ChatOpenAI
-        return ChatOpenAI(
-            model=model,
-            api_key=settings.deepseek_api_key,  # type: ignore[arg-type]
-            base_url=_DEEPSEEK_BASE_URL,
-            temperature=0,
-        )
 
-    raise LLMError(f"Unknown LLM provider: '{provider}'. "
-                   "Choose from: gemini, openai, deepseek.")
+# ---------------------------------------------------------------------------
+# Per-provider LangChain factory functions
+# ---------------------------------------------------------------------------
+# Each factory receives the full Settings object and the model name string.
+# Add a new entry here when adding a new provider to the registry.
 
+def _gemini_factory(settings: Settings, model: str) -> Any:
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    return ChatGoogleGenerativeAI(
+        model=model,
+        google_api_key=settings.google_api_key,  # type: ignore[arg-type]
+        temperature=0,
+    )
+
+
+def _openai_factory(settings: Settings, model: str) -> Any:
+    from langchain_openai import ChatOpenAI
+    return ChatOpenAI(
+        model=model,
+        api_key=settings.openai_api_key,  # type: ignore[arg-type]
+        temperature=0,
+    )
+
+
+def _deepseek_factory(settings: Settings, model: str) -> Any:
+    from langchain_openai import ChatOpenAI
+    cfg = get_provider("deepseek")
+    return ChatOpenAI(
+        model=model,
+        api_key=settings.deepseek_api_key,  # type: ignore[arg-type]
+        base_url=cfg.base_url,
+        temperature=0,
+    )
+
+
+_LANGCHAIN_FACTORIES: dict[str, Callable[[Settings, str], Any]] = {
+    "gemini":   _gemini_factory,
+    "openai":   _openai_factory,
+    "deepseek": _deepseek_factory,
+}
+
+
+# ---------------------------------------------------------------------------
+# LLMClient
+# ---------------------------------------------------------------------------
 
 class LLMClient:
     def __init__(self, settings: Settings) -> None:
@@ -65,11 +95,9 @@ class LLMClient:
         # or full API keys in HTTP 401/403 bodies; we must never let that reach
         # chat history, log files, or the UI in readable form.
         self._secrets: tuple[str, ...] = tuple(
-            k for k in (
-                settings.google_api_key,
-                settings.openai_api_key,
-                settings.deepseek_api_key,
-            ) if k
+            getattr(settings, cfg.settings_attr, "") or ""
+            for cfg in PROVIDERS.values()
+            if getattr(settings, cfg.settings_attr, "")
         )
 
     def _scrub(self, text: str) -> str:

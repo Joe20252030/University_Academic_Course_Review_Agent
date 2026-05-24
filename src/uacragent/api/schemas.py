@@ -36,7 +36,11 @@ class ReviewRequest(BaseModel):
     exam_type: ExamType = ExamType.other
     task_type: TaskType = TaskType.review_summary
     extra_instructions: str = ""
-    workspace_id: str = "default"
+    workspace_id: str = Field(
+        default="default",
+        pattern=r"^[A-Za-z0-9_-]{1,128}$",
+        description="Safe workspace identifier — letters, digits, hyphens, underscores only.",
+    )
     copy_to_workspace: bool = True
     # Retrieval / generation depth — controls how many chunks are retrieved
     # and how much of the corpus is sampled for plan generation.

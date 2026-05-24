@@ -163,7 +163,16 @@ def _files_were_removed(
 # ---------------------------------------------------------------------------
 
 def _chunk_id(doc: Document) -> str:
-    return hashlib.sha256(doc.page_content.encode("utf-8")).hexdigest()
+    """Return a stable, unique ID for *doc*.
+
+    The hash includes both the page content *and* the source file path from
+    ``doc.metadata`` so that two files with identical content produce distinct
+    chunks in the vector store.  Previously only the content was hashed, which
+    silently deduplicated identical content from different source files.
+    """
+    source = doc.metadata.get("source", "")
+    payload = f"{source}\x00{doc.page_content}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 # ---------------------------------------------------------------------------

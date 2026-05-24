@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from uacragent.domain.types import DocumentType
+
+# Only alphanumeric characters, hyphens, and underscores are allowed in a
+# workspace_id.  This prevents path-traversal attacks when the id is
+# appended to the app data directory (e.g. workspace_id = "../../etc").
+_SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
 # All agent-created working data lives inside this subdirectory of the
 # user-chosen (or auto-generated) workspace folder.  This keeps agent
@@ -54,7 +60,14 @@ def workspace_paths(
         ws = Path(workspace_folder)
     else:
         from uacragent.infra.persistence import get_app_data_dir
-        ws = get_app_data_dir() / (workspace_id or "default")
+        safe_id = workspace_id or "default"
+        if not _SAFE_ID_RE.match(safe_id):
+            from uacragent.domain.errors import ConfigurationError
+            raise ConfigurationError(
+                f"Invalid workspace_id {safe_id!r}: only letters, digits, "
+                "hyphens, and underscores are allowed (max 128 chars)."
+            )
+        ws = get_app_data_dir() / safe_id
 
     agent_dir = ws / AGENT_SUBDIR
     uploads = agent_dir / "uploads"

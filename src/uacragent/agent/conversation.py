@@ -9,6 +9,7 @@ from pathlib import Path
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from uacragent.agent.session import AgentSession
+from uacragent.domain.errors import LLMError
 from uacragent.domain.types import TaskType
 from uacragent.infra.llm import LLMClient
 from uacragent.infra.settings import Settings, get_settings
@@ -126,7 +127,7 @@ def _ls(lang: str, table: dict[str, dict[str, str]], key: str, **fmt: object) ->
     inline placeholders without a separate format call.
     """
     row = table.get(lang) or table["en"]
-    text = row.get(key) or table["en"][key]
+    text = row.get(key) or table["en"].get(key, key)
     return text.format(**fmt) if fmt else text
 
 
@@ -278,7 +279,9 @@ class ConversationAgent:
         # -- 2. Build message list ---------------------------------------------
         system_content = self._render_system_prompt(session, context, language=language)
         messages: list = [SystemMessage(content=system_content)]
-        messages.extend(session.chat_history)
+        # Use snapshot() to get a consistent, lock-safe copy of history.
+        # This prevents a concurrent cancel from mutating the list mid-iteration.
+        messages.extend(session.chat_history.snapshot())
         messages.append(HumanMessage(content=message))
 
         # -- 3. Call LLM (use session provider/model if different from default) --
@@ -305,7 +308,7 @@ class ConversationAgent:
             else:
                 try:
                     output_path = self._run_task(
-                        task_type, session, progress_cb, effort_level
+                        task_type, session, progress_cb, effort_level, language
                     )
                 except Exception as exc:  # noqa: BLE001
                     generation_error = _ls(language, _CHAT_STRINGS, "gen_failed", exc=exc)
@@ -322,8 +325,12 @@ class ConversationAgent:
         # -- 7. Update history (after reply is fully assembled) ----------------
         # Save `reply` — not `clean_text` — so the file path note and any error
         # message are preserved across session reloads.
-        session.chat_history.append(HumanMessage(content=message))
-        session.chat_history.append(AIMessage(content=reply))
+        # append_turn() inserts both messages atomically so a concurrent cancel
+        # can never observe one message without the other.
+        session.chat_history.append_turn(
+            HumanMessage(content=message),
+            AIMessage(content=reply),
+        )
         session.trim_history()
 
         return ChatResponse(
@@ -376,7 +383,16 @@ class ConversationAgent:
         *language* is used to inject a language-steering instruction so the LLM
         responds in the user's chosen locale (``"en"`` or ``"zh_CN"``).
         """
-        template = (_PROMPTS_DIR / "conversation_system.md").read_text(encoding="utf-8")
+        prompt_path = _PROMPTS_DIR / "conversation_system.md"
+        try:
+            template = prompt_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            raise LLMError(
+                f"System prompt template not found at {prompt_path}. "
+                "This is an installation error — please reinstall the package."
+            ) from None
+        except Exception as exc:  # noqa: BLE001
+            raise LLMError(f"Could not read system prompt template: {exc}") from exc
 
         prefs = session.to_user_prefs()
 
@@ -423,6 +439,7 @@ class ConversationAgent:
         session: AgentSession,
         progress_cb: Callable[[str], None] | None = None,
         effort_level: str = "medium",
+        language: str = "en",
     ) -> str:
         """Run the generation pipeline and return the output markdown path."""
         from uacragent.agent.pipeline import AgentPipeline
@@ -452,5 +469,6 @@ class ConversationAgent:
             workspace_folder=session.workspace_folder,
             progress_cb=progress_cb,
             effort_level=effort_level,
+            language=language,
         )
         return md_path

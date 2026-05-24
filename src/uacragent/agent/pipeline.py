@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 import shutil
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
@@ -69,13 +72,32 @@ _PROMPT_FILES: dict[TaskType, tuple[str, str]] = {
     TaskType.exam_prediction: ("exam_prediction_planner.md", "exam_prediction_writer.md"),
 }
 
-# Human-readable output title per task type
-_TASK_TITLES: dict[TaskType, str] = {
-    TaskType.review_summary: "Exam Review",
-    TaskType.practice_booklet: "Practice Booklet",
-    TaskType.mock_exam: "Mock Exam",
-    TaskType.exam_prediction: "Exam Prediction",
+# Human-readable output title per task type — localised versions keyed by language code.
+# The "en" entry is the authoritative fallback for any unknown language.
+_TASK_TITLES_L10N: dict[str, dict[TaskType, str]] = {
+    "en": {
+        TaskType.review_summary:   "Exam Review",
+        TaskType.practice_booklet: "Practice Booklet",
+        TaskType.mock_exam:        "Mock Exam",
+        TaskType.exam_prediction:  "Exam Prediction",
+    },
+    "zh_CN": {
+        TaskType.review_summary:   "考试复习",
+        TaskType.practice_booklet: "练习册",
+        TaskType.mock_exam:        "模拟考试",
+        TaskType.exam_prediction:  "考试预测",
+    },
 }
+
+
+def _task_title(task_type: TaskType, language: str = "en") -> str:
+    """Return the localised document title for *task_type*.
+
+    Falls back to the English title if *language* is not registered, and to
+    the string ``"Review"`` if the task type itself is not found.
+    """
+    titles = _TASK_TITLES_L10N.get(language) or _TASK_TITLES_L10N["en"]
+    return titles.get(task_type) or _TASK_TITLES_L10N["en"].get(task_type, "Review")
 
 
 def load_prompt(name: str) -> str:
@@ -324,12 +346,13 @@ def assemble_markdown(
     sections: list[str],
     task_type: str = "review_summary",
     paper_text: str = "",
+    language: str = "en",
 ) -> str:
     try:
         tt = TaskType(task_type)
     except ValueError:
         tt = TaskType.review_summary
-    title_suffix = _TASK_TITLES.get(tt, "Review")
+    title_suffix = _task_title(tt, language)
 
     # Build a rich header using available course info from the plan
     header_lines = [f"# {plan.course_title} - {title_suffix}"]
@@ -390,8 +413,8 @@ def wipe_session_uploads(session: "AgentSession") -> None:  # type: ignore[name-
         for folder in ws.doc_folders.values():
             if folder.exists():
                 shutil.rmtree(folder)
-    except Exception:  # noqa: BLE001
-        pass  # non-fatal; worst case the old copies linger until the next run
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not wipe session uploads: %s", exc)
 
 
 def wipe_session_vectorstore(session: "AgentSession") -> None:  # type: ignore[name-defined]
@@ -418,8 +441,8 @@ def wipe_session_vectorstore(session: "AgentSession") -> None:  # type: ignore[n
         # Reset the manifest to an empty file set so the next indexing run
         # starts from a clean slate rather than comparing against stale paths.
         reset_manifest(ws)
-    except Exception:  # noqa: BLE001
-        pass  # non-fatal
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not wipe session vectorstore: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -452,6 +475,7 @@ class AgentPipeline:
         workspace_folder: "Path | None" = None,
         progress_cb: Callable[[str], None] | None = None,
         effort_level: str = "medium",
+        language: str = "en",
     ) -> tuple[ReviewPlan, str, str]:
         """Run the full RAG pipeline with classified documents.
 
@@ -535,7 +559,8 @@ class AgentPipeline:
             )
 
         _progress("Assembling final document…")
-        final_md = assemble_markdown(plan, section_texts, task_type, paper_text=paper_text)
+        final_md = assemble_markdown(plan, section_texts, task_type, paper_text=paper_text,
+                                     language=language)
         md_path = save_markdown(final_md, ws)
         return plan, final_md, md_path
 
