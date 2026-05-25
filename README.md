@@ -503,5 +503,6 @@ LICENSE                  MIT license text
 
 Thanks to the volunteer test users who helped exercise the desktop assistant,
 retrieval flow, workspace handling, and study-support UX during development.
+Their precious feedbacks helped make this agent better.
 
 - Test-user credits can be listed here once they are confirmed for public acknowledgement.
