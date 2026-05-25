@@ -5,7 +5,7 @@ import os
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import ttk
 
 from uacragent.agent.conversation import ConversationAgent, ChatResponse
 from uacragent.agent.session import AgentSession
@@ -49,7 +49,7 @@ class ChatMixin:
         if not os.environ.get(env_var, "").strip():
             label = self._t(get_provider(provider).label_i18n_key)
             if show_error_dialog:
-                messagebox.showwarning(
+                self._show_info_dialog(
                     self._t("mb_api_key_title"),
                     self._t("mb_api_key_body").format(label=label, provider=provider))
             else:
@@ -60,7 +60,7 @@ class ChatMixin:
 
         if not self._has_embedding_key():
             if show_error_dialog:
-                messagebox.showwarning(
+                self._show_info_dialog(
                     self._t("mb_embed_key_title"),
                     self._t("mb_embed_key_body"))
             else:
@@ -69,7 +69,7 @@ class ChatMixin:
 
         if not self._session.course_name:
             if show_error_dialog:
-                messagebox.showwarning(
+                self._show_info_dialog(
                     self._t("mb_course_name_title"),
                     self._t("mb_course_name_body"))
                 self._open_settings()
@@ -323,7 +323,7 @@ class ChatMixin:
             detail = self._t("mb_indexing_api_detail")
         else:
             detail = self._t("mb_indexing_other_detail")
-        messagebox.showerror(
+        self._show_info_dialog(
             self._t("mb_indexing_failed_title"),
             self._t("mb_indexing_failed_body").format(error=error, detail=detail),
         )
@@ -350,12 +350,12 @@ class ChatMixin:
         env_var = env_var_for(provider)
         if not os.environ.get(env_var, "").strip():
             label = self._t(get_provider(provider).label_i18n_key)
-            messagebox.showwarning(
+            self._show_info_dialog(
                 self._t("mb_api_key_title"),
                 self._t("mb_api_key_send_body").format(label=label))
             return
         if not self._session.course_name:
-            messagebox.showwarning(
+            self._show_info_dialog(
                 self._t("mb_course_name_title"),
                 self._t("mb_course_name_send_body"))
             self._open_settings()
@@ -447,7 +447,7 @@ class ChatMixin:
             detail = self._t("mb_response_api_detail")
         else:
             detail = self._t("mb_response_other_detail")
-        messagebox.showerror(
+        self._show_info_dialog(
             self._t("mb_response_failed_title"),
             self._t("mb_response_failed_body").format(error=error, detail=detail),
         )
@@ -457,9 +457,19 @@ class ChatMixin:
     # ------------------------------------------------------------------
 
     def _clear_chat(self) -> None:
-        self._chat_text.configure(state="normal")
-        self._chat_text.delete("1.0", tk.END)
-        self._chat_text.configure(state="disabled")
+        """Destroy all message bubble widgets and reset scroll position."""
+        if hasattr(self, "_msg_frame"):
+            for w in list(self._msg_frame.winfo_children()):
+                try:
+                    w.destroy()
+                except Exception:
+                    pass
+            try:
+                self._msg_canvas.configure(scrollregion=(0, 0, 0, 0))
+            except Exception:
+                pass
+        self._last_assistant_content = None
+        self._thinking_lbl = None
 
     def _show_idle(self) -> None:
         """Blank right panel shown at startup before any session is selected."""
@@ -479,18 +489,134 @@ class ChatMixin:
                 self._append_chat("assistant", msg.content)
 
     def _append_chat(self, role: str, text: str) -> None:
-        self._chat_text.configure(state="normal")
+        """Append a rounded-bubble message widget to the chat scroll area."""
+        if not hasattr(self, "_msg_frame"):
+            return
+
+        from ._ui_constants import _THEME_COLORS
+        from ._custom_widgets import draw_rounded_rect
+
+        _mode = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
+        c = _THEME_COLORS.get(_mode, _THEME_COLORS["light"])
+        card_bg = c.get("text_bg", "#ffffff")
+        sz = self._font_size() if hasattr(self, "_font_size") else 13
+        _OFFSET = 4   # px gap between canvas edge and shell (shows rounded corner)
+        _H_PAD  = 12  # horizontal padding inside the bubble
+        _V_PAD  = 7   # vertical padding inside the bubble
+
+        # ── System messages: no bubble, just italic dimmed label ──────────
+        if role == "system":
+            lbl = tk.Label(
+                self._msg_frame,
+                text=text,
+                bg=card_bg,
+                fg=c.get("status_fg", "#6b7280"),
+                font=("TkDefaultFont", max(sz - 1, 10), "italic"),
+                anchor="w",
+                justify="left",
+                padx=20, pady=5,
+                wraplength=300,
+            )
+            lbl.pack(fill="x", pady=(2, 2))
+            lbl.bind(
+                "<Configure>",
+                lambda e, w=lbl: w.configure(wraplength=max(80, e.width - 40)),
+            )
+            self._bind_chat_scroll(lbl)
+            self._scroll_chat_to_bottom()
+            return
+
+        # ── Pick bubble colours ───────────────────────────────────────────
         if role == "user":
-            self._chat_text.insert(tk.END, self._t("chat_you") + "\n", "user_label")
-            self._chat_text.insert(tk.END, text + "\n", "user_body")
-        elif role == "assistant":
-            self._chat_text.insert(tk.END, self._t("chat_assistant") + "\n", "assistant_label")
-            display = _strip_markdown(text)
-            self._chat_text.insert(tk.END, display + "\n", "assistant_body")
-        else:
-            self._chat_text.insert(tk.END, text + "\n", "system_body")
-        self._chat_text.configure(state="disabled")
-        self._chat_text.see(tk.END)
+            label_text = self._t("chat_you")
+            bubble_bg  = c.get("user_bubble_bg",     "#e8f0fe")
+            label_fg   = c.get("user_fg",             "#1b3167")
+            body_fg    = c.get("user_fg",             "#1b3167")
+            border_col = c.get("user_bubble_border",  "#c5d5f0")
+        else:  # assistant
+            label_text = self._t("chat_assistant")
+            text = _strip_markdown(text)
+            bubble_bg  = c.get("asst_bubble_bg",     "#fdf6ee")
+            label_fg   = c.get("assist_fg",           "#b06000")
+            body_fg    = c.get("assist_body",          "#2d3748")
+            border_col = c.get("asst_bubble_border",  "#f0dfc8")
+
+        # ── Outer canvas: transparent (bg=card_bg) so rounded corners show ─
+        cv = tk.Canvas(self._msg_frame, bg=card_bg, highlightthickness=0, bd=0)
+        cv.pack(fill="x", padx=16, pady=(6, 2))
+
+        # Shell frame (the bubble interior)
+        shell = tk.Frame(cv, bg=bubble_bg)
+        win_id = cv.create_window(_OFFSET, _OFFSET, window=shell, anchor="nw")
+
+        # Role label
+        role_lbl = tk.Label(
+            shell, text=label_text,
+            bg=bubble_bg, fg=label_fg,
+            font=("TkDefaultFont", max(sz - 1, 10), "bold"),
+            anchor="w", padx=_H_PAD, pady=(_V_PAD, 2),
+        )
+        role_lbl.pack(fill="x")
+
+        # Body text label
+        body_lbl = tk.Label(
+            shell, text=text,
+            bg=bubble_bg, fg=body_fg,
+            font=("TkDefaultFont", sz),
+            anchor="w", padx=_H_PAD, pady=(0, _V_PAD),
+            justify="left",
+            wraplength=300,  # updated dynamically on canvas resize
+        )
+        body_lbl.pack(fill="x")
+
+        # Store assistant bubble reference for _append_output_link
+        if role == "assistant":
+            self._last_assistant_content   = shell
+            self._last_assistant_bubble_bg = bubble_bg
+            self._last_assistant_body_fg   = body_fg
+            self._last_assistant_card_bg   = card_bg
+
+        # ── Sizing callbacks ───────────────────────────────────────────────
+        r = 10  # corner radius
+
+        def _draw(_r=r, _bg=bubble_bg, _bd=border_col):
+            cv.delete("bb_fill")
+            cv.delete("bb_border")
+            w, h = cv.winfo_width(), cv.winfo_height()
+            if w > 1 and h > 1:
+                draw_rounded_rect(cv, 0, 0, w, h, r=_r,
+                    fill=_bg, outline="", tags="bb_fill")
+                draw_rounded_rect(cv, 1, 1, w - 1, h - 1, r=_r,
+                    fill="", outline=_bd, width=1, tags="bb_border")
+                cv.tag_lower("bb_fill")
+                try:
+                    cv.tag_lower("bb_border", win_id)
+                except Exception:
+                    pass
+
+        def _sync_shell_width(e, _wid=win_id, _off=_OFFSET, _hpad=_H_PAD):
+            new_w = max(1, e.width - 2 * _off)
+            cv.itemconfigure(_wid, width=new_w)
+            try:
+                body_lbl.configure(wraplength=max(60, new_w - 2 * _hpad - 4))
+            except Exception:
+                pass
+
+        def _sync_canvas_height(e, _off=_OFFSET):
+            req = shell.winfo_reqheight()
+            new_h = req + 2 * _off
+            if cv.winfo_height() != new_h:
+                cv.configure(height=new_h)
+            _draw()
+
+        cv.bind("<Configure>", lambda e: (_sync_shell_width(e), _draw()))
+        shell.bind("<Configure>", _sync_canvas_height)
+
+        # Propagate mousewheel on every bubble child widget
+        for w in (cv, shell, role_lbl, body_lbl):
+            self._bind_chat_scroll(w)
+
+        self._scroll_chat_to_bottom()
 
     def _append_output_link(
         self,
@@ -498,44 +624,72 @@ class ChatMixin:
         task_type: str | None,
         export_fmt: str,
     ) -> None:
-        label = task_type.replace("_", " ").title() if task_type else "Output"
-        self._chat_text.configure(state="normal")
-        self._chat_text.insert(tk.END, f"\n📄 {label} generated: ", "assistant_body")
+        """Append a file-link row inside the last assistant bubble."""
+        shell = getattr(self, "_last_assistant_content", None)
+        if shell is None or not shell.winfo_exists():
+            return
 
         from ._ui_constants import _THEME_COLORS
-        _c = _THEME_COLORS.get(self._color_mode_var.get(), _THEME_COLORS["light"])
-        tag_file = f"link_{id(output_path)}"
-        self._chat_text.tag_configure(
-            tag_file, foreground=_c["link_fg"], underline=True)
-        self._chat_text.tag_bind(tag_file, "<Button-1>",
-                                 lambda _e, p=output_path: _open_file_in_os(p))
-        self._chat_text.tag_bind(tag_file, "<Enter>",
-                                 lambda _e: self._chat_text.configure(cursor="hand2"))
-        self._chat_text.tag_bind(tag_file, "<Leave>",
-                                 lambda _e: self._chat_text.configure(cursor=""))
-        self._chat_text.insert(tk.END, Path(output_path).name, tag_file)
+        _mode = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
+        c = _THEME_COLORS.get(_mode, _THEME_COLORS["light"])
+        bubble_bg = getattr(self, "_last_assistant_bubble_bg", c.get("asst_bubble_bg", "#fdf6ee"))
+        body_fg   = getattr(self, "_last_assistant_body_fg",   c.get("assist_body",    "#2d3748"))
+        sz = self._font_size() if hasattr(self, "_font_size") else 13
 
-        self._chat_text.insert(tk.END, "  ", "assistant_body")
-        tag_folder = f"folder_{id(output_path)}"
-        self._chat_text.tag_configure(
-            tag_folder, foreground=_c["link_folder_fg"], underline=True)
-        self._chat_text.tag_bind(tag_folder, "<Button-1>",
-                                 lambda _e, p=output_path: _open_folder_in_os(
-                                     str(Path(p).parent)))
-        self._chat_text.tag_bind(tag_folder, "<Enter>",
-                                 lambda _e: self._chat_text.configure(cursor="hand2"))
-        self._chat_text.tag_bind(tag_folder, "<Leave>",
-                                 lambda _e: self._chat_text.configure(cursor=""))
-        self._chat_text.insert(tk.END, "[Open folder]", tag_folder)
+        label = task_type.replace("_", " ").title() if task_type else "Output"
 
-        # Optional extra-format export — run in a background thread so the UI
-        # is not frozen while python-docx / fpdf2 write the file.
-        # export_fmt was captured at send-time (not now) to avoid TOCTOU.
+        # ── Link row ──────────────────────────────────────────────────────
+        link_row = tk.Frame(shell, bg=bubble_bg)
+        link_row.pack(fill="x", padx=12, pady=(0, 4))
+
+        tk.Label(
+            link_row, text=f"📄 {label} generated: ",
+            bg=bubble_bg, fg=body_fg,
+            font=("TkDefaultFont", sz),
+        ).pack(side="left")
+
+        # Clickable filename label
+        file_lbl = tk.Label(
+            link_row,
+            text=Path(output_path).name,
+            bg=bubble_bg, fg=c.get("link_fg", "#1b3167"),
+            font=("TkDefaultFont", sz, "underline"),
+            cursor="hand2",
+        )
+        file_lbl.pack(side="left")
+        file_lbl.bind("<Button-1>", lambda _e, p=output_path: _open_file_in_os(p))
+
+        tk.Label(link_row, text="  ", bg=bubble_bg).pack(side="left")
+
+        # Clickable open-folder label
+        folder_lbl = tk.Label(
+            link_row,
+            text="[Open folder]",
+            bg=bubble_bg, fg=c.get("link_folder_fg", "#6b7280"),
+            font=("TkDefaultFont", sz, "underline"),
+            cursor="hand2",
+        )
+        folder_lbl.pack(side="left")
+        folder_lbl.bind(
+            "<Button-1>",
+            lambda _e, p=output_path: _open_folder_in_os(str(Path(p).parent)),
+        )
+
+        # Propagate scroll from link row widgets
+        for w in list(link_row.winfo_children()) + [link_row]:
+            self._bind_chat_scroll(w)
+
+        # ── Optional extra-format export (background thread) ─────────────
         if export_fmt != ExportFormat.markdown.value and output_path.endswith(".md"):
-            # Insert a placeholder that will be replaced once the export finishes.
-            placeholder_tag = f"export_placeholder_{id(output_path)}"
-            self._chat_text.insert(
-                tk.END, f"\n⏳ Exporting {export_fmt.upper()}…", placeholder_tag)
+            placeholder_lbl = tk.Label(
+                shell,
+                text=f"⏳ Exporting {export_fmt.upper()}…",
+                bg=bubble_bg, fg=c.get("status_fg", "#6b7280"),
+                font=("TkDefaultFont", max(sz - 1, 10), "italic"),
+                anchor="w", padx=12, pady=(0, 4),
+            )
+            placeholder_lbl.pack(fill="x")
+            self._bind_chat_scroll(placeholder_lbl)
 
             _ws_id     = self._session.workspace_id
             _ws_folder = self._session.workspace_folder
@@ -551,45 +705,40 @@ class ChatMixin:
                     try:
                         self.after(0, lambda p=extra_path: _finish_export(p, None))
                     except tk.TclError:
-                        pass  # window destroyed before export completed
+                        pass
                 except Exception as exc:  # noqa: BLE001
                     try:
                         self.after(0, lambda e=str(exc): _finish_export(None, e))
                     except tk.TclError:
-                        pass  # window destroyed before export completed
+                        pass
 
             def _finish_export(extra_path: str | None, error: str | None) -> None:
-                """Replace the placeholder with the final link or error text."""
                 try:
-                    # Locate and delete the placeholder text.
-                    start = self._chat_text.tag_ranges(placeholder_tag)
-                    if start:
-                        self._chat_text.configure(state="normal")
-                        self._chat_text.delete(start[0], start[1])
-                        if extra_path:
-                            xtag = f"extra_{id(extra_path)}"
-                            self._chat_text.tag_configure(
-                                xtag, foreground="#1565c0", underline=True)
-                            self._chat_text.tag_bind(
-                                xtag, "<Button-1>",
-                                lambda _e, p=extra_path: _open_file_in_os(p))
-                            self._chat_text.insert(
-                                start[0],
-                                f"\n📥 {export_fmt.upper()} export: {Path(extra_path).name}",
-                                xtag)
-                        else:
-                            self._chat_text.insert(
-                                start[0], f"\n⚠️ Export failed: {error}", "system_body")
-                        self._chat_text.configure(state="disabled")
-                        self._chat_text.see(tk.END)
+                    if not placeholder_lbl.winfo_exists():
+                        return
+                    if extra_path:
+                        placeholder_lbl.configure(
+                            text=f"📥 {export_fmt.upper()} export: {Path(extra_path).name}",
+                            fg=c.get("link_fg", "#1565c0"),
+                            font=("TkDefaultFont", sz, "underline"),
+                            cursor="hand2",
+                        )
+                        placeholder_lbl.bind(
+                            "<Button-1>",
+                            lambda _e, p=extra_path: _open_file_in_os(p),
+                        )
+                    else:
+                        placeholder_lbl.configure(
+                            text=f"⚠️ Export failed: {error}",
+                            fg=c.get("status_fg", "#6b7280"),
+                        )
+                    self._scroll_chat_to_bottom()
                 except tk.TclError:
-                    pass  # widget already destroyed
+                    pass
 
             threading.Thread(target=_export_worker, daemon=True).start()
 
-        self._chat_text.insert(tk.END, "\n", "assistant_body")
-        self._chat_text.configure(state="disabled")
-        self._chat_text.see(tk.END)
+        self._scroll_chat_to_bottom()
 
     # ------------------------------------------------------------------
     # Header

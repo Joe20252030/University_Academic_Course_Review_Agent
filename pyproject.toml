@@ -5,11 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "uacragent"
 version = "0.1.0"
-description = "University Academic Course Review Agent — conversational course assistant and exam review generator powered by a RAG pipeline"
+description = "University Academic Course Review Agent — conversational course assistant for grounded study help and exam preparation"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
-keywords = ["rag", "llm", "gemini", "openai", "deepseek", "exam", "education", "langchain"]
+keywords = ["rag", "llm", "education", "study-assistant", "gemini", "openai", "deepseek", "langchain"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Education",

@@ -610,6 +610,11 @@ _THEME_COLORS: dict[str, dict[str, str]] = {
         "assist_fg":      "#b06000",   # warm amber for assistant label
         "assist_body":    "#2d3748",   # dark slate body text
         "system_fg":      "#6b7280",   # muted gray system messages
+        # Chat bubble backgrounds
+        "user_bubble_bg":     "#e8f0fe",   # soft blue tint for user bubbles
+        "user_bubble_border": "#c5d5f0",   # subtle blue ring
+        "asst_bubble_bg":     "#fdf6ee",   # soft warm tint for assistant bubbles
+        "asst_bubble_border": "#f0dfc8",   # subtle amber ring
         # Links inside chat
         "link_fg":        "#1b3167",
         "link_folder_fg": "#6b7280",
@@ -654,6 +659,11 @@ _THEME_COLORS: dict[str, dict[str, str]] = {
         "assist_fg":      "#f5a623",   # logo gold for assistant label
         "assist_body":    "#c0d4ee",   # light blue-gray body text
         "system_fg":      "#7f96bc",   # muted blue-gray system messages
+        # Chat bubble backgrounds
+        "user_bubble_bg":     "#0f1e40",   # slightly lighter than text_bg
+        "user_bubble_border": "#1e3566",   # navy ring
+        "asst_bubble_bg":     "#162847",   # warm-tinted navy for assistant
+        "asst_bubble_border": "#1e3566",   # navy ring
         # Links inside chat
         "link_fg":        "#81b4f5",
         "link_folder_fg": "#7f96bc",

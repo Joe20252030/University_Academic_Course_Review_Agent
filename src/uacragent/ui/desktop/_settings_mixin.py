@@ -5,7 +5,7 @@ import os
 import re
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, ttk
 
 from uacragent.domain.providers import (
     PROVIDER_IDS, get_provider, env_var_for, models_for,
@@ -14,6 +14,7 @@ from uacragent.domain.types import DocumentType, ExamFormat, ExamType, ExportFor
 from uacragent.infra.persistence import get_app_data_dir
 from uacragent.infra.workspace import workspace_paths
 
+from ._custom_widgets import _RoundedChip, draw_rounded_rect
 from ._ui_constants import (
     _PAD, _SUPPORTED_FILETYPES, _STRINGS, _THEME_COLORS, _FONT_SIZE_VALUES,
     _open_file_in_os, _open_folder_in_os,
@@ -51,35 +52,465 @@ class SettingsMixin:
     def _center_on_main(self, win: tk.Toplevel) -> None:
         """Position *win* at the centre of the main application window.
 
-        Must be called after the dialog's widgets are built and packed so
-        that ``winfo_reqwidth`` / ``winfo_reqheight`` return real sizes.
-        We use ``after_idle`` to let tkinter finish its layout pass first.
+        Immediately withdraws the window (so it is invisible), then on the
+        next idle tick flushes geometry, computes the centred position, moves
+        the window there, and finally shows it with deiconify.  This prevents
+        the brief flash where tkinter first renders the dialog at a random
+        OS-chosen position before moving it.
 
         Note: screen coordinates are intentionally *not* clamped to ≥ 0.
         On multi-monitor setups, monitors to the left or above the primary
         display have negative x/y coordinates, and clamping to 0 would
         incorrectly snap the dialog to the primary monitor instead.
         """
+        # NOTE: callers must call  win.withdraw()  immediately after creating
+        # the Toplevel (before adding any widgets) so the window never appears
+        # at the OS-chosen default position.  This function only positions
+        # and reveals the already-hidden window.
+
+        # macOS: set alpha=0 NOW (before after_idle) so the window is
+        # invisible during widget layout.  On first open winfo_reqwidth()
+        # returns 0 until update_idletasks() runs inside _do_center, and
+        # the OS can briefly expose the window at the wrong position while
+        # that computation happens.  Being transparent from the start
+        # eliminates that one-frame flash entirely.
+        import sys as _sys
+        _alpha_set = False
+        if _sys.platform == "darwin":
+            try:
+                win.wm_attributes("-alpha", 0.0)
+                _alpha_set = True
+            except tk.TclError:
+                pass
+
         def _do_center() -> None:
             try:
-                win.update_idletasks()          # flush pending geometry requests
-                # Dialog's natural size (may be 0×0 before layout; fall back)
-                dw = win.winfo_reqwidth()  or win.winfo_width()
-                dh = win.winfo_reqheight() or win.winfo_height()
-                # Main window position and size — winfo_rootx/y gives absolute
-                # screen coords, which are correct across all monitors.
+                # Flush pending layout so winfo_req* returns accurate sizes.
+                # Safe to call now because the window is fully transparent.
+                win.update_idletasks()
+                dw = win.winfo_reqwidth()  or win.winfo_width()  or 420
+                dh = win.winfo_reqheight() or win.winfo_height() or 280
                 mw = self.winfo_width()
                 mh = self.winfo_height()
                 mx = self.winfo_rootx()
                 my = self.winfo_rooty()
-                # Centre the dialog over the main window
                 x = mx + (mw - dw) // 2
                 y = my + (mh - dh) // 2
                 win.geometry(f"+{x}+{y}")
             except tk.TclError:
-                pass  # window already destroyed
+                return
+            try:
+                win.deiconify()
+            except tk.TclError:
+                return
+            if _alpha_set:
+                def _restore() -> None:
+                    try:
+                        win.wm_attributes("-alpha", 1.0)
+                    except tk.TclError:
+                        pass
+                win.after(30, _restore)
 
         win.after_idle(_do_center)
+
+    # ── Themed dialog helpers ──────────────────────────────────────────────
+
+    def _themed_colors(self) -> dict:
+        """Return the active theme color dict."""
+        mode = getattr(self, "_color_mode_var", None)
+        key  = mode.get() if mode else "light"
+        return _THEME_COLORS.get(key, _THEME_COLORS["light"])
+
+    def _show_info_dialog(self, title: str, message: str) -> None:
+        """Show a themed information dialog (replaces messagebox.showinfo)."""
+        c     = self._themed_colors()
+        _wbg  = c["window_bg"]
+        _fg   = c["text_fg"]
+        _pbg  = c["btn_primary_bg"]
+        _pfg  = c["btn_primary_fg"]
+        _phov = c.get("btn_primary_hover", _pbg)
+        _sz   = self._font_size() if hasattr(self, "_font_size") else 13
+
+        win = tk.Toplevel(self)
+        win.withdraw()              # hide before any widget — prevents flash
+        win.title(title)
+        win.configure(bg=_wbg)
+        win.resizable(False, False)
+        win.grab_set()
+
+        frm = tk.Frame(win, bg=_wbg, padx=24, pady=20)
+        frm.pack(fill="both", expand=True)
+
+        tk.Label(
+            frm, text=message,
+            bg=_wbg, fg=_fg,
+            font=("TkDefaultFont", _sz),
+            justify="left", anchor="w", wraplength=360,
+        ).pack(anchor="w", pady=(0, 16))
+
+        btn_row = tk.Frame(frm, bg=_wbg)
+        btn_row.pack(anchor="e")
+        _RoundedChip(
+            btn_row, text="OK",
+            chip_bg=_pbg, chip_fg=_pfg,
+            parent_bg=_wbg,
+            font=("TkDefaultFont", _sz, "bold"),
+            padx=14, pady=6,
+            hover_bg=_phov,
+            command=win.destroy,
+        ).pack()
+
+        self._center_on_main(win)
+        win.wait_window()
+
+    def _show_confirm_dialog(
+        self,
+        title: str,
+        message: str,
+        confirm_text: str | None = None,
+        destructive: bool = False,
+    ) -> bool:
+        """Show a themed yes/no dialog. Returns True if confirmed."""
+        c        = self._themed_colors()
+        _wbg     = c["window_bg"]
+        _fg      = c["text_fg"]
+        _sz      = self._font_size() if hasattr(self, "_font_size") else 13
+        _border  = c["input_border"]
+        _pbg     = c["btn_primary_bg"]
+        _pfg     = c["btn_primary_fg"]
+        _phov    = c.get("btn_primary_hover", _pbg)
+        if destructive:
+            _cfm_bg  = c.get("btn_cancel_bg",    "#e53e3e")
+            _cfm_fg  = c.get("btn_cancel_fg",    "#ffffff")
+            _cfm_hov = c.get("btn_cancel_hover", "#c53030")
+        else:
+            _cfm_bg  = _pbg
+            _cfm_fg  = _pfg
+            _cfm_hov = _phov
+
+        result: list[bool] = [False]
+
+        win = tk.Toplevel(self)
+        win.withdraw()              # hide before any widget — prevents flash
+        win.title(title)
+        win.configure(bg=_wbg)
+        win.resizable(False, False)
+        win.grab_set()
+
+        frm = tk.Frame(win, bg=_wbg, padx=24, pady=20)
+        frm.pack(fill="both", expand=True)
+
+        tk.Label(
+            frm, text=message,
+            bg=_wbg, fg=_fg,
+            font=("TkDefaultFont", _sz),
+            justify="left", anchor="w", wraplength=400,
+        ).pack(anchor="w", pady=(0, 20))
+
+        btn_row = tk.Frame(frm, bg=_wbg)
+        btn_row.pack(anchor="e")
+
+        def _ok():
+            result[0] = True
+            win.destroy()
+
+        _RoundedChip(
+            btn_row,
+            text=confirm_text or "OK",
+            chip_bg=_cfm_bg, chip_fg=_cfm_fg,
+            parent_bg=_wbg,
+            font=("TkDefaultFont", _sz, "bold"),
+            padx=14, pady=6,
+            hover_bg=_cfm_hov,
+            command=_ok,
+        ).pack(side="left", padx=(0, 10))
+
+        _RoundedChip(
+            btn_row, text=self._t("cancel_btn"),
+            chip_bg=_wbg, chip_fg=_fg,
+            parent_bg=_wbg,
+            font=("TkDefaultFont", _sz),
+            padx=14, pady=6,
+            outline=_border, outline_width=1,
+            hover_bg=c.get("qa_bg", "#edf0f8"),
+            command=win.destroy,
+        ).pack(side="left")
+
+        win.protocol("WM_DELETE_WINDOW", win.destroy)
+        self._center_on_main(win)
+        win.wait_window()
+        return result[0]
+
+    def _show_rename_dialog(
+        self,
+        title: str,
+        prompt: str,
+        initial: str = "",
+    ) -> str | None:
+        """Show a themed string-input dialog. Returns the string or None if cancelled."""
+        c       = self._themed_colors()
+        _wbg    = c["window_bg"]
+        _fg     = c["text_fg"]
+        _ibg    = c["input_bg"]
+        _ifg    = c["input_fg"]
+        _border = c["input_border"]
+        _pbg    = c["btn_primary_bg"]
+        _pfg    = c["btn_primary_fg"]
+        _phov   = c.get("btn_primary_hover", _pbg)
+        _sz     = self._font_size() if hasattr(self, "_font_size") else 13
+
+        result: list[str | None] = [None]
+
+        win = tk.Toplevel(self)
+        win.withdraw()              # hide before any widget — prevents flash
+        win.title(title)
+        win.configure(bg=_wbg)
+        win.resizable(False, False)
+        win.grab_set()
+
+        frm = tk.Frame(win, bg=_wbg, padx=24, pady=20)
+        frm.pack(fill="both", expand=True)
+        frm.columnconfigure(0, weight=1)
+
+        tk.Label(
+            frm, text=prompt,
+            bg=_wbg, fg=_fg,
+            font=("TkDefaultFont", _sz),
+            anchor="w",
+        ).pack(anchor="w", pady=(0, 8))
+
+        entry_var = tk.StringVar(value=initial)
+        entry = tk.Entry(
+            frm, textvariable=entry_var,
+            bg=_ibg, fg=_ifg,
+            insertbackground=_ifg,
+            relief="flat", bd=0,
+            font=("TkDefaultFont", _sz),
+            highlightthickness=1,
+            highlightbackground=_border,
+            highlightcolor=_pbg,
+        )
+        entry.pack(fill="x", ipady=4, pady=(0, 16))
+        entry.focus_set()
+        entry.select_range(0, "end")
+
+        btn_row = tk.Frame(frm, bg=_wbg)
+        btn_row.pack(anchor="e")
+
+        def _ok(_event=None):
+            val = entry_var.get().strip()
+            if val:
+                result[0] = val
+            win.destroy()
+
+        def _cancel(_event=None):
+            win.destroy()
+
+        _RoundedChip(
+            btn_row, text=self._t("settings_apply_btn"),
+            chip_bg=_pbg, chip_fg=_pfg,
+            parent_bg=_wbg,
+            font=("TkDefaultFont", _sz, "bold"),
+            padx=14, pady=6,
+            hover_bg=_phov,
+            command=_ok,
+        ).pack(side="left", padx=(0, 10))
+
+        _RoundedChip(
+            btn_row, text=self._t("cancel_btn"),
+            chip_bg=_wbg, chip_fg=_fg,
+            parent_bg=_wbg,
+            font=("TkDefaultFont", _sz),
+            padx=14, pady=6,
+            outline=_border, outline_width=1,
+            hover_bg=c.get("qa_bg", "#edf0f8"),
+            command=_cancel,
+        ).pack(side="left")
+
+        entry.bind("<Return>", _ok)
+        entry.bind("<Escape>", _cancel)
+        win.protocol("WM_DELETE_WINDOW", _cancel)
+        self._center_on_main(win)
+        win.wait_window()
+        return result[0]
+
+    def _make_section_card(
+        self,
+        parent: tk.Widget,
+        row: int,
+        title: str,
+        c: dict,
+    ) -> tk.Frame:
+        """Build a rounded-border section card, grid it into *parent* at *row*.
+
+        Returns the inner content ``tk.Frame`` (populate it with grid or pack
+        as normal).  A ``draw_rounded_rect`` outline is drawn on a canvas that
+        backs the card; it redraws whenever the card is resized.
+
+        The default column layout of the returned frame is ``columnconfigure(1,
+        weight=1)`` — a two-column label+widget setup that matches the majority
+        of settings sections.  Override with another ``columnconfigure`` call
+        on the returned frame when needed.
+        """
+        _wbg  = c["window_bg"]
+        _cbg  = c.get("text_bg", "#ffffff")   # white card fill
+        _fg   = c["text_fg"]
+        _brd  = c["input_border"]
+        _sz   = self._font_size() if hasattr(self, "_font_size") else 13
+
+        # _OFFSET: gap (px) between canvas edge and shell.
+        # The two polygon items (fill + border) are drawn in this strip, making
+        # the rounded corners genuinely visible.  Canvas window items always
+        # render above drawn items regardless of tag_lower/raise, so the only
+        # way to expose the border polygons is to keep a gap the shell cannot
+        # cover.
+        _OFFSET = 2
+
+        cv = tk.Canvas(parent, bg=_wbg, highlightthickness=0, bd=0)
+        cv.grid(row=row, column=0, sticky="ew", pady=(0, 10))
+
+        shell = tk.Frame(cv, bg=_cbg)
+
+        # ── Section header ──────────────────────────────────────────
+        tk.Label(
+            shell, text=title,
+            bg=_cbg, fg=_fg,
+            font=("TkDefaultFont", _sz, "bold"),
+            anchor="w",
+        ).pack(fill="x", padx=14, pady=(12, 4))
+        tk.Frame(shell, bg=_brd, height=1).pack(fill="x", padx=14, pady=(0, 8))
+
+        # ── Content frame (returned to caller) ─────────────────────
+        content = tk.Frame(shell, bg=_cbg)
+        content.pack(fill="x", padx=14, pady=(0, 12))
+        content.columnconfigure(1, weight=1)   # default: 2-col label+widget
+
+        # ── Canvas ↔ shell resize synchronisation ──────────────────
+        # Shell is inset by _OFFSET on every side so the border strip shows.
+        win_id = cv.create_window(_OFFSET, _OFFSET, window=shell, anchor="nw")
+
+        def _sync_shell_width(e: tk.Event) -> None:
+            cv.itemconfig(win_id, width=max(0, e.width - 2 * _OFFSET))
+
+        def _sync_canvas_height(e: tk.Event) -> None:
+            cv.configure(height=shell.winfo_reqheight() + 2 * _OFFSET)
+            _draw_border()
+
+        def _draw_border() -> None:
+            cv.delete("rd_fill")
+            cv.delete("rd_border")
+            w = cv.winfo_width()
+            h = cv.winfo_height()
+            if w > 1 and h > 1:
+                # 1. Fill polygon — behind shell (and border)
+                draw_rounded_rect(
+                    cv, 0, 0, w, h, r=10,
+                    fill=_cbg, outline="", tags="rd_fill",
+                )
+                # 2. Border outline — between fill and shell in z-order
+                draw_rounded_rect(
+                    cv, 1, 1, w - 1, h - 1, r=10,
+                    fill="", outline=_brd, width=1, tags="rd_border",
+                )
+                # Stack: rd_fill (bottom) → rd_border → shell (top)
+                cv.tag_lower("rd_fill")
+                cv.tag_lower("rd_border", win_id)
+
+        cv.bind("<Configure>", lambda e: (_sync_shell_width(e), _draw_border()))
+        shell.bind("<Configure>", _sync_canvas_height)
+
+        return content
+
+    def _make_rounded_box(
+        self,
+        parent: tk.Widget,
+        fill_color: str,
+        border_color: str,
+        parent_bg: str,
+        *,
+        r: int = 8,
+        padx: int = 10,
+        pady: int = 6,
+    ) -> tuple:
+        """Rounded-corner coloured info/warning box.
+
+        Returns ``(canvas, shell_frame)`` where *canvas* should be
+        grid/packed into the parent and *shell_frame* (``bg=fill_color``)
+        is populated by the caller.
+
+        Two-layer rendering:
+          • Fill polygon (no outline) placed *below* the shell so the
+            fill colour shows through the shell's own transparent corners.
+          • Outline-only polygon placed *above* the shell so the rounded
+            border is visible on top of the shell's square tkinter corners.
+        """
+        _OFFSET = 2   # inset gap so border strip is never covered by the shell
+
+        cv = tk.Canvas(parent, bg=parent_bg, highlightthickness=0, bd=0)
+
+        shell = tk.Frame(cv, bg=fill_color, padx=padx, pady=pady)
+
+        win_id = cv.create_window(_OFFSET, _OFFSET, window=shell, anchor="nw")
+
+        def _sync_width(e: tk.Event) -> None:
+            cv.itemconfig(win_id, width=max(0, e.width - 2 * _OFFSET))
+
+        def _sync_height(e: tk.Event) -> None:
+            cv.configure(height=shell.winfo_reqheight() + 2 * _OFFSET)
+            _draw()
+
+        def _draw() -> None:
+            cv.delete("rb_fill")
+            cv.delete("rb_border")
+            w = cv.winfo_width()
+            h = cv.winfo_height()
+            if w > 1 and h > 1:
+                draw_rounded_rect(
+                    cv, 0, 0, w, h, r=r,
+                    fill=fill_color, outline="", tags="rb_fill",
+                )
+                draw_rounded_rect(
+                    cv, 1, 1, w - 1, h - 1, r=r,
+                    fill="", outline=border_color, width=1, tags="rb_border",
+                )
+                # Stack: rb_fill (bottom) → rb_border → shell (top)
+                cv.tag_lower("rb_fill")
+                cv.tag_lower("rb_border", win_id)
+
+        cv.bind("<Configure>", lambda e: (_sync_width(e), _draw()))
+        shell.bind("<Configure>", _sync_height)
+
+        return cv, shell   # type: ignore[return-value]
+
+    def _make_util_chip(
+        self,
+        parent: tk.Widget,
+        text: str,
+        command,
+        *,
+        parent_bg: str | None = None,
+    ) -> "_RoundedChip":
+        """Small outlined chip for utility actions (Browse, Reset, Show, etc.)
+
+        Uses ``_RoundedChip`` (canvas-drawn) so macOS native Aqua rendering
+        does not override the background or relief.
+        """
+        c    = self._themed_colors()
+        _cbg = c.get("text_bg", "#ffffff")
+        _fg  = c["text_fg"]
+        _brd = c["input_border"]
+        _pbg = c["btn_primary_bg"]
+        _sz  = max((self._font_size() if hasattr(self, "_font_size") else 13) - 1, 10)
+        pbg  = parent_bg if parent_bg is not None else _cbg
+        return _RoundedChip(
+            parent, text=text, command=command,
+            chip_bg=_cbg, chip_fg=_fg,
+            parent_bg=pbg,
+            font=("TkDefaultFont", _sz),
+            padx=8, pady=3,
+            outline=_brd, outline_width=1,
+            hover_bg=c.get("qa_bg", "#edf0f8"),
+        )
 
     def _reset_setting_vars_from_committed(self) -> None:
         """Reset every setting StringVar to the last *committed* state.
@@ -120,7 +551,19 @@ class SettingsMixin:
         # is initialised from the committed state.
         self._reset_setting_vars_from_committed()
 
+        c      = self._themed_colors()
+        _wbg   = c["window_bg"]
+        _cbg   = c.get("text_bg", "#ffffff")   # white card fill
+        _fg    = c["text_fg"]
+        _sfg   = c.get("status_fg", "#6b7280")
+        _border= c["input_border"]
+        _pbg   = c["btn_primary_bg"]
+        _pfg   = c["btn_primary_fg"]
+        _phov  = c.get("btn_primary_hover", _pbg)
+
         win = tk.Toplevel(self)
+        win.withdraw()              # hide before any widget — prevents flash
+        win.configure(bg=_wbg)
         win.title(self._t("settings_dialog_title"))
         win.minsize(560, 600)
         win.resizable(True, True)
@@ -128,45 +571,61 @@ class SettingsMixin:
 
         # ── Fixed banner (always visible, above the scroll area) ──────
         _note_sz = max(self._font_size() - 1, 10)  # notice font: 1pt below body, min 10
-        banner = tk.Frame(win, background="#fff8e1", padx=10, pady=6)
+        banner = tk.Frame(win, background=_wbg, padx=12, pady=8)
         banner.pack(side="top", fill="x")
         tk.Label(
             banner,
             text=self._t("settings_banner"),
-            background="#fff8e1",
-            foreground="#5d4037",
+            background=_wbg,
+            foreground=_sfg,
             font=("TkDefaultFont", _note_sz),
             anchor="w",
         ).pack(side="left")
+        # Thin separator line under banner
+        tk.Frame(win, bg=_border, height=1).pack(side="top", fill="x")
 
         # ── Fixed bottom bar (always visible, below the scroll area) ─
-        bottom_bar = ttk.Frame(win, padding=(10, 6))
+        tk.Frame(win, bg=_border, height=1).pack(side="bottom", fill="x")
+        bottom_bar = tk.Frame(win, bg=_wbg, padx=10, pady=8)
         bottom_bar.pack(side="bottom", fill="x")
-        ttk.Separator(win, orient="horizontal").pack(side="bottom", fill="x")
 
         self._settings_status_var = tk.StringVar(value="")
-        ttk.Label(bottom_bar, textvariable=self._settings_status_var,
-                  foreground="gray", font=("TkDefaultFont", _note_sz),
-                  wraplength=440
-                  ).pack(side="left", fill="x", expand=True)
+        tk.Label(bottom_bar, textvariable=self._settings_status_var,
+                 bg=_wbg, fg=_sfg,
+                 font=("TkDefaultFont", _note_sz),
+                 wraplength=440, anchor="w",
+                 ).pack(side="left", fill="x", expand=True)
 
-        _action_frame = ttk.Frame(bottom_bar)
+        _action_frame = tk.Frame(bottom_bar, bg=_wbg)
         _action_frame.pack(side="right")
-        ttk.Button(_action_frame, text=self._t("settings_apply_btn"),
-                   command=self._on_apply_settings
-                   ).pack(side="left", padx=(0, 8))
-        ttk.Button(_action_frame, text=self._t("settings_close_btn"),
-                   command=win.destroy
-                   ).pack(side="left")
+        _RoundedChip(
+            _action_frame, text=self._t("settings_apply_btn"),
+            chip_bg=_pbg, chip_fg=_pfg,
+            parent_bg=_wbg,
+            font=("TkDefaultFont", self._font_size(), "bold"),
+            padx=14, pady=6,
+            hover_bg=_phov,
+            command=self._on_apply_settings,
+        ).pack(side="left", padx=(0, 8))
+        _RoundedChip(
+            _action_frame, text=self._t("settings_close_btn"),
+            chip_bg=_wbg, chip_fg=_fg,
+            parent_bg=_wbg,
+            font=("TkDefaultFont", self._font_size()),
+            padx=14, pady=6,
+            outline=_border, outline_width=1,
+            hover_bg=c.get("qa_bg", "#edf0f8"),
+            command=win.destroy,
+        ).pack(side="left")
 
         # ── Scrollable canvas inside the dialog ───────────────────────
-        canvas = tk.Canvas(win, borderwidth=0, highlightthickness=0)
+        canvas = tk.Canvas(win, borderwidth=0, highlightthickness=0, bg=_wbg)
         sb = ttk.Scrollbar(win, orient="vertical", command=canvas.yview)
         canvas.configure(yscrollcommand=sb.set)
         sb.pack(side="right", fill="y")
         canvas.pack(side="left", fill="both", expand=True)
 
-        inner = ttk.Frame(canvas, padding=_PAD)
+        inner = tk.Frame(canvas, bg=_wbg, padx=_PAD, pady=_PAD)
         win_id = canvas.create_window((0, 0), window=inner, anchor="nw")
         inner.bind("<Configure>",
                    lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
@@ -174,106 +633,188 @@ class SettingsMixin:
                     lambda e: canvas.itemconfig(win_id, width=e.width))
 
         # ── Mouse-wheel scrolling ─────────────────────────────────────
-        # Strategy: bind the handler directly on every widget inside the dialog
-        # rather than using bind_all.
+        # Bind at the Toplevel (win) level rather than on every individual
+        # widget.  Every child widget's default bindtag list ends with its
+        # enclosing Toplevel, so win.bind() fires for scroll events on ANY
+        # descendant that does not return "break" from its own bindings.
+        # This is simpler and also automatically covers widgets created later
+        # (e.g. by _rebuild_emb_context) without any re-binding.
         #
-        # Why not bind_all?
-        #   bind_all adds to tkinter's "all" binding tag, which fires *after*
-        #   class-level handlers.  Text and Listbox widgets have class bindings
-        #   for <MouseWheel> that can suppress propagation on some platforms,
-        #   so bind_all may never fire when the cursor is over those widgets.
-        #
-        # Why fix the delta calculation?
-        #   On Windows/physical mouse wheel event.delta is ±120 per notch, so
-        #   dividing by 120 gives ±1.  On macOS trackpad event.delta is a small
-        #   integer (±1…±30 per gesture frame), and int(±10 / 120) == 0 — nothing
-        #   scrolls.  We normalise so at least 1 unit is always scrolled.
+        # Delta handling:
+        #   • Physical mouse wheel (Windows) : event.delta is ±120 per notch
+        #     → scroll ±1 unit per notch.
+        #   • macOS trackpad               : event.delta is continuous and
+        #     small (±1…±30 per gesture frame).  Dividing by 120 gives 0,
+        #     so instead we use yview_moveto for pixel-accurate smooth scroll.
 
         def _on_mousewheel(event: tk.Event) -> None:
             try:
                 delta = event.delta
                 if delta == 0:
                     return
-                # Large delta → physical scroll wheel (Windows-style ±120 per notch).
-                # Small delta → macOS trackpad continuous scroll.
                 if abs(delta) >= 120:
-                    units = int(-delta / 120)
+                    # Physical scroll wheel: ±1 unit per ±120-delta notch
+                    canvas.yview_scroll(int(-delta / 120), "units")
                 else:
-                    units = -1 if delta > 0 else 1
-                canvas.yview_scroll(units, "units")
+                    # macOS trackpad: fractional pixel-accurate scroll
+                    try:
+                        sr = canvas.cget("scrollregion")
+                        parts = str(sr).split() if sr else []
+                        total_h = (float(parts[3]) - float(parts[1])
+                                   if len(parts) >= 4 else 0)
+                    except Exception:
+                        total_h = 0
+                    if total_h <= 0:
+                        canvas.yview_scroll(-1 if delta > 0 else 1, "units")
+                        return
+                    lo, _ = canvas.yview()
+                    canvas.yview_moveto(
+                        max(0.0, min(1.0, lo - delta / total_h)))
             except tk.TclError:
                 pass  # canvas already destroyed
 
-        def _bind_mousewheel(widget: tk.Widget) -> None:
-            """Recursively bind the scroll handler on *widget* and all descendants."""
-            try:
-                widget.bind("<MouseWheel>", _on_mousewheel, add=True)
-            except tk.TclError:
-                pass
-            for child in widget.winfo_children():
-                _bind_mousewheel(child)
+        def _scroll_up(_e=None):
+            canvas.yview_scroll(-1, "units")
 
-        # Bind on the canvas and the banner immediately (they exist now).
-        canvas.bind("<MouseWheel>", _on_mousewheel, add=True)
-        banner.bind("<MouseWheel>", _on_mousewheel, add=True)
+        def _scroll_down(_e=None):
+            canvas.yview_scroll(1, "units")
 
-        # Bind on the inner frame and everything inside it after the dialog is
-        # fully built (after_idle runs once the event loop returns).
-        win.after_idle(lambda: _bind_mousewheel(inner))
+        # Toplevel binding: catches all scroll events inside the dialog.
+        # Direct bindings on canvas/banner ensure scroll works even when
+        # hovering over the viewport area itself.
+        for _w in (win, canvas, banner):
+            _w.bind("<MouseWheel>", _on_mousewheel, add=True)
+            _w.bind("<Button-4>",   _scroll_up,      add=True)   # Linux
+            _w.bind("<Button-5>",   _scroll_down,    add=True)   # Linux
 
-        # No global bind_all needed — destroying the Toplevel removes all
-        # widget-level bindings automatically.
+        # Destroying the Toplevel automatically removes all its widget-level
+        # bindings — no manual cleanup needed.
 
         inner.columnconfigure(0, weight=1)
         row = 0
 
+        # Helper: small outlined chip button (canvas-drawn → bypasses macOS Aqua)
+        def _mk_chip(parent, text, cmd, *, pbg=_cbg):
+            return self._make_util_chip(parent, text, cmd, parent_bg=pbg)
+
+        # Helper: effort-style option chip — same art as the Effort chip in
+        # the main toolbar.  Displays ``"<current value> ▾"``; clicking opens
+        # a tk.Menu positioned directly below the chip.
+        #
+        # Parameters
+        # ----------
+        # options_fn : list | callable → list
+        #     Static list of option strings, *or* a zero-arg callable that
+        #     returns the current list (useful for dynamic lists such as models).
+        # on_change  : callable | None
+        #     Called with no arguments after a new option is selected.
+        # pbg        : str
+        #     Parent background (used for the canvas border reveal strip).
+        def _mk_option_chip(parent, var, options_fn, *, on_change=None, pbg=_cbg):
+            chip_holder: list = [None]
+
+            def _get_opts() -> list:
+                return options_fn() if callable(options_fn) else options_fn
+
+            def _show_menu() -> None:
+                menu = tk.Menu(win, tearoff=0)
+                for opt in _get_opts():
+                    def _select(o=opt) -> None:
+                        var.set(o)
+                        chip_holder[0].set_text(f"{o} ▾")
+                        if on_change:
+                            on_change()
+                    menu.add_command(label=opt, command=_select)
+                try:
+                    x = chip_holder[0].winfo_rootx()
+                    y = (chip_holder[0].winfo_rooty()
+                         + chip_holder[0].winfo_height())
+                    menu.tk_popup(x, y)
+                finally:
+                    menu.grab_release()
+
+            _sz  = max(self._font_size() - 1, 10)
+            opts = _get_opts()
+            # Pre-size the chip to the widest option so it never reflows.
+            _size_text = (max([f"{o} ▾" for o in opts], key=len)
+                          if opts else f"{var.get()} ▾")
+            chip = _RoundedChip(
+                parent, text=_size_text,
+                chip_bg=c.get("qa_bg", "#edf0f8"), chip_fg=_fg,
+                parent_bg=pbg,
+                font=("TkDefaultFont", _sz),
+                padx=10, pady=4,
+                hover_bg=c.get("qa_bg_hover", c.get("qa_bg", "#edf0f8")),
+                outline=_border, outline_width=1,
+                command=_show_menu,
+            )
+            chip.set_text(f"{var.get()} ▾")
+            chip_holder[0] = chip
+            return chip
+
+        # Helper: themed tk.Entry (respects bg/fg on all platforms)
+        def _mk_entry(parent, var, *, show="", width=None):
+            kw: dict = {}
+            if var is not None:
+                kw["textvariable"] = var
+            if show:
+                kw["show"] = show
+            if width is not None:
+                kw["width"] = width
+            return tk.Entry(
+                parent,
+                bg=_cbg, fg=_fg, insertbackground=_fg,
+                relief="flat", bd=0,
+                font=("TkDefaultFont", self._font_size()),
+                highlightthickness=1,
+                highlightbackground=_border,
+                highlightcolor=_pbg,
+                **kw,
+            )
+
         # ── Model Selection ───────────────────────────────────────────
-        mf = ttk.LabelFrame(inner, text=self._t("settings_model_section"), padding=_PAD)
-        mf.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
-        mf.columnconfigure(1, weight=1)
+        mf = self._make_section_card(inner, row, self._t("settings_model_section"), c)
         row += 1
 
-        ttk.Label(mf, text=self._t("settings_provider_label")).grid(
+        tk.Label(mf, text=self._t("settings_provider_label"),
+                 bg=_cbg, fg=_fg).grid(
             row=0, column=0, sticky="w", padx=(0, 8))
-        provider_cb = ttk.Combobox(
-            mf, textvariable=self._llm_provider_var,
-            values=["gemini", "openai", "deepseek"],
-            state="readonly", width=12)
-        provider_cb.grid(row=0, column=1, sticky="w")
-        provider_cb.bind("<<ComboboxSelected>>", self._on_provider_changed)
+        _mk_option_chip(
+            mf, self._llm_provider_var,
+            ["gemini", "openai", "deepseek"],
+            on_change=self._on_provider_changed,
+        ).grid(row=0, column=1, sticky="w")
 
-        ttk.Label(mf, text=self._t("settings_model_label")).grid(
+        tk.Label(mf, text=self._t("settings_model_label"),
+                 bg=_cbg, fg=_fg).grid(
             row=1, column=0, sticky="w", padx=(0, 8), pady=(6, 0))
-        self._model_cb = ttk.Combobox(
-            mf, textvariable=self._llm_model_var, width=22)
-        self._model_cb.grid(row=1, column=1, sticky="w", pady=(6, 0))
+        self._model_chip = _mk_option_chip(
+            mf, self._llm_model_var,
+            lambda: models_for(self._llm_provider_var.get()),
+            on_change=None,   # var is updated by _select inside the chip
+        )
+        self._model_chip.grid(row=1, column=1, sticky="w", pady=(6, 0))
         self._update_model_list()   # populate for current provider
 
         # ── Request Frequency ─────────────────────────────────────────
-        rf = ttk.LabelFrame(
-            inner, text=self._t("settings_rate_section"), padding=_PAD)
-        rf.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
-        rf.columnconfigure(1, weight=1)
+        rf = self._make_section_card(inner, row, self._t("settings_rate_section"), c)
         row += 1
 
-        ttk.Label(rf, text=self._t("settings_rate_tier_label")).grid(
+        tk.Label(rf, text=self._t("settings_rate_tier_label"),
+                 bg=_cbg, fg=_fg).grid(
             row=0, column=0, sticky="w", padx=(0, 8))
 
         from uacragent.domain.rate_tiers import (
             RATE_TIER_BY_DISPLAY, display_names, get_rate_tier)
-        _rate_cb = ttk.Combobox(
-            rf, textvariable=self._rate_tier_disp_var,
-            values=display_names(),
-            state="readonly", width=14)
-        _rate_cb.grid(row=0, column=1, sticky="w")
 
-        # Dynamic hint label — updated immediately when the combobox changes.
+        # Dynamic hint label — defined before the chip so the on_change
+        # callback can safely reference it.
         self._rate_hint_var = tk.StringVar()
-        _rate_hint_lbl = ttk.Label(
+        _rate_hint_lbl = tk.Label(
             rf, textvariable=self._rate_hint_var,
-            foreground="gray",
+            bg=_cbg, fg="#6b7280",
             font=("TkDefaultFont", max(self._font_size() - 1, 10)),
-            wraplength=460,
+            wraplength=460, anchor="w",
         )
         _rate_hint_lbl.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
@@ -285,85 +826,86 @@ class SettingsMixin:
             # Refresh the suggestion label whenever the tier selection changes.
             self._update_rate_suggestion()
 
-        _rate_cb.bind("<<ComboboxSelected>>", _update_rate_hint)
+        _mk_option_chip(
+            rf, self._rate_tier_disp_var, display_names,
+            on_change=_update_rate_hint,
+        ).grid(row=0, column=1, sticky="w")
         _update_rate_hint()   # populate immediately for the current selection
 
         # Suggestion label — blue info tone; only visible when current ≠ suggested.
         self._rate_suggestion_var = tk.StringVar()
-        ttk.Label(
+        tk.Label(
             rf, textvariable=self._rate_suggestion_var,
-            foreground="#1565c0",
+            bg=_cbg, fg="#1565c0",
             font=("TkDefaultFont", max(self._font_size() - 1, 10)),
-            wraplength=460,
+            wraplength=460, anchor="w",
         ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(2, 0))
 
         # ── API Key (single row, changes with provider) ───────────────
-        akf = ttk.LabelFrame(inner, text=self._t("settings_api_key_section"), padding=_PAD)
-        akf.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
-        akf.columnconfigure(1, weight=1)
+        akf = self._make_section_card(inner, row, self._t("settings_api_key_section"), c)
+        akf.columnconfigure(2, weight=0)
+        akf.columnconfigure(3, weight=0)
         row += 1
 
         self._api_key_label_var = tk.StringVar(value=self._t("api_key_google"))
-        ttk.Label(akf, textvariable=self._api_key_label_var).grid(
+        tk.Label(akf, textvariable=self._api_key_label_var,
+                 bg=_cbg, fg=_fg).grid(
             row=0, column=0, sticky="w", padx=(0, 8))
 
         # Single entry — textvariable is swapped by _update_api_key_row()
-        self._active_key_entry = ttk.Entry(akf, show="*")
+        self._active_key_entry = _mk_entry(akf, None, show="*")
         self._active_key_entry.grid(row=0, column=1, sticky="ew", padx=(0, 4))
 
-        self._api_key_show_btn = ttk.Button(
-            akf, text=self._t("settings_show_key"), width=5,
-            command=lambda: self._toggle_key_entry(
+        self._api_key_show_btn = _mk_chip(
+            akf, self._t("settings_show_key"),
+            lambda: self._toggle_key_entry(
                 self._active_key_entry, self._api_key_show_btn))
         self._api_key_show_btn.grid(row=0, column=2)
 
         self._api_key_hint_var = tk.StringVar()
-        self._api_key_hint_lbl = ttk.Label(
+        self._api_key_hint_lbl = tk.Label(
             akf, textvariable=self._api_key_hint_var,
+            bg=_cbg, fg="gray",
             font=("TkDefaultFont", _note_sz))
         self._api_key_hint_lbl.grid(row=0, column=3, padx=(6, 0))
 
         # Wire entry to current provider's var and update hint
         self._update_api_key_row()
 
-        # ── API key scope notice ───────────────────────────────────────────
-        note_frame = tk.Frame(akf, background="#e8f4fd",
-                              highlightbackground="#90caf9", highlightthickness=1,
-                              padx=8, pady=5)
-        note_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(8, 0))
+        # ── API key scope notice (rounded info box) ──────────────────────────
+        _note_cv, _note_shell = self._make_rounded_box(
+            akf, fill_color="#e8f4fd", border_color="#90caf9",
+            parent_bg=_cbg, r=8, padx=10, pady=6)
+        _note_cv.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(8, 0))
         tk.Label(
-            note_frame,
+            _note_shell,
             text=self._t("settings_api_key_note"),
             background="#e8f4fd", foreground="#0d47a1",
-            font=("TkDefaultFont", _note_sz), anchor="w", justify="left", wraplength=460,
+            font=("TkDefaultFont", _note_sz), anchor="w", justify="left", wraplength=440,
         ).pack(fill="x")
 
         # ── Embedding ─────────────────────────────────────────────────────
-        embf = ttk.LabelFrame(inner, text=self._t("settings_embedding_section"), padding=_PAD)
-        embf.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
-        embf.columnconfigure(1, weight=1)
+        embf = self._make_section_card(inner, row, self._t("settings_embedding_section"), c)
         row += 1
 
-        ttk.Label(embf, text=self._t("settings_provider_label")).grid(
+        tk.Label(embf, text=self._t("settings_provider_label"),
+                 bg=_cbg, fg=_fg).grid(
             row=0, column=0, sticky="w", padx=(0, 8))
-        emb_cb = ttk.Combobox(
-            embf, textvariable=self._emb_provider_disp_var,
-            values=list(self._EMB_PROVIDER_OPTIONS.keys()),
-            state="readonly", width=34)
-        emb_cb.grid(row=0, column=1, sticky="w")
-        emb_cb.bind("<<ComboboxSelected>>", lambda _e: self._on_emb_provider_changed())
+        _mk_option_chip(
+            embf, self._emb_provider_disp_var,
+            list(self._EMB_PROVIDER_OPTIONS.keys()),
+            on_change=self._on_emb_provider_changed,
+        ).grid(row=0, column=1, sticky="w")
 
         # Context row — swapped by _on_emb_provider_changed()
-        self._emb_context_frame = ttk.Frame(embf)
+        self._emb_context_frame = tk.Frame(embf, bg=_cbg)
         self._emb_context_frame.grid(
             row=1, column=0, columnspan=2, sticky="ew", pady=(6, 0))
         self._emb_context_frame.columnconfigure(1, weight=1)
         self._rebuild_emb_context()   # populate for current provider
 
         # ── Course Information ─────────────────────────────────────────
-        inf = ttk.LabelFrame(inner, text=self._t("settings_course_section"), padding=_PAD)
-        inf.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
-        inf.columnconfigure(1, weight=1)
+        inf = self._make_section_card(inner, row, self._t("settings_course_section"), c)
         row += 1
 
         fields = [
@@ -374,130 +916,132 @@ class SettingsMixin:
             (self._t("settings_professor_field"),   None,  self._professor_var),
             (self._t("settings_semester_field"),    None,  self._semester_var),
         ]
-        for fi, (lbl, fg, var) in enumerate(fields):
-            # Only set foreground when an explicit override is needed (e.g. red
-            # for required fields). Omitting it for regular labels lets the ttk
-            # style propagate correctly, including in dark mode.
-            lbl_kw = {"foreground": fg} if fg else {}
-            ttk.Label(inf, text=lbl + ":", **lbl_kw).grid(
+        for fi, (_lbl_text, _lbl_color, var) in enumerate(fields):
+            _lbl_fg = _lbl_color if _lbl_color else _fg
+            tk.Label(inf, text=_lbl_text + ":", bg=_cbg, fg=_lbl_fg).grid(
                 row=fi, column=0, sticky="w", padx=(0, 6), pady=(3, 0))
-            e = ttk.Entry(inf, textvariable=var)
-            e.grid(row=fi, column=1, sticky="ew", pady=(3, 0))
-            if lbl == self._t("settings_course_name_field"):
+            e = _mk_entry(inf, var)
+            e.grid(row=fi, column=1, sticky="ew", pady=(3, 0), ipady=3)
+            if _lbl_text == self._t("settings_course_name_field"):
                 self._course_name_entry = e
 
         # ── Exam Options ──────────────────────────────────────────────
-        ef = ttk.LabelFrame(inner, text=self._t("settings_exam_section"), padding=_PAD)
-        ef.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
-        ef.columnconfigure(1, weight=1)
+        ef = self._make_section_card(inner, row, self._t("settings_exam_section"), c)
         row += 1
 
-        ttk.Label(ef, text=self._t("settings_exam_type_label")).grid(
+        tk.Label(ef, text=self._t("settings_exam_type_label"),
+                 bg=_cbg, fg=_fg).grid(
             row=0, column=0, sticky="w", padx=(0, 6))
-        ttk.Combobox(ef, textvariable=self._exam_type_var,
-                     values=[e.value for e in ExamType],
-                     state="readonly", width=14
-                     ).grid(row=0, column=1, sticky="w")
+        _mk_option_chip(
+            ef, self._exam_type_var,
+            [e.value for e in ExamType],
+        ).grid(row=0, column=1, sticky="w")
 
-        ttk.Label(ef, text=self._t("settings_exam_format_label")).grid(
+        tk.Label(ef, text=self._t("settings_exam_format_label"),
+                 bg=_cbg, fg=_fg).grid(
             row=1, column=0, sticky="w", padx=(0, 6), pady=(4, 0))
-        ttk.Combobox(ef, textvariable=self._exam_format_var,
-                     values=[e.value for e in ExamFormat],
-                     state="readonly", width=14
-                     ).grid(row=1, column=1, sticky="w", pady=(4, 0))
+        _mk_option_chip(
+            ef, self._exam_format_var,
+            [e.value for e in ExamFormat],
+        ).grid(row=1, column=1, sticky="w", pady=(4, 0))
 
-        ttk.Label(ef, text=self._t("settings_exam_duration_label")).grid(
+        tk.Label(ef, text=self._t("settings_exam_duration_label"),
+                 bg=_cbg, fg=_fg).grid(
             row=2, column=0, sticky="w", padx=(0, 6), pady=(4, 0))
-        ttk.Entry(ef, textvariable=self._exam_duration_var).grid(
-            row=2, column=1, sticky="ew", pady=(4, 0))
+        _mk_entry(ef, self._exam_duration_var).grid(
+            row=2, column=1, sticky="ew", pady=(4, 0), ipady=3)
 
-        ttk.Label(ef, text=self._t("settings_exam_info_label")).grid(
+        tk.Label(ef, text=self._t("settings_exam_info_label"),
+                 bg=_cbg, fg=_fg).grid(
             row=3, column=0, sticky="w", padx=(0, 6), pady=(4, 0))
-        ei_row = ttk.Frame(ef)
+        ei_row = tk.Frame(ef, bg=_cbg)
         ei_row.grid(row=3, column=1, sticky="ew", pady=(4, 0))
         ei_row.columnconfigure(0, weight=1)
-        self._exam_info_path_label = ttk.Label(
+        self._exam_info_path_label = tk.Label(
             ei_row, textvariable=self._exam_info_path_var,
-            foreground="gray", anchor="w", text="No file selected")
+            bg=_cbg, fg="gray", anchor="w")
         self._exam_info_path_label.grid(row=0, column=0, sticky="ew")
-        ttk.Button(ei_row, text=self._t("settings_browse_btn"), width=8,
-                   command=self._on_pick_exam_info
-                   ).grid(row=0, column=1, padx=(4, 0))
-        ttk.Button(ei_row, text=self._t("settings_clear_btn"), width=6,
-                   command=self._on_clear_exam_info
-                   ).grid(row=0, column=2, padx=(4, 0))
+        _mk_chip(ei_row, self._t("settings_browse_btn"),
+                 self._on_pick_exam_info).grid(row=0, column=1, padx=(4, 0))
+        _mk_chip(ei_row, self._t("settings_clear_btn"),
+                 self._on_clear_exam_info).grid(row=0, column=2, padx=(4, 0))
 
         # ── Workspace & Export ────────────────────────────────────────
-        wf = ttk.LabelFrame(inner, text=self._t("settings_workspace_section"), padding=_PAD)
-        wf.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
-        wf.columnconfigure(1, weight=1)
+        wf = self._make_section_card(inner, row, self._t("settings_workspace_section"), c)
         row += 1
 
-        ttk.Label(wf, text=self._t("settings_workspace_label")).grid(
+        tk.Label(wf, text=self._t("settings_workspace_label"),
+                 bg=_cbg, fg=_fg).grid(
             row=0, column=0, sticky="w", padx=(0, 6))
-        ws_row = ttk.Frame(wf)
+        ws_row = tk.Frame(wf, bg=_cbg)
         ws_row.grid(row=0, column=1, sticky="ew")
         ws_row.columnconfigure(0, weight=1)
         if self._workspace_committed:
             # Locked: show the path as a read-only label + Open button
             path_text = self._workspace_var.get() or str(get_app_data_dir())
-            ttk.Label(ws_row, text=path_text, foreground="#1a56a5",
-                      anchor="w").grid(row=0, column=0, sticky="ew")
-            ttk.Button(ws_row, text=self._t("settings_open_btn"), width=6,
-                       command=lambda: _open_folder_in_os(path_text)
-                       ).grid(row=0, column=1, padx=(4, 0))
-            ttk.Label(ws_row, text="🔒", foreground="gray"
-                      ).grid(row=0, column=2, padx=(4, 0))
+            tk.Label(ws_row, text=path_text, bg=_cbg, fg="#1a56a5",
+                     anchor="w").grid(row=0, column=0, sticky="ew")
+            _mk_chip(ws_row, self._t("settings_open_btn"),
+                     lambda: _open_folder_in_os(path_text)
+                     ).grid(row=0, column=1, padx=(4, 0))
+            tk.Label(ws_row, text="🔒", bg=_cbg, fg="gray"
+                     ).grid(row=0, column=2, padx=(4, 0))
         else:
             # Not yet committed: allow user to pick
-            self._workspace_label = ttk.Label(
+            self._workspace_label = tk.Label(
                 ws_row, textvariable=self._workspace_var,
-                foreground="gray", anchor="w", text="Auto (app data folder)")
+                bg=_cbg, fg="gray", anchor="w")
             self._workspace_label.grid(row=0, column=0, sticky="ew")
-            ttk.Button(ws_row, text=self._t("settings_browse_btn"), width=9,
-                       command=self._on_pick_workspace
-                       ).grid(row=0, column=1, padx=(4, 0))
-            ttk.Button(ws_row, text=self._t("settings_reset_btn"), width=6,
-                       command=self._on_reset_workspace
-                       ).grid(row=0, column=2, padx=(4, 0))
+            _mk_chip(ws_row, self._t("settings_browse_btn"),
+                     self._on_pick_workspace).grid(row=0, column=1, padx=(4, 0))
+            _mk_chip(ws_row, self._t("settings_reset_btn"),
+                     self._on_reset_workspace).grid(row=0, column=2, padx=(4, 0))
 
-        # ── Deletion warning ──────────────────────────────────────────
-        warn_frame = tk.Frame(wf, background="#fff3e0",
-                              highlightbackground="#e65100",
-                              highlightthickness=1,
-                              padx=8, pady=5)
-        warn_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 2))
+        # ── Deletion warning (rounded warning box) ────────────────────────
+        _warn_cv, _warn_shell = self._make_rounded_box(
+            wf, fill_color="#fff3e0", border_color="#e65100",
+            parent_bg=_cbg, r=8, padx=10, pady=6)
+        _warn_cv.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 2))
         tk.Label(
-            warn_frame,
+            _warn_shell,
             text=self._t("settings_deletion_warning_title"),
             background="#fff3e0", foreground="#bf360c",
             font=("TkDefaultFont", _note_sz, "bold"),
             anchor="w",
         ).pack(side="top", fill="x")
         tk.Label(
-            warn_frame,
+            _warn_shell,
             text=self._t("settings_deletion_warning_body"),
             background="#fff3e0", foreground="#4e342e",
             font=("TkDefaultFont", _note_sz),
-            anchor="w", justify="left", wraplength=460,
+            anchor="w", justify="left", wraplength=440,
         ).pack(side="top", fill="x")
 
-        ttk.Label(wf, text=self._t("settings_export_format_label")).grid(
+        tk.Label(wf, text=self._t("settings_export_format_label"),
+                 bg=_cbg, fg=_fg).grid(
             row=2, column=0, sticky="w", padx=(0, 6), pady=(6, 0))
-        ttk.Combobox(wf, textvariable=self._export_format_var,
-                     values=[e.value for e in ExportFormat],
-                     state="readonly", width=12
-                     ).grid(row=2, column=1, sticky="w", pady=(6, 0))
+        _mk_option_chip(
+            wf, self._export_format_var,
+            [e.value for e in ExportFormat],
+        ).grid(row=2, column=1, sticky="w", pady=(6, 0))
 
-        ttk.Label(wf, text=self._t("settings_extra_instructions_label")).grid(
+        tk.Label(wf, text=self._t("settings_extra_instructions_label"),
+                 bg=_cbg, fg=_fg).grid(
             row=3, column=0, sticky="nw", padx=(0, 6), pady=(6, 0))
-        self._extra_text = tk.Text(wf, height=3, wrap="word")
+        self._extra_text = tk.Text(
+            wf, height=3, wrap="word",
+            bg=_cbg, fg=_fg, insertbackground=_fg,
+            relief="flat", bd=0,
+            font=("TkDefaultFont", self._font_size()),
+            highlightthickness=1,
+            highlightbackground=_border,
+            highlightcolor=_pbg,
+        )
         self._extra_text.grid(row=3, column=1, sticky="ew", pady=(6, 0))
         self._extra_text.insert("1.0", self._extra_instructions_var.get())
 
         # ── Course Documents ──────────────────────────────────────────
-        docs_frame = ttk.LabelFrame(inner, text=self._t("settings_docs_section"), padding=_PAD)
-        docs_frame.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
+        docs_frame = self._make_section_card(inner, row, self._t("settings_docs_section"), c)
         docs_frame.columnconfigure(0, weight=1)
         row += 1
 
@@ -520,8 +1064,7 @@ class SettingsMixin:
                     lb.insert(tk.END, Path(p).name)
 
         # ── Generated Outputs ─────────────────────────────────────────
-        out_frame = ttk.LabelFrame(inner, text=self._t("settings_outputs_section"), padding=_PAD)
-        out_frame.grid(row=row, column=0, sticky="ew", pady=(0, _PAD))
+        out_frame = self._make_section_card(inner, row, self._t("settings_outputs_section"), c)
         out_frame.columnconfigure(0, weight=1)
         row += 1
         self._build_outputs_panel(out_frame, win)
@@ -529,7 +1072,7 @@ class SettingsMixin:
         self._center_on_main(win)
 
     def _build_outputs_panel(
-        self, parent: ttk.Frame, dialog_win: tk.Toplevel
+        self, parent: tk.Frame, dialog_win: tk.Toplevel
     ) -> None:
         """Populate the Generated Outputs section inside the Settings dialog.
 
@@ -540,25 +1083,30 @@ class SettingsMixin:
         # Resolve the outputs folder for the current session.
         ws_id     = self._session.workspace_id
         ws_folder = self._session.workspace_folder
+        c    = self._themed_colors()
+        _cbg = c.get("text_bg", "#ffffff")
+        _fg  = c.get("status_fg", "#6b7280")
+
         if not ws_id and not ws_folder:
-            ttk.Label(parent, text=self._t("settings_no_workspace"),
-                      foreground="gray").pack(anchor="w")
+            tk.Label(parent, text=self._t("settings_no_workspace"),
+                     bg=_cbg, fg=_fg).pack(anchor="w")
             return
 
         ws = workspace_paths(workspace_id=ws_id, workspace_folder=ws_folder)
         out_dir = Path(ws.outputs)
 
         # Container that we re-fill on every refresh
-        list_frame = ttk.Frame(parent)
+        list_frame = tk.Frame(parent, bg=_cbg)
         list_frame.pack(fill="x")
         list_frame.columnconfigure(0, weight=1)
 
         # "Open folder" shortcut below the list — disabled until the folder exists
-        footer = ttk.Frame(parent)
+        footer = tk.Frame(parent, bg=_cbg)
         footer.pack(fill="x", pady=(6, 0))
-        open_folder_btn = ttk.Button(
-            footer, text=self._t("settings_open_outputs_btn"),
-            command=lambda: _open_folder_in_os(str(out_dir)),
+        open_folder_btn = self._make_util_chip(
+            footer, self._t("settings_open_outputs_btn"),
+            lambda: _open_folder_in_os(str(out_dir)),
+            parent_bg=_cbg,
         )
         open_folder_btn.pack(side="left")
 
@@ -574,16 +1122,15 @@ class SettingsMixin:
                 files = [f for f in files if f.is_file()]
 
             # Enable/disable the "Open folder" button based on folder existence
-            open_folder_btn.configure(
-                state="normal" if out_dir.exists() else "disabled")
+            open_folder_btn.set_state(out_dir.exists())
 
             if not files:
                 msg = (self._t("settings_no_outputs")
                        if out_dir.exists()
                        else self._t("settings_no_outputs_folder"))
-                ttk.Label(list_frame, text=msg,
-                          foreground="gray").grid(row=0, column=0, sticky="w",
-                                                  pady=(2, 0))
+                tk.Label(list_frame, text=msg,
+                         bg=_cbg, fg="gray").grid(row=0, column=0, sticky="w",
+                                                   pady=(2, 0))
                 return
 
             for row_idx, fpath in enumerate(files):
@@ -605,13 +1152,14 @@ class SettingsMixin:
                 )
                 name_lbl.grid(row=0, column=0, sticky="ew", padx=(4, 8))
 
-                btn_cell = ttk.Frame(row_f)
+                btn_cell = tk.Frame(row_f, bg=bg)
                 btn_cell.grid(row=0, column=1, padx=(0, 4), pady=2)
 
                 # Open
-                ttk.Button(
-                    btn_cell, text=self._t("output_open_btn"), width=6,
-                    command=lambda p=str(fpath): _open_file_in_os(p),
+                self._make_util_chip(
+                    btn_cell, self._t("output_open_btn"),
+                    lambda p=str(fpath): _open_file_in_os(p),
+                    parent_bg=bg,
                 ).pack(side="left", padx=(0, 3))
 
                 # Copy to…
@@ -632,68 +1180,111 @@ class SettingsMixin:
                         counter += 1
                     try:
                         _shutil.copy2(str(src), str(dest))
-                        messagebox.showinfo(
+                        self._show_info_dialog(
                             self._t("mb_copy_title"),
-                            self._t("mb_copy_body").format(dest=dest),
-                            parent=dialog_win)
+                            self._t("mb_copy_body").format(dest=dest))
                     except Exception as exc:
-                        messagebox.showerror(
-                            self._t("mb_copy_fail_title"), str(exc),
-                            parent=dialog_win)
+                        self._show_info_dialog(
+                            self._t("mb_copy_fail_title"), str(exc))
 
-                ttk.Button(
-                    btn_cell, text=self._t("output_copy_btn"), width=8,
-                    command=_copy_to,
+                self._make_util_chip(
+                    btn_cell, self._t("output_copy_btn"), _copy_to,
+                    parent_bg=bg,
                 ).pack(side="left", padx=(0, 3))
 
                 # Delete
                 def _delete(p: Path = fpath) -> None:
-                    if not messagebox.askyesno(
+                    if not self._show_confirm_dialog(
                         self._t("mb_delete_file_title"),
                         self._t("mb_delete_file_body").format(name=p.name),
-                        icon="warning", parent=dialog_win,
+                        confirm_text=self._t("output_delete_btn"),
+                        destructive=True,
                     ):
                         return
                     try:
                         p.unlink()
                     except Exception as exc:
-                        messagebox.showerror(
-                            self._t("mb_delete_fail_title"), str(exc),
-                            parent=dialog_win)
+                        self._show_info_dialog(
+                            self._t("mb_delete_fail_title"), str(exc))
                         return
                     _refresh()
 
-                ttk.Button(
-                    btn_cell, text=self._t("output_delete_btn"), width=7,
-                    command=_delete,
+                self._make_util_chip(
+                    btn_cell, self._t("output_delete_btn"), _delete,
+                    parent_bg=bg,
                 ).pack(side="left")
 
         _refresh()
 
-    def _create_doc_section(self, parent: ttk.Frame,
+    def _create_doc_section(self, parent: tk.Frame,
                             doc_type: DocumentType) -> None:
+        c     = self._themed_colors()
+        _cbg  = c.get("text_bg", "#ffffff")   # white card background
+        _fg   = c["text_fg"]
+        _brd  = c["input_border"]
+        _sz   = self._font_size() if hasattr(self, "_font_size") else 13
         label = self._t(f"doctype_{doc_type.value}")
-        frame = ttk.LabelFrame(parent, text=label, padding=4)
-        frame.pack(fill="x", pady=3)
-        frame.columnconfigure(0, weight=1)
-        frame.rowconfigure(0, weight=1, minsize=55)
-        frame.rowconfigure(1, weight=0, minsize=28)
 
-        lb = tk.Listbox(frame, height=3, selectmode=tk.EXTENDED)
-        sb = ttk.Scrollbar(frame, orient="vertical", command=lb.yview)
+        _OFFSET = 2
+        # Canvas-based rounded box — same two-layer pattern as _make_section_card.
+        cv = tk.Canvas(parent, bg=_cbg, highlightthickness=0, bd=0)
+        cv.pack(fill="x", pady=3)
+
+        shell = tk.Frame(cv, bg=_cbg)
+        win_id = cv.create_window(_OFFSET, _OFFSET, window=shell, anchor="nw")
+        shell.columnconfigure(0, weight=1)
+        shell.rowconfigure(0, weight=0)
+        shell.rowconfigure(1, weight=1, minsize=55)
+        shell.rowconfigure(2, weight=0, minsize=28)
+
+        def _sync_shell_width(e: tk.Event) -> None:
+            cv.itemconfig(win_id, width=max(0, e.width - 2 * _OFFSET))
+
+        def _sync_canvas_height(e: tk.Event) -> None:
+            cv.configure(height=shell.winfo_reqheight() + 2 * _OFFSET)
+            _draw()
+
+        def _draw() -> None:
+            cv.delete("ds_fill")
+            cv.delete("ds_border")
+            w, h = cv.winfo_width(), cv.winfo_height()
+            if w > 1 and h > 1:
+                draw_rounded_rect(cv, 0, 0, w, h, r=8,
+                                  fill=_cbg, outline="", tags="ds_fill")
+                draw_rounded_rect(cv, 1, 1, w - 1, h - 1, r=8,
+                                  fill="", outline=_brd, width=1, tags="ds_border")
+                cv.tag_lower("ds_fill")
+                cv.tag_lower("ds_border", win_id)
+
+        cv.bind("<Configure>", lambda e: (_sync_shell_width(e), _draw()))
+        shell.bind("<Configure>", _sync_canvas_height)
+
+        tk.Label(
+            shell, text=label,
+            bg=_cbg, fg=_fg,
+            font=("TkDefaultFont", _sz),
+            anchor="w",
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=6, pady=(6, 2))
+
+        lb = tk.Listbox(shell, height=3, selectmode=tk.EXTENDED)
+        sb = ttk.Scrollbar(shell, orient="vertical", command=lb.yview)
         lb.configure(yscrollcommand=sb.set)
-        lb.grid(row=0, column=0, sticky="nsew")
-        sb.grid(row=0, column=1, sticky="ns")
+        lb.grid(row=1, column=0, sticky="nsew", padx=(6, 0))
+        sb.grid(row=1, column=1, sticky="ns", padx=(0, 6))
         self._file_listboxes[doc_type] = lb
 
-        btn_row = ttk.Frame(frame)
-        btn_row.grid(row=1, column=0, columnspan=2, sticky="w", pady=(3, 4))
-        ttk.Button(btn_row, text=self._t("settings_add_files_btn"), width=7,
-                   command=lambda dt=doc_type: self._on_add_files(dt)
-                   ).pack(side="left", padx=(0, 3))
-        ttk.Button(btn_row, text=self._t("settings_remove_files_btn"), width=7,
-                   command=lambda dt=doc_type: self._on_remove_files(dt)
-                   ).pack(side="left")
+        btn_row = tk.Frame(shell, bg=_cbg)
+        btn_row.grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(3, 6))
+        self._make_util_chip(
+            btn_row, self._t("settings_add_files_btn"),
+            lambda dt=doc_type: self._on_add_files(dt),
+            parent_bg=_cbg,
+        ).pack(side="left", padx=(0, 6))
+        self._make_util_chip(
+            btn_row, self._t("settings_remove_files_btn"),
+            lambda dt=doc_type: self._on_remove_files(dt),
+            parent_bg=_cbg,
+        ).pack(side="left")
 
     def _settings_alive(self) -> bool:
         """Return True only when the Settings Toplevel exists and is not destroyed."""
@@ -703,7 +1294,7 @@ class SettingsMixin:
         )
 
     def _update_model_list(self) -> None:
-        """Refresh the model combobox values for the current provider.
+        """Refresh the model chip for the current provider.
 
         Skips the widget update when the Settings dialog is closed — the
         StringVars are always updated so the next dialog open picks the
@@ -715,10 +1306,12 @@ class SettingsMixin:
         current = self._llm_model_var.get()
         if current not in models and models:
             self._llm_model_var.set(models[0])
-        # Only touch the Combobox widget if the dialog is alive
-        if self._settings_alive() and hasattr(self, "_model_cb"):
+        # Update the chip's displayed text when the dialog is alive.
+        # The chip's _show_menu() closure calls models_for() dynamically,
+        # so the drop-down list is always up-to-date without further action.
+        if self._settings_alive() and hasattr(self, "_model_chip"):
             try:
-                self._model_cb.configure(values=models)
+                self._model_chip.set_text(f"{self._llm_model_var.get()} ▾")
             except tk.TclError:
                 pass  # widget destroyed between the check and the call
 
@@ -754,9 +1347,9 @@ class SettingsMixin:
             }
             var = var_map.get(provider, self._gemini_key_var)
             self._active_key_entry.configure(textvariable=var, show="*")
-            self._api_key_show_btn.configure(text="Show")
+            self._api_key_show_btn.configure(text=self._t("settings_show_key"))
             self._api_key_hint_lbl.configure(
-                foreground="gray" if env_key else "#cc4400")
+                fg="gray" if env_key else "#cc4400")
         except tk.TclError:
             pass  # widget destroyed between the check and the call
 
@@ -778,60 +1371,116 @@ class SettingsMixin:
             child.destroy()
         frame.columnconfigure(1, weight=1)
 
+        c    = self._themed_colors()
+        _cbg = c.get("text_bg", "#ffffff")
+        _fg  = c["text_fg"]
+
         provider = self._emb_provider_var.get()
+
+        _brd = c["input_border"]
+        _pbg = c["btn_primary_bg"]
+        _sz  = self._font_size() if hasattr(self, "_font_size") else 13
 
         if provider == "local":
             # Free model selector
-            ttk.Label(frame, text=self._t("settings_model_label")).grid(
+            tk.Label(frame, text=self._t("settings_model_label"),
+                     bg=_cbg, fg=_fg).grid(
                 row=0, column=0, sticky="w", padx=(0, 8))
-            local_cb = ttk.Combobox(
-                frame, textvariable=self._local_model_disp_var,
-                values=list(self._FREE_EMB_MODELS.keys()),
-                state="readonly", width=46)
-            local_cb.grid(row=0, column=1, sticky="w")
-            local_cb.bind("<<ComboboxSelected>>",
-                          lambda _e: self._local_model_var.set(
-                              self._FREE_EMB_MODELS.get(
-                                  self._local_model_disp_var.get(), "all-MiniLM-L6-v2")))
-            ttk.Label(
+
+            def _on_local_model_selected() -> None:
+                self._local_model_var.set(
+                    self._FREE_EMB_MODELS.get(
+                        self._local_model_disp_var.get(), "all-MiniLM-L6-v2"))
+
+            # Build a chip using the display-label list.  We size it to the
+            # widest option so the widget width never changes on selection.
+            _chip_sz = max(_sz - 1, 10)
+            _local_opts = list(self._FREE_EMB_MODELS.keys())
+            _local_size_text = max(
+                [f"{o} ▾" for o in _local_opts], key=len) if _local_opts else ""
+            _local_chip_holder: list = [None]
+
+            def _show_local_menu() -> None:
+                menu = tk.Menu(frame, tearoff=0)
+                for opt in _local_opts:
+                    def _sel(o=opt) -> None:
+                        self._local_model_disp_var.set(o)
+                        _local_chip_holder[0].set_text(f"{o} ▾")
+                        _on_local_model_selected()
+                    menu.add_command(label=opt, command=_sel)
+                try:
+                    x = _local_chip_holder[0].winfo_rootx()
+                    y = (_local_chip_holder[0].winfo_rooty()
+                         + _local_chip_holder[0].winfo_height())
+                    menu.tk_popup(x, y)
+                finally:
+                    menu.grab_release()
+
+            c_chip = self._themed_colors()
+            _local_chip = _RoundedChip(
+                frame, text=_local_size_text,
+                chip_bg=c_chip.get("qa_bg", "#edf0f8"),
+                chip_fg=c_chip["text_fg"],
+                parent_bg=_cbg,
+                font=("TkDefaultFont", _chip_sz),
+                padx=10, pady=4,
+                hover_bg=c_chip.get("qa_bg_hover",
+                                    c_chip.get("qa_bg", "#edf0f8")),
+                outline=c_chip["input_border"], outline_width=1,
+                command=_show_local_menu,
+            )
+            _local_chip.set_text(
+                f"{self._local_model_disp_var.get()} ▾")
+            _local_chip_holder[0] = _local_chip
+            _local_chip.grid(row=0, column=1, sticky="w")
+            tk.Label(
                 frame,
                 text=self._t("settings_emb_local_hint"),
-                foreground="gray", font=("TkDefaultFont", max(self._font_size() - 1, 10)),
-                wraplength=400,
+                bg=_cbg, fg="#6b7280",
+                font=("TkDefaultFont", max(_sz - 1, 10)),
+                wraplength=400, anchor="w",
             ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(3, 0))
         else:
             # API-based: show a key entry field for the embedding provider.
-            # Reuses the same StringVar as the LLM key section so both fields
-            # stay in sync when the user types in either one.
             env_var = "GOOGLE_API_KEY" if provider == "gemini" else "OPENAI_API_KEY"
             key_var = self._gemini_key_var if provider == "gemini" else self._openai_key_var
             label   = self._t("api_key_google") if provider == "gemini" else self._t("api_key_openai")
 
             frame.columnconfigure(1, weight=1)
-            ttk.Label(frame, text=label).grid(
+            tk.Label(frame, text=label, bg=_cbg, fg=_fg).grid(
                 row=0, column=0, sticky="w", padx=(0, 8))
 
-            emb_entry = ttk.Entry(frame, textvariable=key_var, show="*")
-            emb_entry.grid(row=0, column=1, sticky="ew", padx=(0, 4))
+            emb_entry = tk.Entry(
+                frame, textvariable=key_var, show="*",
+                bg=_cbg, fg=_fg, insertbackground=_fg,
+                relief="flat", bd=0,
+                font=("TkDefaultFont", _sz),
+                highlightthickness=1,
+                highlightbackground=_brd,
+                highlightcolor=_pbg,
+            )
+            emb_entry.grid(row=0, column=1, sticky="ew", padx=(0, 4), ipady=3)
 
-            show_btn_cell: list[ttk.Button] = []
-            show_btn_cell.append(ttk.Button(
-                frame, text=self._t("settings_show_key"), width=5,
-                command=lambda: self._toggle_key_entry(emb_entry, show_btn_cell[0])))
-            show_btn_cell[0].grid(row=0, column=2)
+            show_btn_ref: list = []
+            show_btn_ref.append(self._make_util_chip(
+                frame, self._t("settings_show_key"),
+                lambda: self._toggle_key_entry(emb_entry, show_btn_ref[0]),
+                parent_bg=_cbg,
+            ))
+            show_btn_ref[0].grid(row=0, column=2)
 
             # Status hint below the entry
             key_present = bool(os.environ.get(env_var, "").strip())
             if key_present:
-                hint = f"✓  {env_var} loaded from .env"
-                fg   = "gray"
+                hint     = f"✓  {env_var} loaded from .env"
+                hint_fg  = "#6b7280"
             else:
-                hint = f"⚠  {env_var} not set — enter it above or choose Free — Local."
-                fg   = "#cc4400"
-            ttk.Label(frame, text=hint, foreground=fg,
-                      font=("TkDefaultFont", max(self._font_size() - 1, 10)),
-                      wraplength=400,
-                      ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(3, 0))
+                hint     = f"⚠  {env_var} not set — enter it above or choose Free — Local."
+                hint_fg  = "#cc4400"
+            tk.Label(frame, text=hint, bg=_cbg, fg=hint_fg,
+                     font=("TkDefaultFont", max(_sz - 1, 10)),
+                     wraplength=400, anchor="w",
+                     ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(3, 0))
 
     def _has_embedding_key(self) -> bool:
         """Return True if the committed embedding provider has what it needs.
@@ -887,15 +1536,14 @@ class SettingsMixin:
         from uacragent.infra.persistence import get_hf_cache_dir
         cache_dir = get_hf_cache_dir()
 
-        return messagebox.askyesno(
+        return self._show_confirm_dialog(
             self._t("mb_dl_model_title"),
             self._t("mb_dl_model_body").format(
                 model_name=model_name,
                 size_str=size_str,
                 cache_dir=cache_dir,
             ),
-            default=messagebox.YES,
-            icon=messagebox.QUESTION,
+            confirm_text="Download",
         )
 
     def _update_rate_suggestion(self) -> None:
@@ -938,7 +1586,7 @@ class SettingsMixin:
         self._update_api_key_row()
         self._update_rate_suggestion()
 
-    def _toggle_key_entry(self, entry: ttk.Entry, btn: ttk.Button | None = None) -> None:
+    def _toggle_key_entry(self, entry: tk.Widget, btn: tk.Widget | None = None) -> None:
         if entry.cget("show") == "*":
             entry.configure(show="")
             if btn:

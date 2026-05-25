@@ -36,7 +36,7 @@ import threading
 import tkinter as tk
 import tkinter.font as tkfont
 from pathlib import Path
-from tkinter import filedialog, messagebox, simpledialog, ttk
+from tkinter import filedialog, ttk
 
 from uacragent.agent.conversation import ConversationAgent, ChatResponse
 from uacragent.agent.session import AgentSession
@@ -472,46 +472,59 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
         self._chat_separator.grid(row=1, column=0, sticky="ew",
                                    padx=4, pady=(4, 0))
 
-        # ── row 2 of _hist_inner: Chat text + scrollbar ───────────────────
-        self._hist_frame = hist_frame = ttk.Frame(self._hist_inner)
+        # ── row 2 of _hist_inner: Scrollable rounded-bubble message list ────
+        self._hist_frame = hist_frame = tk.Frame(self._hist_inner, bg=_card_bg)
         hist_frame.grid(row=2, column=0, sticky="nsew")
         hist_frame.rowconfigure(0, weight=1)
         hist_frame.columnconfigure(0, weight=1)
 
-        self._chat_text = tk.Text(
-            hist_frame, wrap="word", state="disabled",
-            font=("TkDefaultFont", 13), padx=16, pady=12,
-            relief="flat", bd=0, highlightthickness=0,
+        # Viewport canvas — all bubbles scroll inside this canvas
+        self._msg_canvas = tk.Canvas(
+            hist_frame, bg=_card_bg, highlightthickness=0, bd=0,
         )
-        self._chat_text.grid(row=0, column=0, sticky="nsew")
+        self._msg_canvas.grid(row=0, column=0, sticky="nsew")
 
         self._chat_vsb = AutoHideScrollbar(
             hist_frame, orient="vertical",
             color=_c0["sb_color"], bg=_c0["sb_bg"],
         )
-        self._chat_text.configure(yscrollcommand=self._chat_vsb.set)
+        self._msg_canvas.configure(yscrollcommand=self._chat_vsb.set)
 
-        # Tag colours — defaults for light theme, overridden by _apply_theme
-        self._chat_text.tag_configure(
-            "user_label", font=("TkDefaultFont", 12, "bold"),
-            foreground="#1b3167", spacing1=14, spacing3=2)
-        self._chat_text.tag_configure(
-            "user_body", foreground="#1b3167",
-            lmargin1=12, lmargin2=12, spacing3=10)
-        self._chat_text.tag_configure(
-            "assistant_label", font=("TkDefaultFont", 12, "bold"),
-            foreground="#b06000", spacing1=14, spacing3=2)
-        self._chat_text.tag_configure(
-            "assistant_body", foreground="#2d3748",
-            lmargin1=12, lmargin2=12, spacing3=10)
-        self._chat_text.tag_configure(
-            "system_body", foreground="#6b7280",
-            lmargin1=12, lmargin2=12,
-            font=("TkDefaultFont", 12, "italic"), spacing1=4, spacing3=8)
-        self._chat_text.tag_configure(
-            "thinking_indicator", foreground="#9aa5be",
-            lmargin1=16, lmargin2=16,
-            font=("TkDefaultFont", 11, "italic"), spacing1=6, spacing3=4)
+        # Inner frame: one bubble widget per message, stacked vertically
+        self._msg_frame = tk.Frame(self._msg_canvas, bg=_card_bg)
+        self._msg_frame.columnconfigure(0, weight=1)
+        self._msg_frame_win = self._msg_canvas.create_window(
+            0, 0, anchor="nw", window=self._msg_frame,
+        )
+        self._msg_frame.bind(
+            "<Configure>", lambda _e: self._on_msg_frame_configure())
+        self._msg_canvas.bind(
+            "<Configure>", lambda e: self._on_msg_canvas_configure(e))
+
+        # Platform mousewheel scroll (canvas only — child bubbles get bound
+        # individually in _append_chat via _bind_chat_scroll)
+        import sys as _sys_plat
+        if _sys_plat.platform == "darwin":
+            self._msg_canvas.bind(
+                "<MouseWheel>",
+                lambda e: self._msg_canvas.yview_scroll(
+                    int(-1 * e.delta), "units"))
+        elif _sys_plat.platform.startswith("win"):
+            self._msg_canvas.bind(
+                "<MouseWheel>",
+                lambda e: self._msg_canvas.yview_scroll(
+                    int(-1 * (e.delta / 120)), "units"))
+        else:
+            self._msg_canvas.bind(
+                "<Button-4>",
+                lambda _e: self._msg_canvas.yview_scroll(-1, "units"))
+            self._msg_canvas.bind(
+                "<Button-5>",
+                lambda _e: self._msg_canvas.yview_scroll(1, "units"))
+
+        # Refs used by _append_chat / _append_output_link / _show_thinking
+        self._last_assistant_content: tk.Widget | None = None
+        self._thinking_lbl: tk.Widget | None = None
 
         # ── row 3 of _hist_inner: thin divider between chat and input ─────
         self._card_sep = tk.Frame(
@@ -998,6 +1011,13 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
         self._hist_inner.configure(bg=c["text_bg"])
         self._hist_canvas.tag_raise(self._hist_canvas_win)
 
+        # Update message bubble canvas and inner frame backgrounds
+        try:
+            self._msg_canvas.configure(bg=c["text_bg"])
+            self._msg_frame.configure(bg=c["text_bg"])
+        except Exception:
+            pass
+
         # Update the separator between top bar and chat
         try:
             self._chat_separator.configure(bg=c.get("paned_bg", "#c8d0e0"))
@@ -1138,46 +1158,108 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
     # ------------------------------------------------------------------
 
     def _show_thinking(self, label: str) -> None:
-        """Insert (or replace) a thinking-progress indicator at the end of chat.
+        """Show (or replace) a progress indicator at the bottom of the chat area.
 
-        Uses the ``"thinking_indicator"`` tag; ``_hide_thinking`` locates and
-        deletes exactly the tagged range so it never touches other chat text.
-        Stale ``after()`` callbacks are silently dropped via ``_thinking_active``.
+        Uses a plain ``tk.Label`` appended to ``_msg_frame``.  Stale callbacks
+        are silently dropped via ``_thinking_active``.
         """
         if not getattr(self, "_thinking_active", False):
             return   # _set_busy(False) already ran — discard stale callback
-        if not hasattr(self, "_chat_text"):
+        if not hasattr(self, "_msg_frame"):
             return
         try:
             self._hide_thinking()   # remove any previous indicator first
-            t = self._chat_text
-            t.configure(state="normal")
-            t.insert("end", f"\n{label}\n", "thinking_indicator")
-            t.configure(state="disabled")
-            t.see("end")
+            _mode = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
+            c = _THEME_COLORS.get(_mode, _THEME_COLORS["light"])
+            lbl = tk.Label(
+                self._msg_frame,
+                text=label,
+                bg=c.get("text_bg", "#ffffff"),
+                fg=c.get("status_fg", "#9aa5be"),
+                font=("TkDefaultFont", 11, "italic"),
+                anchor="w", padx=20, pady=6,
+            )
+            lbl.pack(fill="x", pady=(0, 4))
+            self._thinking_lbl = lbl
+            self._scroll_chat_to_bottom()
         except Exception:
             pass
 
     def _hide_thinking(self) -> None:
-        """Remove the thinking indicator by deleting its tagged text range.
+        """Remove the thinking indicator label if it exists."""
+        lbl = getattr(self, "_thinking_lbl", None)
+        if lbl is not None:
+            try:
+                lbl.destroy()
+            except Exception:
+                pass
+            self._thinking_lbl = None
 
-        Tag-range deletion is position-independent and cannot accidentally
-        remove chat text that was appended after the indicator.
-        """
-        if not hasattr(self, "_chat_text"):
+
+    # ------------------------------------------------------------------
+    # Scrollable message-bubble canvas helpers
+    # ------------------------------------------------------------------
+
+    def _on_msg_frame_configure(self) -> None:
+        """Update the canvas scrollregion when the inner message frame resizes."""
+        if not hasattr(self, "_msg_canvas"):
             return
         try:
-            t = self._chat_text
-            ranges = t.tag_ranges("thinking_indicator")
-            if not ranges:
-                return
-            t.configure(state="normal")
-            # Iterate in reverse so earlier indices stay valid after each delete
-            for i in range(len(ranges) - 1, -1, -2):
-                t.delete(str(ranges[i - 1]), str(ranges[i]))
-            t.configure(state="disabled")
+            self._msg_canvas.configure(
+                scrollregion=self._msg_canvas.bbox("all"))
         except Exception:
             pass
+
+    def _on_msg_canvas_configure(self, event) -> None:
+        """Keep inner message frame width in sync with canvas viewport width."""
+        if not hasattr(self, "_msg_frame_win"):
+            return
+        try:
+            self._msg_canvas.itemconfigure(
+                self._msg_frame_win, width=event.width)
+        except Exception:
+            pass
+
+    def _scroll_chat_to_bottom(self) -> None:
+        """Scroll the message bubble canvas to reveal the latest message."""
+        if not hasattr(self, "_msg_canvas"):
+            return
+        try:
+            self._msg_canvas.update_idletasks()
+            self._msg_canvas.yview_moveto(1.0)
+        except Exception:
+            pass
+
+    def _bind_chat_scroll(self, widget: tk.Widget) -> None:
+        """Bind mousewheel events on *widget* to scroll the message canvas."""
+        import sys as _sys_bs
+        if not hasattr(self, "_msg_canvas"):
+            return
+        if _sys_bs.platform == "darwin":
+            widget.bind(
+                "<MouseWheel>",
+                lambda e: self._msg_canvas.yview_scroll(
+                    int(-1 * e.delta), "units"),
+                add="+",
+            )
+        elif _sys_bs.platform.startswith("win"):
+            widget.bind(
+                "<MouseWheel>",
+                lambda e: self._msg_canvas.yview_scroll(
+                    int(-1 * (e.delta / 120)), "units"),
+                add="+",
+            )
+        else:
+            widget.bind(
+                "<Button-4>",
+                lambda _e: self._msg_canvas.yview_scroll(-1, "units"),
+                add="+",
+            )
+            widget.bind(
+                "<Button-5>",
+                lambda _e: self._msg_canvas.yview_scroll(1, "units"),
+                add="+",
+            )
 
 
 # ---------------------------------------------------------------------------

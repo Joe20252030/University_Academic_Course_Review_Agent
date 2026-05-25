@@ -5,13 +5,14 @@ import os
 import tkinter as tk
 import tkinter.font as tkfont
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, ttk
 
 from uacragent.infra.persistence import (
     get_app_appearance, set_app_appearance,
     get_app_data_dir, set_app_data_dir,
 )
 
+from ._custom_widgets import _RoundedChip
 from ._ui_constants import _STRINGS, _THEME_COLORS, _FONT_SIZE_VALUES
 
 
@@ -212,11 +213,11 @@ class AppearanceMixin:
             self._paned.configure(background=c["paned_bg"])
 
         # ── Non-ttk widgets need direct configuration ─────────────────
+        # Message bubble canvas and frame backgrounds (individual bubble
+        # widget colours are applied fresh on each _append_chat call)
         try:
-            self._chat_text.configure(
-                bg=c["text_bg"], fg=c["text_fg"],
-                insertbackground=c["text_fg"],
-            )
+            self._msg_canvas.configure(bg=c["text_bg"])
+            self._msg_frame.configure(bg=c["text_bg"])
         except Exception:
             pass
         # input_text colours are managed by _redraw_input_block_canvas below
@@ -340,45 +341,8 @@ class AppearanceMixin:
             self._reconfigure_chat_tags()
 
     def _reconfigure_chat_tags(self) -> None:
-        """Re-apply chat-bubble colours for the current theme and font size."""
-        c    = _THEME_COLORS.get(self._color_mode_var.get(), _THEME_COLORS["light"])
-        size = self._font_size()
-        lbl_font  = ("TkDefaultFont", size - 1, "bold")
-        sys_font  = ("TkDefaultFont", size - 1, "italic")
-        try:
-            self._chat_text.tag_configure(
-                "user_label",
-                foreground=c["user_fg"],
-                font=lbl_font,
-                spacing1=14, spacing3=2,
-            )
-            self._chat_text.tag_configure(
-                "user_body",
-                foreground=c["user_fg"],
-                lmargin1=12, lmargin2=12,
-                spacing3=10,
-            )
-            self._chat_text.tag_configure(
-                "assistant_label",
-                foreground=c["assist_fg"],
-                font=lbl_font,
-                spacing1=14, spacing3=2,
-            )
-            self._chat_text.tag_configure(
-                "assistant_body",
-                foreground=c["assist_body"],
-                lmargin1=12, lmargin2=12,
-                spacing3=10,
-            )
-            self._chat_text.tag_configure(
-                "system_body",
-                foreground=c["system_fg"],
-                font=sys_font,
-                lmargin1=12, lmargin2=12,
-                spacing1=4, spacing3=8,
-            )
-        except Exception:
-            pass
+        """No-op: chat now uses widget-based rounded bubbles (no tk.Text tags)."""
+        pass
 
     def _font_size(self) -> int:
         """Return the current font size as an integer."""
@@ -428,10 +392,8 @@ class AppearanceMixin:
         except Exception:
             pass
         # Widgets with explicit font tuples must be updated individually
-        try:
-            self._chat_text.configure(font=("TkDefaultFont", size))
-        except Exception:
-            pass
+        # (message bubbles use named-font references; new bubbles pick up size
+        # automatically via _font_size() — existing bubbles retain creation size)
         try:
             self._input_text.configure(font=("TkDefaultFont", size))
         except Exception:
@@ -513,9 +475,24 @@ class AppearanceMixin:
             self._app_settings_win.focus_set()
             return
 
+        c      = _THEME_COLORS.get(self._color_mode_var.get(), _THEME_COLORS["light"])
+        _wbg   = c["window_bg"]
+        _fg    = c["text_fg"]
+        _sfg   = c.get("status_fg", "#6b7280")
+        _border= c["input_border"]
+        _ibg   = c["input_bg"]
+        _ifg   = c["input_fg"]
+        _pbg   = c["btn_primary_bg"]
+        _pfg   = c["btn_primary_fg"]
+        _phov  = c.get("btn_primary_hover", _pbg)
+        _sz    = self._font_size()
+        _nsz   = max(_sz - 1, 10)
+
         win = tk.Toplevel(self)
+        win.withdraw()              # hide before any widget — prevents flash
         self._app_settings_win = win
         win.title(self._t("app_settings_title"))
+        win.configure(bg=_wbg)
         win.resizable(False, False)
         win.grab_set()
 
@@ -524,68 +501,111 @@ class AppearanceMixin:
         _saved_font  = self._font_size_var.get()
         _saved_lang  = self._language_var.get()
 
-        frm = ttk.Frame(win, padding=16)
+        frm = tk.Frame(win, bg=_wbg, padx=20, pady=18)
         frm.pack(fill="both", expand=True)
         frm.columnconfigure(1, weight=1)
         row = 0
 
         # ── Appearance section ────────────────────────────────────────
-        app_frm = ttk.LabelFrame(frm, text=self._t("appearance_section"), padding=10)
-        app_frm.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(0, 14))
-        app_frm.columnconfigure(1, weight=1)
+        # Section header label
+        tk.Label(frm, text=self._t("appearance_section"),
+                 bg=_wbg, fg=_fg,
+                 font=("TkDefaultFont", _sz, "bold"),
+                 anchor="w").grid(row=row, column=0, columnspan=3,
+                                  sticky="w", pady=(0, 10))
+        row += 1
+        # Thin line under header
+        tk.Frame(frm, bg=_border, height=1).grid(
+            row=row, column=0, columnspan=3, sticky="ew", pady=(0, 10))
         row += 1
 
         # Color mode
-        ttk.Label(app_frm, text=self._t("color_mode_label")).grid(
-            row=0, column=0, sticky="w", padx=(0, 10), pady=(0, 6))
-        _cm_row = ttk.Frame(app_frm)
-        _cm_row.grid(row=0, column=1, sticky="w", pady=(0, 6))
+        tk.Label(frm, text=self._t("color_mode_label"),
+                 bg=_wbg, fg=_fg,
+                 font=("TkDefaultFont", _sz)).grid(
+            row=row, column=0, sticky="w", padx=(0, 10), pady=(0, 8))
+        _cm_row = tk.Frame(frm, bg=_wbg)
+        _cm_row.grid(row=row, column=1, columnspan=2, sticky="w", pady=(0, 8))
         for _val, _key in [("light", "light_mode"), ("dark", "dark_mode")]:
-            ttk.Radiobutton(
+            tk.Radiobutton(
                 _cm_row, text=self._t(_key), value=_val,
                 variable=self._color_mode_var,
-                command=self._apply_theme,       # live preview
+                command=self._apply_theme,
+                bg=_wbg, fg=_fg,
+                activebackground=_wbg, activeforeground=_fg,
+                selectcolor=_wbg,
+                relief="flat", bd=0, highlightthickness=0,
             ).pack(side="left", padx=(0, 12))
+        row += 1
 
         # Font size
-        ttk.Label(app_frm, text=self._t("font_size_label")).grid(
-            row=1, column=0, sticky="w", padx=(0, 10), pady=(0, 6))
-        _fs_row = ttk.Frame(app_frm)
-        _fs_row.grid(row=1, column=1, sticky="w", pady=(0, 6))
+        tk.Label(frm, text=self._t("font_size_label"),
+                 bg=_wbg, fg=_fg,
+                 font=("TkDefaultFont", _sz)).grid(
+            row=row, column=0, sticky="w", padx=(0, 10), pady=(0, 8))
+        _fs_row = tk.Frame(frm, bg=_wbg)
+        _fs_row.grid(row=row, column=1, columnspan=2, sticky="w", pady=(0, 8))
         for _val, _key in [("small", "font_small"), ("medium", "font_medium"),
                             ("large", "font_large")]:
-            ttk.Radiobutton(
+            tk.Radiobutton(
                 _fs_row, text=self._t(_key), value=_val,
                 variable=self._font_size_var,
-                command=self._apply_font_size,   # live preview
+                command=self._apply_font_size,
+                bg=_wbg, fg=_fg,
+                activebackground=_wbg, activeforeground=_fg,
+                selectcolor=_wbg,
+                relief="flat", bd=0, highlightthickness=0,
             ).pack(side="left", padx=(0, 12))
+        row += 1
 
         # Language
-        ttk.Label(app_frm, text=self._t("language_label")).grid(
-            row=2, column=0, sticky="w", padx=(0, 10))
-        _lang_row = ttk.Frame(app_frm)
-        _lang_row.grid(row=2, column=1, sticky="w")
+        tk.Label(frm, text=self._t("language_label"),
+                 bg=_wbg, fg=_fg,
+                 font=("TkDefaultFont", _sz)).grid(
+            row=row, column=0, sticky="w", padx=(0, 10), pady=(0, 10))
+        _lang_row = tk.Frame(frm, bg=_wbg)
+        _lang_row.grid(row=row, column=1, columnspan=2, sticky="w", pady=(0, 10))
         for _val, _display in [("en", "English"), ("zh_CN", "中文（简体）")]:
-            ttk.Radiobutton(
+            tk.Radiobutton(
                 _lang_row, text=_display, value=_val,
                 variable=self._language_var,
-                # Language updates apply on Save only (avoids mid-dialog relabel)
+                bg=_wbg, fg=_fg,
+                activebackground=_wbg, activeforeground=_fg,
+                selectcolor=_wbg,
+                relief="flat", bd=0, highlightthickness=0,
             ).pack(side="left", padx=(0, 12))
+        row += 1
+
+        # Separator
+        tk.Frame(frm, bg=_border, height=1).grid(
+            row=row, column=0, columnspan=3, sticky="ew", pady=(0, 12))
+        row += 1
 
         # ── App data folder section ───────────────────────────────────
-        _app_note_sz = max(self._font_size() - 1, 10)
-        ttk.Label(frm, text=self._t("app_data_label"),
-                  font=("TkDefaultFont", self._font_size(), "bold")
-                  ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 4))
+        tk.Label(frm, text=self._t("app_data_label"),
+                 bg=_wbg, fg=_fg,
+                 font=("TkDefaultFont", _sz, "bold"),
+                 anchor="w").grid(row=row, column=0, columnspan=3,
+                                  sticky="w", pady=(0, 4))
         row += 1
-        ttk.Label(frm, text=self._t("app_data_hint"),
-                  foreground="gray", font=("TkDefaultFont", _app_note_sz),
-                  ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        tk.Label(frm, text=self._t("app_data_hint"),
+                 bg=_wbg, fg=_sfg,
+                 font=("TkDefaultFont", _nsz),
+                 justify="left", anchor="w",
+                 ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 8))
         row += 1
 
         path_var = tk.StringVar(value=self._app_data_dir_var.get())
-        path_entry = ttk.Entry(frm, textvariable=path_var, width=42)
-        path_entry.grid(row=row, column=0, sticky="ew", padx=(0, 4))
+        path_entry = tk.Entry(
+            frm, textvariable=path_var, width=42,
+            bg=_ibg, fg=_ifg, insertbackground=_ifg,
+            relief="flat", bd=0,
+            font=("TkDefaultFont", _sz),
+            highlightthickness=1,
+            highlightbackground=_border,
+            highlightcolor=_pbg,
+        )
+        path_entry.grid(row=row, column=0, sticky="ew", padx=(0, 6), ipady=4)
 
         def _browse() -> None:
             folder = filedialog.askdirectory(
@@ -595,13 +615,27 @@ class AppearanceMixin:
             if folder:
                 path_var.set(folder)
 
-        ttk.Button(frm, text="Browse…", command=_browse
-                   ).grid(row=row, column=1, padx=(0, 4))
+        _browse_chip = _RoundedChip(
+            frm, text="Browse…",
+            chip_bg=_wbg, chip_fg=_fg,
+            parent_bg=_wbg,
+            font=("TkDefaultFont", _sz),
+            padx=12, pady=4,
+            outline=_border, outline_width=1,
+            hover_bg=c.get("qa_bg", "#edf0f8"),
+            command=_browse,
+        )
+        _browse_chip.grid(row=row, column=1, padx=(0, 4), pady=2)
+        row += 1
+
+        # Separator before buttons
+        tk.Frame(frm, bg=_border, height=1).grid(
+            row=row, column=0, columnspan=3, sticky="ew", pady=(14, 12))
         row += 1
 
         # ── Buttons ───────────────────────────────────────────────────
-        btn_row = ttk.Frame(frm)
-        btn_row.grid(row=row, column=0, columnspan=3, sticky="e", pady=(14, 0))
+        btn_row = tk.Frame(frm, bg=_wbg)
+        btn_row.grid(row=row, column=0, columnspan=3, sticky="e")
 
         def _save() -> None:
             # Persist appearance settings
@@ -619,7 +653,7 @@ class AppearanceMixin:
                 try:
                     p.mkdir(parents=True, exist_ok=True)
                 except Exception as exc:
-                    messagebox.showerror(self._t("mb_cannot_create_folder"), str(exc), parent=win)
+                    self._show_info_dialog(self._t("mb_cannot_create_folder"), str(exc))
                     return
                 set_app_data_dir(p)
                 self._app_data_dir_var.set(str(p.resolve()))
@@ -634,10 +668,25 @@ class AppearanceMixin:
             self._apply_font_size()
             win.destroy()
 
-        ttk.Button(btn_row, text=self._t("save"), command=_save
-                   ).pack(side="left", padx=(0, 6))
-        ttk.Button(btn_row, text=self._t("cancel_btn"), command=_cancel
-                   ).pack(side="left")
+        _RoundedChip(
+            btn_row, text=self._t("save"),
+            chip_bg=_pbg, chip_fg=_pfg,
+            parent_bg=_wbg,
+            font=("TkDefaultFont", _sz, "bold"),
+            padx=16, pady=6,
+            hover_bg=_phov,
+            command=_save,
+        ).pack(side="left", padx=(0, 8))
+        _RoundedChip(
+            btn_row, text=self._t("cancel_btn"),
+            chip_bg=_wbg, chip_fg=_fg,
+            parent_bg=_wbg,
+            font=("TkDefaultFont", _sz),
+            padx=16, pady=6,
+            outline=_border, outline_width=1,
+            hover_bg=c.get("qa_bg", "#edf0f8"),
+            command=_cancel,
+        ).pack(side="left")
 
         self._center_on_main(win)
 

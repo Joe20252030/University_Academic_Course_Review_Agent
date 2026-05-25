@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox, simpledialog, ttk
+from tkinter import ttk
 
 from uacragent.agent.session import AgentSession
 from uacragent.domain.types import ExportFormat
@@ -61,7 +61,7 @@ class SessionMixin:
         if idx is None:
             idx = self._session_list.get_selected_idx()
         if idx is None:
-            messagebox.showinfo(
+            self._show_info_dialog(
                 self._t("mb_delete_session_title"),
                 self._t("mb_delete_session_select"))
             return
@@ -69,9 +69,11 @@ class SessionMixin:
             return
         rec = self._session_records[idx]
         name = rec.get("course_name") or Path(rec["workspace"]).name
-        if not messagebox.askyesno(
+        if not self._show_confirm_dialog(
             self._t("mb_delete_session_title"),
             self._t("mb_delete_session_confirm").format(name=name),
+            confirm_text=self._t("delete"),
+            destructive=True,
         ):
             return
         ws = Path(rec["workspace"])
@@ -103,7 +105,7 @@ class SessionMixin:
         if idx is None:
             idx = self._session_list.get_selected_idx()
         if idx is None:
-            messagebox.showinfo(
+            self._show_info_dialog(
                 self._t("mb_rename_session_title"),
                 self._t("mb_rename_session_select"))
             return
@@ -113,11 +115,10 @@ class SessionMixin:
         current_name = (rec.get("display_name")
                         or rec.get("course_name")
                         or Path(rec["workspace"]).name)
-        new_name = simpledialog.askstring(
+        new_name = self._show_rename_dialog(
             self._t("mb_rename_session_title"),
             self._t("mb_rename_session_prompt"),
-            initialvalue=current_name,
-            parent=self,
+            initial=current_name,
         )
         if new_name is None or not new_name.strip():
             return

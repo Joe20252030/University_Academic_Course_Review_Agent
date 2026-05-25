@@ -271,7 +271,7 @@ def write_sections_sequential(
     retriever: BaseRetriever,
     llm_client: LLMClient,
     user_prefs: dict | None = None,
-    request_delay: float = 3.0,
+    request_delay: float = 6.0,
     progress_cb: Callable[[str], None] | None = None,
 ) -> list[str]:
     """Write sections one at a time with a delay between each LLM call.
@@ -279,7 +279,9 @@ def write_sections_sequential(
     Sequential execution guarantees that only one request is in-flight at any
     moment. The delay is inserted *after* each completed call (not before the
     next submission), so it is always respected regardless of how long the
-    previous call took.
+    previous call took. In normal app usage this value comes from
+    ``Settings.llm_request_delay``, which is usually controlled through the
+    selected ``RATE_TIER``.
     """
     results: list[str] = []
     n = len(sections)
@@ -647,4 +649,3 @@ class AgentPipeline:
         vectorstore = get_or_create_vectorstore(chunks, self.settings, ws,
                                                 classified_files=session.classified_files)
         return build_retriever(vectorstore, self.settings)
-
