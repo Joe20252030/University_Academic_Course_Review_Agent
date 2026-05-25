@@ -207,6 +207,7 @@ EMBEDDING_PROVIDER=gemini
 EMBEDDING_MODEL=gemini-embedding-001
 LOCAL_EMBEDDING_MODEL=all-MiniLM-L6-v2
 RETRIEVER_K=8
+RATE_TIER=free
 ```
 
 #### Request Frequency / Rate Limiting
@@ -407,6 +408,7 @@ Endpoints:
     "exam_type": "final",
     "task_type": "review_summary",
     "extra_instructions": "",
+    "effort_level": "medium",
     "workspace_id": "default",
     "copy_to_workspace": true,
     "university_name": "University of Toronto",
@@ -419,7 +421,10 @@ Endpoints:
   }
   ```
 
-`course_name` is required in the review request. All other fields (`university_name`, `major`, `course_code`, `professor_name`, `semester`, `exam_duration`, `exam_info`) are optional.
+`course_name` is required in the review request. `effort_level` is optional and
+accepts `low`, `medium`, or `high`. All other fields (`university_name`,
+`major`, `course_code`, `professor_name`, `semester`, `exam_duration`,
+`exam_info`) are optional.
 
 ## Output
 
@@ -483,6 +488,7 @@ src/uacragent/
   ui/
     desktop/
       app.py             Tkinter desktop entrypoint that composes the GUI mixins
+      _custom_widgets.py Shared custom widgets for rounded chips, session list, and sidebar controls
       _ui_constants.py   Shared UI strings, themes, OS helpers, and i18n tables
       _appearance_mixin.py Theme, font-size, language, and App Settings logic
       _settings_mixin.py Session Settings dialog and validation flow
@@ -503,6 +509,6 @@ LICENSE                  MIT license text
 
 Thanks to the volunteer test users who helped exercise the desktop assistant,
 retrieval flow, workspace handling, and study-support UX during development.
-Their precious feedbacks helped make this agent better.
+Their feedback helped make this agent better.
 
 - Test-user credits can be listed here once they are confirmed for public acknowledgement.
