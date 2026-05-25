@@ -1,17 +1,17 @@
 # University Academic Course Review Agent (UACRAgent)
 
-Generate exam review materials from course documents using a RAG pipeline, and
-interact with those materials through a persistent desktop chat assistant.
+Study from course documents with a grounded academic assistant, and generate
+review materials when you need them through a persistent desktop chat workflow.
 
 - Ingest course materials (PDF, TXT, Markdown, or DOCX)
 - Classify documents by type for optimized processing
 - Chunk documents using type-specific multi-stage splitting strategies
 - Embed into a local Chroma vector store
 - Retrieve context with task-aware weighting across document types
-- Ask an LLM to answer questions in a session-aware chat workflow
-- Ask an LLM to create a structured plan tailored to the chosen study-document task
-- For each planned section, retrieve relevant content and generate material sequentially
-- Save the canonical output as Markdown, with optional DOCX/PDF export in the desktop GUI
+- Chat with an LLM in a session-aware study-assistant workflow
+- Ask grounded course questions and get guided review help from uploaded materials
+- Generate structured study artefacts such as review summaries, mock exams, and practice booklets when requested
+- Save canonical generated output as Markdown, with optional DOCX/PDF export in the desktop GUI
 - Persist desktop sessions, settings, and chat history across app restarts
 
 ## License
@@ -28,7 +28,7 @@ The project currently has three user-facing interfaces:
 
 ## Task Types
 
-The agent supports four distinct output modes:
+The assistant supports four distinct generated output modes:
 
 | Task                 | Description                                                                                                                      |
 |----------------------|----------------------------------------------------------------------------------------------------------------------------------|
@@ -209,17 +209,29 @@ LOCAL_EMBEDDING_MODEL=all-MiniLM-L6-v2
 RETRIEVER_K=8
 ```
 
-#### Rate limiting
+#### Request Frequency / Rate Limiting
 
-Sections are written **sequentially** (one at a time) to avoid overwhelming the API. A configurable pause is inserted between each call.
+Sections are written **sequentially** (one at a time) to avoid overwhelming the
+API. The app now uses a named `RATE_TIER` by default, which maps to concrete
+delay/retry settings:
 
-If you still see `503 ServiceUnavailable` or `429 Too Many Requests` errors, increase `LLM_REQUEST_DELAY`:
+| Tier        | Delay | Retries | Base Retry Delay | Typical Use |
+|-------------|-------|---------|------------------|-------------|
+| `free`      | `6.0` | `3`     | `15.0`           | Free and trial plans |
+| `standard`  | `1.5` | `2`     | `8.0`            | Entry paid plans |
+| `pro`       | `0.3` | `2`     | `4.0`            | Higher paid tiers |
+| `unlimited` | `0.0` | `1`     | `2.0`            | Very high-capacity plans |
+
+If you prefer raw numeric overrides, clear `RATE_TIER` and then set
+`LLM_REQUEST_DELAY`, `LLM_MAX_RETRIES`, and `LLM_RETRY_BASE_DELAY` directly.
+
+Current raw-setting defaults:
 
 | Variable               | Default | Description                                                                                      |
 |------------------------|---------|--------------------------------------------------------------------------------------------------|
-| `LLM_REQUEST_DELAY`    | `3.0`   | Seconds to wait after each LLM call completes before starting the next                           |
-| `LLM_MAX_RETRIES`      | `2`     | Max retry attempts on transient 503/429/quota errors (keep low — retries generate more requests) |
-| `LLM_RETRY_BASE_DELAY` | `10.0`  | Initial backoff delay in seconds before the first retry (doubles each attempt, capped at 60 s)   |
+| `LLM_REQUEST_DELAY`    | `6.0`   | Seconds to wait after each LLM call completes before starting the next                           |
+| `LLM_MAX_RETRIES`      | `3`     | Max retry attempts on transient 503/429/quota errors (keep low — retries generate more requests) |
+| `LLM_RETRY_BASE_DELAY` | `15.0`  | Initial backoff delay in seconds before the first retry (doubles each attempt, capped at 60 s)   |
 
 ## Run (Desktop GUI)
 
@@ -230,6 +242,7 @@ If you still see `503 ServiceUnavailable` or `429 Too Many Requests` errors, inc
 The GUI lets you:
 - Create, rename, delete, and reopen persistent study sessions
 - Choose an LLM provider (`gemini`, `openai`, or `deepseek`) and model per session
+- Choose an API plan tier (`Free`, `Standard`, `Pro`, `Unlimited`) to match provider rate limits
 - Enter provider API keys in the settings dialog when they are not already set in `.env`
 - Choose an embedding provider (`gemini`, `openai`, or free local embeddings`)
 - Pick a free local embedding model when using on-device embeddings
@@ -433,17 +446,15 @@ src/uacragent/
     session.py           Session state container for chat, files, and preferences
     pipeline.py          RAG pipeline with task-type dispatch
     prompts/
-      conversation_system.md       System prompt for desktop chat sessions
-      planner.md                   Legacy generic planner prompt
-      reviewer.md                  Legacy generic writer prompt
-      review_summary_planner.md    Review summary planner
-      review_summary_writer.md     Review summary writer
-      practice_booklet_planner.md  Practice booklet planner
-      practice_booklet_writer.md   Practice booklet writer
-      mock_exam_planner.md         Mock exam planner
-      mock_exam_writer.md          Mock exam writer
-      exam_prediction_planner.md   Exam prediction planner
-      exam_prediction_writer.md    Exam prediction writer
+      conversation_system.md         System prompt for desktop chat sessions
+      review_summary_planner.md      Review summary planner
+      review_summary_writer.md       Review summary writer
+      practice_booklet_planner.md    Practice booklet planner
+      practice_booklet_writer.md     Practice booklet writer
+      mock_exam_planner.md           Mock exam planner
+      mock_exam_writer.md            Mock exam writer
+      exam_prediction_planner.md     Exam prediction planner
+      exam_prediction_writer.md      Exam prediction analysis writer (Part A)
       exam_prediction_paper_writer.md Predicted exam paper writer (Part B)
   api/
     main.py              FastAPI application factory
@@ -454,6 +465,7 @@ src/uacragent/
     models.py            Core data models (ReviewPlan, SectionSpec)
     errors.py            Custom exception hierarchy
     providers.py         Provider metadata, labels, and env-var mapping
+    doc_priorities.py    Task-aware document weighting presets for retrieval
     rate_tiers.py        API plan tier presets for request pacing
     types.py             Enums (DocumentType, ExamFormat, ExamType, TaskType, ExportFormat)
   infra/
@@ -486,3 +498,10 @@ app.py                   Lightweight importable helper for direct service calls
 .env.sample              Example environment configuration
 LICENSE                  MIT license text
 ```
+
+## Credits
+
+Thanks to the volunteer test users who helped exercise the desktop assistant,
+retrieval flow, workspace handling, and study-support UX during development.
+
+- Test-user credits can be listed here once they are confirmed for public acknowledgement.
