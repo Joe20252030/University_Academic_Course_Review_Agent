@@ -21,44 +21,16 @@ from ._ui_constants import _fmt_dt
 class SessionMixin:
     """Mixin: session-list panel — refresh, select, new, delete, rename, load."""
     def _refresh_session_list(self) -> None:
-        # Guard flag: programmatic selection changes (lb.selection_set below)
-        # fire <<ListboxSelect>> which would re-enter _on_session_select and
-        # spawn a redundant _attach_session_async.  The flag blocks that.
-        self._updating_session_list = True
-        try:
-            self._session_records = list_sessions()
-            lb = self._session_listbox
-            lb.delete(0, tk.END)
-            for rec in self._session_records:
-                # display_name (user-set) takes priority over course_name
-                name = (rec.get("display_name")
-                        or rec.get("course_name")
-                        or Path(rec["workspace"]).name)
-                date = _fmt_dt(rec.get("last_modified", ""))
-                lb.insert(tk.END, f"  {name}\n  {date}" if date else f"  {name}")
+        self._session_records = list_sessions()
+        active_ws = self._session.workspace_folder if self._workspace_committed else None
+        self._session_list.refresh(self._session_records, active_ws)
 
-            # Restore the listbox selection to the currently active session so that
-            # the selection is not silently lost whenever the list is refreshed
-            # (e.g. after indexing completes, after rename, after a chat auto-save).
-            # Only do this when a committed session is actually active.
-            if self._workspace_committed and self._session.workspace_folder:
-                active = Path(self._session.workspace_folder).resolve()
-                for i, rec in enumerate(self._session_records):
-                    if Path(rec.get("workspace", "")).resolve() == active:
-                        lb.selection_set(i)
-                        lb.see(i)
-                        break
-        finally:
-            self._updating_session_list = False
-
-    def _on_session_select(self, _event: object = None) -> None:
-        # Suppress events fired by programmatic list refreshes (not user clicks).
-        if self._updating_session_list:
-            return
-        sel = self._session_listbox.curselection()
-        if not sel:
-            return
-        idx = sel[0]
+    def _on_session_select(self, idx: int = None) -> None:
+        if idx is None:
+            sel = self._session_list.curselection()
+            if not sel:
+                return
+            idx = sel[0]
         if idx >= len(self._session_records):
             return
         ws = Path(self._session_records[idx]["workspace"])
@@ -85,14 +57,14 @@ class SessionMixin:
         self._show_welcome()
         self._open_settings()
 
-    def _on_delete_session(self) -> None:
-        sel = self._session_listbox.curselection()
-        if not sel:
+    def _on_delete_session(self, idx: int = None) -> None:
+        if idx is None:
+            idx = self._session_list.get_selected_idx()
+        if idx is None:
             messagebox.showinfo(
                 self._t("mb_delete_session_title"),
                 self._t("mb_delete_session_select"))
             return
-        idx = sel[0]
         if idx >= len(self._session_records):
             return
         rec = self._session_records[idx]
@@ -127,14 +99,14 @@ class SessionMixin:
             self._show_idle()
         self._refresh_session_list()
 
-    def _on_rename_session(self, _event: object = None) -> None:
-        sel = self._session_listbox.curselection()
-        if not sel:
+    def _on_rename_session(self, idx: int = None, _event: object = None) -> None:
+        if idx is None:
+            idx = self._session_list.get_selected_idx()
+        if idx is None:
             messagebox.showinfo(
                 self._t("mb_rename_session_title"),
                 self._t("mb_rename_session_select"))
             return
-        idx = sel[0]
         if idx >= len(self._session_records):
             return
         rec = self._session_records[idx]
@@ -155,6 +127,9 @@ class SessionMixin:
         self._refresh_session_list()
 
     def _load_session_from_workspace(self, ws: Path) -> None:
+        # Clear any leftover status from the previous session (e.g. "Fill in
+        # the settings and click Apply." left by an abandoned new-session flow).
+        self._session_status_var.set("")
         data = load_session(ws)
         if data is None:
             self._append_chat(

@@ -131,7 +131,7 @@ class ChatMixin:
                         self.after(
                             0,
                             lambda m=msg: (
-                                self._busy_label.configure(text=m)
+                                self._show_thinking(m)
                                 if self.winfo_exists() else None
                             ),
                         )
@@ -231,7 +231,7 @@ class ChatMixin:
                         self.after(
                             0,
                             lambda m=msg: (
-                                self._busy_label.configure(text=m)
+                                self._show_thinking(m)
                                 if self.winfo_exists() else None
                             ),
                         )
@@ -382,7 +382,7 @@ class ChatMixin:
                         self.after(
                             0,
                             lambda m=msg: (
-                                self._busy_label.configure(text=m)
+                                self._show_thinking(m)
                                 if self.winfo_exists() else None
                             ),
                         )

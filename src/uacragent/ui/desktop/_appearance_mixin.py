@@ -40,17 +40,65 @@ class AppearanceMixin:
         c    = _THEME_COLORS.get(mode, _THEME_COLORS["light"])
         style = ttk.Style(self)
 
-        # ── Shared Primary.TButton style (gold, used for Send / Apply) ────
+        # ── Primary.TButton — gold Send / Apply ──────────────────────────
         style.configure("Primary.TButton",
             background=c["btn_primary_bg"],
             foreground=c["btn_primary_fg"],
-            relief="flat", borderwidth=0, padding=(10, 6),
+            relief="flat", borderwidth=0, padding=(14, 7),
         )
         style.map("Primary.TButton",
             background=[("active", "#e8961a"), ("pressed", "#d4880f"),
                         ("disabled", "#c8c8c8")],
             foreground=[("active",  c["btn_primary_fg"]),
                         ("disabled", "#888888")],
+        )
+
+        # ── Chip.TButton — quick-action chips ────────────────────────────
+        # Defined in both modes so the style is always available.
+        style.configure("Chip.TButton",
+            background=c["qa_bg"],
+            foreground=c["qa_fg"],
+            relief="flat", borderwidth=0,
+            padding=(12, 5),
+        )
+        style.map("Chip.TButton",
+            background=[("active", c["qa_bg_hover"]), ("pressed", c["qa_bg_hover"])],
+            foreground=[("active", c["qa_fg"])],
+        )
+
+        # ── NewSession.TButton — full-width top-of-sidebar "+" button ─────
+        _ns_bg = c.get("new_session_bg", c["btn_primary_bg"])
+        _ns_fg = c.get("new_session_fg", c["btn_primary_fg"])
+        # Use the current font-size preference so a theme switch doesn't reset
+        # the button back to the creation-time size.
+        _ns_font_size = self._font_size() if hasattr(self, "_font_size_var") else 13
+        style.configure("NewSession.TButton",
+            background=_ns_bg,
+            foreground=_ns_fg,
+            relief="flat", borderwidth=0,
+            padding=(10, 7),
+            font=("TkDefaultFont", _ns_font_size, "bold"),
+        )
+        style.map("NewSession.TButton",
+            background=[("active",  c.get("new_session_bg_hover", "#e8961a")),
+                        ("pressed", c.get("new_session_bg_hover", "#d4880f"))],
+            foreground=[("active", _ns_fg)],
+        )
+
+        # ── SidebarBottom.TButton — App Settings at bottom of sidebar ─────
+        _sb_bottom_bg = c.get("sidebar_btn_bg", c["sidebar_bg"])
+        _sb_bottom_fg = c.get("sidebar_btn_fg", c.get("lb_fg", "#1a2744"))
+        style.configure("SidebarBottom.TButton",
+            background=_sb_bottom_bg,
+            foreground=_sb_bottom_fg,
+            relief="flat", borderwidth=0,
+            padding=(10, 7),
+            font=("TkDefaultFont", _ns_font_size),
+        )
+        style.map("SidebarBottom.TButton",
+            background=[("active",  c.get("lb_hover_bg", "#dfe4f0")),
+                        ("pressed", c.get("lb_hover_bg", "#dfe4f0"))],
+            foreground=[("active", _sb_bottom_fg)],
         )
 
         if mode == "dark":
@@ -83,7 +131,7 @@ class AppearanceMixin:
             # Standard buttons — flat, navy tinted
             style.configure("TButton",
                 background=c["text_bg"], foreground=c["text_fg"],
-                relief="flat", borderwidth=0, padding=(8, 5),
+                relief="flat", borderwidth=0, padding=(10, 6),
             )
             style.map("TButton",
                 background=[("active", "#1e3a6e"), ("pressed", "#162f58")],
@@ -146,6 +194,16 @@ class AppearanceMixin:
             style.configure("Sidebar.TLabel",
                             background=c["sidebar_bg"], foreground=c["lb_fg"])
             style.configure("Gear.TButton", padding=(4, 2))
+            # Re-apply chip + primary styles explicitly (native theme resets them)
+            style.configure("Chip.TButton",
+                background=c["qa_bg"], foreground=c["qa_fg"],
+                relief="flat", borderwidth=0, padding=(12, 5),
+            )
+            style.map("Chip.TButton",
+                background=[("active", c["qa_bg_hover"]),
+                            ("pressed", c["qa_bg_hover"])],
+                foreground=[("active", c["qa_fg"])],
+            )
 
             try:
                 self.configure(background=c["window_bg"])
@@ -161,32 +219,123 @@ class AppearanceMixin:
             )
         except Exception:
             pass
+        # input_text colours are managed by _redraw_input_block_canvas below
+        # CustomSessionList handles its own colours via update_colors()
         try:
-            self._input_text.configure(
-                bg=c["input_bg"], fg=c["input_fg"],
-                insertbackground=c["input_fg"],
-            )
+            self._session_list.update_colors(c)
         except Exception:
             pass
-        try:
-            self._session_listbox.configure(
-                bg=c["lb_bg"], fg=c["lb_fg"],
-                selectbackground=c["lb_sel_bg"],
-                selectforeground=c["lb_sel_fg"],
-            )
-        except Exception:
-            pass
-        # Sidebar frame direct background (covers macOS native theme which
-        # ignores ttk style background on TFrame)
+        # Sidebar frame direct background (covers macOS native theme)
         try:
             self._sidebar_frame.configure(background=c["sidebar_bg"])
         except Exception:
             pass
-        # Rounded-corner list canvas — repaint with updated theme colours
+        # Chat top bar and info area live inside _hist_inner (the white card),
+        # so they all use text_bg as their background.
+        _card_bg = c["text_bg"]
+        for _tb_widget in ("_chat_top_bar", "_top_bar_info_area"):
+            try:
+                getattr(self, _tb_widget).configure(bg=_card_bg)
+            except Exception:
+                pass
+        # Title / status labels inside the info area
+        try:
+            for _lbl in self._top_bar_info_area.winfo_children():
+                _lbl.configure(bg=_card_bg)
+                if _lbl is self._session_status_lbl:
+                    _lbl.configure(fg=c.get("status_fg", "#6b7280"))
+                else:
+                    _lbl.configure(fg=c.get("text_fg", "#1a2744"))
+        except Exception:
+            pass
+        # Sidebar toggle icon — parent_bg=text_bg since it lives inside the card
+        try:
+            self._toggle_sidebar_btn.update_colors(c, parent_bg=_card_bg)
+        except Exception:
+            pass
+        # Sidebar bottom separator
+        try:
+            self._sidebar_sep.configure(bg=c["paned_bg"])
+        except Exception:
+            pass
+
+        # ── Overlay scrollbar (chat only; session list handles its own) ──
+        # sb_bg is set to match text_bg in the theme so no track is visible
+        _sb_col = c.get("sb_color", "#9aa5be")
+        _sb_bg  = c.get("sb_bg", c["text_bg"])
+        try:
+            self._chat_vsb.update_style(_sb_col, _sb_bg)
+        except Exception:
+            pass
+
+        # ── Input block effort label + chip ──────────────────────────────────
+        _inp_bg  = c["input_bg"]
+        _inp_fg  = c["input_fg"]
+        _st_fg   = c.get("status_fg", "#6b7280")
+        _act_bg  = c.get("qa_bg", _inp_bg)
+        _border  = c.get("input_border", "#cdd4e8")
+        # "Effort:" label (tk.Label only — no radio buttons any more)
+        for _w in getattr(self, "_effort_flat_widgets", []):
+            try:
+                _w.configure(bg=_inp_bg, fg=_st_fg)
+            except Exception:
+                pass
+        # Effort level chip (single dropdown trigger)
+        try:
+            self._effort_chip.update_style(
+                chip_bg=_act_bg, chip_fg=_inp_fg,
+                hover_bg=_act_bg, parent_bg=_inp_bg,
+                outline=_border,
+            )
+        except Exception:
+            pass
+        # Session Settings (_RoundedChip)
+        try:
+            self._sess_settings_btn.update_style(
+                chip_bg=_inp_bg, chip_fg=_inp_fg,
+                hover_bg=_act_bg, parent_bg=_inp_bg,
+                outline=_border,
+            )
+        except Exception:
+            pass
+        # Send button (_RoundedChip, primary colours)
+        _prim_bg  = c["btn_primary_bg"]
+        _prim_fg  = c["btn_primary_fg"]
+        _prim_hov = c.get("btn_primary_hover", "#e8961a")
+        try:
+            self._send_btn.update_style(
+                chip_bg=_prim_bg, chip_fg=_prim_fg,
+                hover_bg=_prim_hov, parent_bg=_inp_bg,
+            )
+        except Exception:
+            pass
+        # Cancel button (_RoundedChip, red danger colours)
+        _canc_bg  = c.get("btn_cancel_bg",    "#e53e3e")
+        _canc_fg  = c.get("btn_cancel_fg",    "#ffffff")
+        _canc_hov = c.get("btn_cancel_hover", "#c53030")
+        try:
+            self._cancel_btn.update_style(
+                chip_bg=_canc_bg, chip_fg=_canc_fg,
+                hover_bg=_canc_hov, parent_bg=_inp_bg,
+            )
+        except Exception:
+            pass
+
+        # ── Rounded canvases ───────────────────────────────────────────
+        # _redraw_hist_canvas() also updates _chat_separator and _card_sep.
         try:
             self._redraw_list_canvas()
         except Exception:
             pass
+        try:
+            self._redraw_hist_canvas()
+        except Exception:
+            pass
+        try:
+            self._redraw_input_block_canvas()   # also calls _redraw_input_text_cv
+        except Exception:
+            pass
+
         if reconfigure_tags:
             self._reconfigure_chat_tags()
 
@@ -243,6 +392,35 @@ class AppearanceMixin:
             tkfont.nametofont("TkDefaultFont").configure(size=size)
         except Exception:
             pass
+
+        # ── Scale sidebar button and chrome element fonts ─────────────────
+        # These were not previously in the scaling path so they appeared stuck
+        # at their creation-time size on platforms where the global TkDefaultFont
+        # change does not auto-propagate to ttk style fonts (Windows / Linux).
+        # Explicitly setting them here ensures consistent scaling on all platforms.
+        try:
+            _s = ttk.Style(self)
+            _s.configure("NewSession.TButton",    font=("TkDefaultFont", size, "bold"))
+            _s.configure("SidebarBottom.TButton", font=("TkDefaultFont", size))
+        except Exception:
+            pass
+        try:
+            # Session title: 1 pt larger than body for visual hierarchy
+            for _lbl in self._top_bar_info_area.winfo_children():
+                if _lbl is not self._session_status_lbl:
+                    _lbl.configure(font=("TkDefaultFont", size + 1, "bold"))
+        except Exception:
+            pass
+        try:
+            # Quick-action label and chips scale with body font
+            for _i, _c in enumerate(self._qa_chips):
+                if _i == 0:
+                    _c.configure(font=("TkDefaultFont", size))   # "Quick Actions:" label
+                elif hasattr(_c, "update_style"):
+                    _c.update_style(font=("TkDefaultFont", size))
+        except Exception:
+            pass
+
         # Gear button: use a dedicated style so it appears noticeably larger
         # than the surrounding text buttons (size + 4 gives a prominent icon).
         try:
@@ -258,8 +436,11 @@ class AppearanceMixin:
             self._input_text.configure(font=("TkDefaultFont", size))
         except Exception:
             pass
+        # Re-sync the input block height after the font size changes the text
+        # widget's required height.  Schedule via after() so the widget has
+        # time to recalculate its own geometry first.
         try:
-            self._session_listbox.configure(font=("TkDefaultFont", max(size - 1, 9)))
+            self.after(60, self._auto_resize_input)
         except Exception:
             pass
         # Secondary info labels: 1pt below body text, minimum 10pt
@@ -268,8 +449,31 @@ class AppearanceMixin:
             self._session_status_lbl.configure(font=("TkDefaultFont", _sub))
         except Exception:
             pass
+        # _busy_label removed; thinking progress is shown in the chat window.
+        # Flat native widgets in input block (effort label + chip)
+        _ctrl_size = max(size - 1, 11)
+        for _w in getattr(self, "_effort_flat_widgets", []):
+            try:
+                _w.configure(font=("TkDefaultFont", _ctrl_size))
+            except Exception:
+                pass
         try:
-            self._busy_label.configure(font=("TkDefaultFont", _sub))
+            self._effort_chip.update_style(font=("TkDefaultFont", _ctrl_size))
+        except Exception:
+            pass
+        # Session Settings (_RoundedChip)
+        try:
+            self._sess_settings_btn.update_style(font=("TkDefaultFont", _ctrl_size))
+        except Exception:
+            pass
+        # Send button (_RoundedChip)
+        try:
+            self._send_btn.update_style(font=("TkDefaultFont", _ctrl_size, "bold"))
+        except Exception:
+            pass
+        # Cancel button (_RoundedChip) — same bold style as Send
+        try:
+            self._cancel_btn.update_style(font=("TkDefaultFont", _ctrl_size, "bold"))
         except Exception:
             pass
         # Re-apply tag fonts with the new size
@@ -282,6 +486,18 @@ class AppearanceMixin:
                 target.configure(**{attr: self._t(key)})
             except Exception:
                 pass
+        # Effort chip text is dynamic (current level name changes with language)
+        try:
+            self._effort_chip.set_text(self._effort_chip_text())
+        except Exception:
+            pass
+        # Update the ⋯ popup menu labels in the session list
+        try:
+            self._session_list.set_menu_labels(
+                self._t("rename"), self._t("delete")
+            )
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # App Settings dialog  (global, not per-session)

@@ -1162,6 +1162,10 @@ class SettingsMixin:
         self._inject_api_keys()
         self._agent = None          # force re-creation with updated provider/model
         self._update_header()
+        # Clear the "fill in settings and click Apply" hint once a course name
+        # is present — the session is now properly set up.
+        if self._session.course_name:
+            self._session_status_var.set("")
 
         # ── Commit the session the moment Apply is clicked with a course name ──
         # Without this, _save_current_session() would be blocked by the

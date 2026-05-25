@@ -54,11 +54,16 @@ from uacragent.infra.workspace import workspace_paths, ensure_workspace_dirs
 # Re-export module-level constants and helpers so existing callers that
 # ``from uacragent.ui.desktop.app import _strip_markdown`` still work.
 from ._ui_constants import (  # noqa: F401 (re-exports)
-    _WINDOW_TITLE, _MIN_WIDTH, _MIN_HEIGHT, _PAD, _SESSION_LIST_WIDTH,
+    _WINDOW_TITLE, _MIN_WIDTH, _MIN_HEIGHT, _INIT_WIDTH, _INIT_HEIGHT,
+    _PAD, _SESSION_LIST_WIDTH,
     _SUPPORTED_FILETYPES, _DOC_TYPE_LABELS, _QUICK_ACTIONS,
     _STRINGS, _THEME_COLORS, _FONT_SIZE_VALUES,
     _open_in_os, _open_file_in_os, _open_folder_in_os,
     _strip_markdown, _fmt_dt,
+)
+from ._custom_widgets import (
+    AutoHideScrollbar, draw_rounded_rect, CustomSessionList,
+    _RoundedChip, _SidebarIcon,
 )
 from ._appearance_mixin import AppearanceMixin
 from ._settings_mixin import SettingsMixin
@@ -139,9 +144,13 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
         self.update_idletasks()
         sw = self.winfo_screenwidth()
         sh = self.winfo_screenheight()
-        x = (sw - _MIN_WIDTH)  // 2
-        y = (sh - _MIN_HEIGHT) // 2
-        self.geometry(f"{_MIN_WIDTH}x{_MIN_HEIGHT}+{x}+{y}")
+        # Use _INIT_WIDTH/_INIT_HEIGHT for the launch size; clamp to screen so
+        # the window fits even on small displays.
+        iw = min(_INIT_WIDTH,  sw - 40)
+        ih = min(_INIT_HEIGHT, sh - 80)
+        x = (sw - iw) // 2
+        y = (sh - ih) // 2
+        self.geometry(f"{iw}x{ih}+{x}+{y}")
         self.deiconify()
 
         # Active session
@@ -279,9 +288,15 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
     # ------------------------------------------------------------------
 
     def _build_ui(self) -> None:
+        # Single row/column — the PanedWindow fills the entire window.
+        # The sidebar toggle icon lives inside the chat pane's top bar
+        # (not in a separate global toolbar) so there is no wasted space.
         self.rowconfigure(0, weight=1)
         self.columnconfigure(0, weight=1)
 
+        _mode0 = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
+
+        # ── Content paned window ───────────────────────────────────────
         paned = tk.PanedWindow(self, orient="horizontal",
                                sashwidth=4, sashrelief="flat",
                                background="#c8d0e0")
@@ -297,50 +312,38 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
         frame = ttk.Frame(self._paned, width=_SESSION_LIST_WIDTH,
                           style="Sidebar.TFrame")
         frame.grid_propagate(False)
+        # row 0: New Session button (fixed)
+        # row 1: session list (expands)
+        # row 2: thin separator (fixed)
+        # row 3: App Settings button (fixed)
         frame.rowconfigure(1, weight=1)
         frame.columnconfigure(0, weight=1)
         self._paned.add(frame, minsize=160, stretch="never")
         self._sidebar_frame = frame   # kept for direct bg update in _apply_theme
 
-        # Header
-        hdr = ttk.Frame(frame, padding=(6, 6, 6, 4))
-        hdr.grid(row=0, column=0, sticky="ew")
-        hdr.columnconfigure(0, weight=1)
-
-        _lbl = ttk.Label(hdr, text=self._t("sessions"),
-                         font=("TkDefaultFont", 11, "bold"),
-                         style="Sidebar.TLabel")
-        _lbl.grid(row=0, column=0, sticky="w")
-        self._i18n_widgets.append((_lbl, "text", "sessions"))
-
-        _btn_new = ttk.Button(hdr, text=self._t("new_session"), width=7,
-                              command=self._on_new_session)
-        _btn_new.grid(row=0, column=1, padx=(0, 3))
-        self._i18n_widgets.append((_btn_new, "text", "new_session"))
-
-        self._gear_btn = ttk.Button(hdr, text="⚙", width=3,
-                                    style="Gear.TButton",
-                                    command=self._open_app_settings)
-        self._gear_btn.grid(row=0, column=2)
-
-        ttk.Separator(frame, orient="horizontal").grid(
-            row=0, column=0, sticky="ew", pady=(36, 0)
-        )
-
-        # ── Rounded-corner session list ───────────────────────────────────────
-        # A Canvas paints a filled rounded-rectangle in the list background
-        # colour; the canvas bg matches the sidebar background so the curved
-        # corners look transparent.  The actual Listbox + Scrollbar live inside
-        # an inner Frame positioned over the rounded rect.
+        # ── Resolve colours ───────────────────────────────────────────────────
         _mode0 = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
         _c0 = _THEME_COLORS.get(_mode0, _THEME_COLORS["light"])
 
+        # ── row 0: New Session button (full-width, top of sidebar) ───────────
+        _btn_new = ttk.Button(frame, text=self._t("new_session"),
+                              style="NewSession.TButton",
+                              takefocus=0,
+                              command=self._on_new_session)
+        _btn_new.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 4))
+        self._i18n_widgets.append((_btn_new, "text", "new_session"))
+
+        # ── row 1: Rounded-corner session list ───────────────────────────────
+        # A Canvas paints a filled rounded-rectangle in the list background
+        # colour; the canvas bg matches the sidebar background so the curved
+        # corners look transparent.  CustomSessionList lives inside the inner
+        # Frame positioned over the rounded rect.
         self._list_canvas = tk.Canvas(
             frame,
             bg=_c0["sidebar_bg"],
             highlightthickness=0, bd=0,
         )
-        self._list_canvas.grid(row=1, column=0, sticky="nsew", padx=6, pady=4)
+        self._list_canvas.grid(row=1, column=0, sticky="nsew", padx=6, pady=2)
 
         # Inner frame: same background as the rounded-rect fill so its
         # rectangular shape is invisible against the polygon fill.
@@ -354,119 +357,149 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
             "<Configure>", lambda _e: self._redraw_list_canvas()
         )
 
-        self._session_listbox = tk.Listbox(
-            self._list_inner, selectmode=tk.SINGLE,
-            font=("TkDefaultFont", 10),
-            activestyle="none",
-            relief="flat", borderwidth=0,
-            highlightthickness=0,
+        # CustomSessionList replaces the old tk.Listbox + AutoHideScrollbar
+        self._session_list = CustomSessionList(
+            self._list_inner,
+            on_select=self._on_session_select,
+            on_rename=self._on_rename_session,
+            on_delete=self._on_delete_session,
+            colors=_c0,
+            rename_label=self._t("rename"),
+            delete_label=self._t("delete"),
         )
-        sb = ttk.Scrollbar(self._list_inner, orient="vertical",
-                           command=self._session_listbox.yview)
-        self._session_listbox.configure(yscrollcommand=sb.set)
-        self._session_listbox.grid(row=0, column=0, sticky="nsew")
-        sb.grid(row=0, column=1, sticky="ns")
-        self._session_listbox.bind("<<ListboxSelect>>", self._on_session_select)
-        self._session_listbox.bind("<Double-Button-1>", self._on_rename_session)
+        self._session_list.grid(row=0, column=0, sticky="nsew")
 
-        # Rename / Delete buttons at the bottom
-        ttk.Separator(frame, orient="horizontal").grid(
-            row=2, column=0, sticky="ew"
-        )
-        action_btns = ttk.Frame(frame)
-        action_btns.grid(row=3, column=0, sticky="ew", padx=6, pady=6)
-        action_btns.columnconfigure(0, weight=1)
-        action_btns.columnconfigure(1, weight=1)
+        # ── row 2: thin 1-px separator ────────────────────────────────────────
+        self._sidebar_sep = tk.Frame(frame, height=1, bg=_c0["paned_bg"])
+        self._sidebar_sep.grid(row=2, column=0, sticky="ew", padx=6)
 
-        _btn_rename = ttk.Button(action_btns, text=self._t("rename"),
-                                 command=self._on_rename_session)
-        _btn_rename.grid(row=0, column=0, sticky="ew", padx=(0, 3))
-        self._i18n_widgets.append((_btn_rename, "text", "rename"))
-
-        _btn_delete = ttk.Button(action_btns, text=self._t("delete"),
-                                 command=self._on_delete_session)
-        _btn_delete.grid(row=0, column=1, sticky="ew")
-        self._i18n_widgets.append((_btn_delete, "text", "delete"))
+        # ── row 3: App Settings button (bottom of sidebar) ───────────────────
+        self._gear_btn = ttk.Button(frame, text=self._t("app_settings"),
+                                    style="SidebarBottom.TButton",
+                                    takefocus=0,
+                                    command=self._open_app_settings)
+        self._gear_btn.grid(row=3, column=0, sticky="ew", padx=8, pady=(4, 8))
+        self._i18n_widgets.append((self._gear_btn, "text", "app_settings"))
 
         # Keep the workspace list in sync with what we display
-        self._session_records: list[dict] = []   # parallel to listbox entries
+        self._session_records: list[dict] = []   # parallel to list items
 
     # ── Chat pane ─────────────────────────────────────────────────────
 
     def _build_chat_pane(self) -> None:
         right = ttk.Frame(self._paned, padding=_PAD)
-        right.rowconfigure(1, weight=1)
-        right.rowconfigure(2, weight=0)
-        right.rowconfigure(3, weight=0)
+        # Single expanding row/column — _hist_canvas fills the entire pane.
+        # The ttk.Frame padding (_PAD px on each side) gives the light-blue
+        # margin (window_bg) visible around the ONE unified rounded rectangle.
+        right.rowconfigure(0, weight=1)
         right.columnconfigure(0, weight=1)
         self._paned.add(right, minsize=500, stretch="always")
         self._chat_frame = right   # kept so _toggle_sidebar can re-add it
 
-        # ── Top bar ───────────────────────────────────────────────────
-        self._chat_top_bar = top_bar = ttk.Frame(right)
-        top_bar.grid(row=0, column=0, sticky="ew", pady=(0, 4))
-        top_bar.columnconfigure(1, weight=1)   # course label expands
+        _mode0 = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
+        _c0 = _THEME_COLORS.get(_mode0, _THEME_COLORS["light"])
 
-        # Sidebar toggle button (always visible, leftmost)
-        self._toggle_sidebar_btn = ttk.Button(
-            top_bar, text="‹", width=2,
-            command=self._toggle_sidebar,
+        # ── ONE unified rounded card — spans the entire right pane ────────
+        # A single Canvas draws ONE rounded rectangle.  Everything — sidebar
+        # toggle, session title/status, chat history, input block — lives inside
+        # _hist_inner so there is one continuous white card.
+        self._hist_canvas = tk.Canvas(
+            right, bg=_c0["window_bg"],
+            highlightthickness=0, bd=0,
         )
-        self._toggle_sidebar_btn.grid(row=0, column=0, rowspan=2, sticky="w",
-                                      padx=(0, 6))
+        self._hist_canvas.grid(row=0, column=0, sticky="nsew")
+
+        # _hist_inner distributes height between all content rows:
+        #   row 0 — top bar (toggle + title)     weight=0
+        #   row 1 — separator line               weight=0
+        #   row 2 — chat history                 weight=1
+        #   row 3 — chat/input divider           weight=0
+        #   row 4 — input block                  weight=0
+        _card_bg = _c0["text_bg"]
+        self._hist_inner = tk.Frame(self._hist_canvas, bg=_card_bg)
+        self._hist_inner.rowconfigure(0, weight=0)
+        self._hist_inner.rowconfigure(1, weight=0)
+        self._hist_inner.rowconfigure(2, weight=1)
+        self._hist_inner.rowconfigure(3, weight=0)
+        self._hist_inner.rowconfigure(4, weight=0)
+        self._hist_inner.columnconfigure(0, weight=1)
+        self._hist_canvas_win = self._hist_canvas.create_window(
+            8, 8, anchor="nw", window=self._hist_inner,
+        )
+        self._hist_canvas.bind("<Configure>", lambda _: self._redraw_hist_canvas())
+        self._hist_inner.bind("<Configure>",  lambda _: self._redraw_hist_canvas())
+
+        # ── row 0 of _hist_inner: Top bar (sidebar toggle + title) ────────
+        self._chat_top_bar = top_bar = tk.Frame(self._hist_inner, bg=_card_bg)
+        top_bar.grid(row=0, column=0, sticky="ew", pady=(4, 0), padx=4)
+        # col 0: toggle icon (fixed), col 1: session info area (expands)
+        top_bar.rowconfigure(0, weight=1)
+        top_bar.rowconfigure(1, weight=1)
+        top_bar.columnconfigure(1, weight=1)
+
+        # Sidebar toggle — canvas-drawn icon; parent_bg=text_bg so the canvas
+        # blends seamlessly into the white card with no artefact border.
+        self._toggle_sidebar_btn = _SidebarIcon(
+            top_bar, command=self._toggle_sidebar, colors=_c0, parent_bg=_card_bg,
+        )
+        self._toggle_sidebar_btn.grid(row=0, column=0, rowspan=2,
+                                       padx=(0, 8), sticky="nsew")
+
+        # Session info area (col 1) — title + status labels
+        self._top_bar_info_area = _info_area = tk.Frame(top_bar, bg=_card_bg)
+        _info_area.grid(row=0, column=1, rowspan=2, sticky="nsew",
+                        padx=(0, 4), pady=4)
 
         self._header_course_var = tk.StringVar(value=self._t("no_session_loaded"))
-        ttk.Label(
-            top_bar, textvariable=self._header_course_var,
-            font=("TkDefaultFont", 12, "bold"),
-        ).grid(row=0, column=1, sticky="w")
+        tk.Label(
+            _info_area, textvariable=self._header_course_var,
+            bg=_card_bg, fg=_c0["text_fg"],
+            font=("TkDefaultFont", 14, "bold"),
+        ).pack(side="top", anchor="w")
 
         self._session_status_var = tk.StringVar(value="")
-        self._session_status_lbl = ttk.Label(
-            top_bar, textvariable=self._session_status_var,
-            foreground="gray", font=("TkDefaultFont", 10),
+        self._session_status_lbl = tk.Label(
+            _info_area, textvariable=self._session_status_var,
+            bg=_card_bg, fg=_c0.get("status_fg", "#6b7280"),
+            font=("TkDefaultFont", 10),
         )
-        self._session_status_lbl.grid(row=1, column=1, sticky="w")
+        self._session_status_lbl.pack(side="top", anchor="w")
 
-        btn_frame = ttk.Frame(top_bar)
-        btn_frame.grid(row=0, column=2, rowspan=2, sticky="e")
-
-        _btn_sess_settings = ttk.Button(
-            btn_frame, text=self._t("settings_btn"), command=self._open_settings
+        # ── row 1 of _hist_inner: thin separator ──────────────────────────
+        self._chat_separator = tk.Frame(
+            self._hist_inner, height=1, bg=_c0["paned_bg"],
         )
-        _btn_sess_settings.pack(side="left")
-        self._i18n_widgets.append((_btn_sess_settings, "text", "settings_btn"))
+        self._chat_separator.grid(row=1, column=0, sticky="ew",
+                                   padx=4, pady=(4, 0))
 
-        self._chat_separator = ttk.Separator(right, orient="horizontal")
-        self._chat_separator.grid(row=0, column=0, sticky="ew", pady=(42, 0))
-
-        # ── Chat history ──────────────────────────────────────────────
-        self._hist_frame = hist_frame = ttk.Frame(right)
-        hist_frame.grid(row=1, column=0, sticky="nsew")
+        # ── row 2 of _hist_inner: Chat text + scrollbar ───────────────────
+        self._hist_frame = hist_frame = ttk.Frame(self._hist_inner)
+        hist_frame.grid(row=2, column=0, sticky="nsew")
         hist_frame.rowconfigure(0, weight=1)
         hist_frame.columnconfigure(0, weight=1)
 
         self._chat_text = tk.Text(
             hist_frame, wrap="word", state="disabled",
-            font=("TkDefaultFont", 11), padx=12, pady=10,
+            font=("TkDefaultFont", 13), padx=16, pady=12,
+            relief="flat", bd=0, highlightthickness=0,
         )
-        chat_sb = ttk.Scrollbar(hist_frame, orient="vertical",
-                                command=self._chat_text.yview)
-        self._chat_text.configure(yscrollcommand=chat_sb.set)
         self._chat_text.grid(row=0, column=0, sticky="nsew")
-        chat_sb.grid(row=0, column=1, sticky="ns")
 
-        # Tag colours are set by _reconfigure_chat_tags(); defaults below
-        # match the light theme and will be overridden on startup if dark mode
-        # is loaded from config.
+        self._chat_vsb = AutoHideScrollbar(
+            hist_frame, orient="vertical",
+            color=_c0["sb_color"], bg=_c0["sb_bg"],
+        )
+        self._chat_text.configure(yscrollcommand=self._chat_vsb.set)
+
+        # Tag colours — defaults for light theme, overridden by _apply_theme
         self._chat_text.tag_configure(
-            "user_label", font=("TkDefaultFont", 10, "bold"),
+            "user_label", font=("TkDefaultFont", 12, "bold"),
             foreground="#1b3167", spacing1=14, spacing3=2)
         self._chat_text.tag_configure(
             "user_body", foreground="#1b3167",
             lmargin1=12, lmargin2=12, spacing3=10)
         self._chat_text.tag_configure(
-            "assistant_label", font=("TkDefaultFont", 10, "bold"),
+            "assistant_label", font=("TkDefaultFont", 12, "bold"),
             foreground="#b06000", spacing1=14, spacing3=2)
         self._chat_text.tag_configure(
             "assistant_body", foreground="#2d3748",
@@ -474,59 +507,204 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
         self._chat_text.tag_configure(
             "system_body", foreground="#6b7280",
             lmargin1=12, lmargin2=12,
-            font=("TkDefaultFont", 10, "italic"), spacing1=4, spacing3=8)
+            font=("TkDefaultFont", 12, "italic"), spacing1=4, spacing3=8)
+        self._chat_text.tag_configure(
+            "thinking_indicator", foreground="#9aa5be",
+            lmargin1=16, lmargin2=16,
+            font=("TkDefaultFont", 11, "italic"), spacing1=6, spacing3=4)
 
-        # ── Quick actions ─────────────────────────────────────────────
-        self._qa_frame = qa_frame = ttk.LabelFrame(
-            right, text=self._t("quick_actions"), padding=4)
-        qa_frame.grid(row=2, column=0, sticky="ew", pady=(_PAD, 4))
-        self._i18n_widgets.append((qa_frame, "text", "quick_actions"))
+        # ── row 3 of _hist_inner: thin divider between chat and input ─────
+        self._card_sep = tk.Frame(
+            self._hist_inner, height=1,
+            bg=_c0.get("input_border", "#cdd4e8"),
+        )
+        self._card_sep.grid(row=3, column=0, sticky="ew")
+
+        # ── row 4 of _hist_inner: Input block ────────────────────────────
+        # Parented directly to _hist_inner — no separate outer canvas.
+        # The big rounded rect drawn by _hist_canvas covers this area too,
+        # so everything looks like one unified card.
+        #
+        # Internal layout:
+        #   row 0 — quick-action chips
+        #   row 1 — input text field (with all-4-edge visible border)
+        #   row 2 — controls (effort | spacer | settings + send)
+        self._input_max_lines = 5
+        self._qa_chips: list          = []
+        self._input_block_seps: list  = []   # unused; kept for compat
+        self._input_block_bgs: list[tk.Widget] = []
+        self._effort_flat_widgets: list[tk.Widget] = []
+
+        self._input_block = tk.Frame(self._hist_inner, bg=_c0["input_bg"])
+        self._input_block.grid(row=4, column=0, sticky="ew")
+        self._input_block.columnconfigure(0, weight=1)
+
+        # ── row 0: quick-action chips ─────────────────────────────────
+        chips_row = tk.Frame(self._input_block, bg=_c0["input_bg"])
+        chips_row.grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 6))
+        self._input_block_bgs.append(chips_row)
+
+        _qa_label = tk.Label(chips_row, text=self._t("quick_actions"),
+                              bg=_c0["input_bg"],
+                              fg=_c0.get("status_fg", "#9aa5be"),
+                              font=("TkDefaultFont", 12))
+        _qa_label.pack(side="left", padx=(0, 6))
+        self._qa_chips.append(_qa_label)
+        self._i18n_widgets.append((_qa_label, "text", "quick_actions"))
+
         for _qa_key, _qa_msg in _QUICK_ACTIONS:
-            _qa_btn = ttk.Button(qa_frame, text=self._t(_qa_key),
-                                 command=lambda m=_qa_msg: self._send_message(m))
-            _qa_btn.pack(side="left", padx=3, pady=2)
-            self._i18n_widgets.append((_qa_btn, "text", _qa_key))
+            _chip = _RoundedChip(
+                chips_row,
+                text=self._t(_qa_key),
+                chip_bg=_c0["qa_bg"],
+                chip_fg=_c0["qa_fg"],
+                parent_bg=_c0["input_bg"],
+                font=("TkDefaultFont", 12),
+                padx=9, pady=4,
+                hover_bg=_c0.get("qa_bg_hover", _c0["qa_bg"]),
+                command=lambda m=_qa_msg: self._send_message(m),
+            )
+            _chip.pack(side="left", padx=(0, 6))
+            self._qa_chips.append(_chip)
+            self._i18n_widgets.append((_chip, "text", _qa_key))
 
-        # ── Input area ────────────────────────────────────────────────
-        self._input_frame = input_frame = ttk.Frame(right)
-        input_frame.grid(row=3, column=0, sticky="ew")
-        input_frame.columnconfigure(0, weight=1)
+        # ── row 1: rounded input canvas + text widget ─────────────
+        # A Canvas draws the rounded rectangle border; the Text widget sits
+        # inside it via create_window.  The canvas height is kept in sync with
+        # the text widget's required height by _sync_input_text_cv_height().
+        _inner_bg = _c0.get("text_bg", "#ffffff")
+        _border   = _c0.get("input_border", "#cdd4e8")
+        _cv_pad   = 4   # gap between canvas edge and inner text window
+
+        self._input_text_cv = tk.Canvas(
+            self._input_block,
+            bg=_c0["input_bg"],
+            highlightthickness=0, bd=0,
+            height=38,   # initial single-line height; updated dynamically
+        )
+        self._input_text_cv.grid(row=1, column=0, sticky="ew",
+                                  padx=12, pady=(0, 6))
+        self._input_text_cv.bind(
+            "<Configure>", lambda _: self._redraw_input_text_cv())
 
         self._input_text = tk.Text(
-            input_frame, height=4, wrap="word",
+            self._input_text_cv,
+            height=1, wrap="word",
+            font=("TkDefaultFont", 13),
+            relief="flat", bd=0,
+            highlightthickness=0,
+            bg=_inner_bg,
+            fg=_c0["input_fg"],
+            insertbackground=_c0["input_fg"],
+            padx=10, pady=8,
+        )
+        self._input_text_cv_win = self._input_text_cv.create_window(
+            _cv_pad, _cv_pad, anchor="nw", window=self._input_text,
+        )
+        self._input_text.bind("<KeyRelease>", self._auto_resize_input)
+        self._input_text.bind("<Return>",     self._on_return_key)
+        # Sync canvas height whenever the text widget itself resizes
+        self._input_text.bind(
+            "<Configure>", lambda _: self._sync_input_text_cv_height())
+
+        # Overlay scrollbar — floats inside the canvas when content overflows
+        self._input_vsb = AutoHideScrollbar(
+            self._input_text_cv, orient="vertical",
+            color=_c0["sb_color"],
+            bg=_inner_bg,
+        )
+        self._input_text.configure(yscrollcommand=self._input_vsb.set)
+
+        # ── row 2: controls row ───────────────────────────────────────
+        controls_row = tk.Frame(self._input_block, bg=_c0["input_bg"])
+        controls_row.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 8))
+        controls_row.columnconfigure(1, weight=1)
+        self._input_block_bgs.append(controls_row)
+
+        effort_left = tk.Frame(controls_row, bg=_c0["input_bg"])
+        effort_left.grid(row=0, column=0, sticky="w")
+        self._input_block_bgs.append(effort_left)
+
+        _effort_lbl = tk.Label(
+            effort_left, text=self._t("effort_label"),
+            bg=_c0["input_bg"], fg=_c0.get("status_fg", "#6b7280"),
             font=("TkDefaultFont", 11),
         )
-        self._input_text.grid(row=0, column=0, sticky="ew", padx=(0, 6))
-        self._input_text.bind("<Return>", self._on_return_key)
-
-        # ── Effort level selector (Low / Medium / High) ───────────────
-        effort_row = ttk.Frame(input_frame)
-        effort_row.grid(row=1, column=0, sticky="w", pady=(3, 0))
-        _effort_lbl = ttk.Label(effort_row, text=self._t("effort_label"), foreground="gray")
-        _effort_lbl.pack(side="left", padx=(2, 4))
+        _effort_lbl.pack(side="left", padx=(0, 4))
+        self._effort_flat_widgets.append(_effort_lbl)
         self._i18n_widgets.append((_effort_lbl, "text", "effort_label"))
-        for _level, _key in [("low", "low"), ("medium", "medium"), ("high", "high")]:
-            _rb = ttk.Radiobutton(effort_row, text=self._t(_key),
-                                  value=_level, variable=self._effort_var)
-            _rb.pack(side="left", padx=(0, 6))
-            self._i18n_widgets.append((_rb, "text", _key))
 
-        btn_col = ttk.Frame(input_frame)
-        btn_col.grid(row=0, column=1, sticky="ns")
-        self._send_btn = ttk.Button(btn_col, text=self._t("send"), width=8,
-                                    style="Primary.TButton",
-                                    command=self._on_send)
-        self._send_btn.pack(fill="x", pady=(0, 4))
+        # Single chip shows the current effort level; left-click opens a
+        # popup menu to switch.  No always-visible radio clutter.
+        self._effort_chip = _RoundedChip(
+            effort_left,
+            text=self._effort_chip_text(),
+            chip_bg=_c0.get("qa_bg", "#edf0f8"),
+            chip_fg=_c0["input_fg"],
+            parent_bg=_c0["input_bg"],
+            font=("TkDefaultFont", 11),
+            padx=9, pady=4,
+            hover_bg=_c0.get("qa_bg_hover", _c0.get("qa_bg", "#edf0f8")),
+            outline=_c0.get("input_border", "#cdd4e8"),
+            outline_width=1,
+            command=self._show_effort_menu,
+        )
+        self._effort_chip.pack(side="left", padx=(0, 6))
+
+        right_ctrls = tk.Frame(controls_row, bg=_c0["input_bg"])
+        right_ctrls.grid(row=0, column=2, sticky="e")
+        self._input_block_bgs.append(right_ctrls)
+
+        # Session Settings — padx=14 ensures the full text is never clipped
+        self._sess_settings_btn = _RoundedChip(
+            right_ctrls,
+            text=self._t("settings_btn"),
+            chip_bg=_c0["input_bg"],
+            chip_fg=_c0["input_fg"],
+            parent_bg=_c0["input_bg"],
+            font=("TkDefaultFont", 11),
+            padx=14, pady=5,
+            hover_bg=_c0.get("qa_bg", "#edf0f8"),
+            outline=_c0.get("input_border", "#cdd4e8"),
+            outline_width=1,
+            command=self._open_settings,
+        )
+        self._sess_settings_btn.pack(side="left", padx=(0, 6))
+        self._i18n_widgets.append((self._sess_settings_btn, "text", "settings_btn"))
+
+        self._send_btn = _RoundedChip(
+            right_ctrls,
+            text=self._t("send"),
+            chip_bg=_c0["btn_primary_bg"],
+            chip_fg=_c0["btn_primary_fg"],
+            parent_bg=_c0["input_bg"],
+            font=("TkDefaultFont", 11, "bold"),
+            padx=14, pady=5,
+            hover_bg=_c0.get("btn_primary_hover", "#e8961a"),
+            disabled_bg="#c8c8c8",
+            disabled_fg="#888888",
+            command=self._on_send,
+        )
+        self._send_btn.pack(side="left")
         self._i18n_widgets.append((self._send_btn, "text", "send"))
-        self._cancel_btn = ttk.Button(btn_col, text=self._t("cancel"), width=8,
-                                      command=self._on_cancel)
-        self._i18n_widgets.append((self._cancel_btn, "text", "cancel"))
-        # _cancel_btn is pack()ed / pack_forget()en dynamically by _set_busy
-        self._busy_label = ttk.Label(btn_col, text="", foreground="gray",
-                                     font=("TkDefaultFont", 10), wraplength=72)
-        self._busy_label.pack()
 
-        # ── Placeholder (shown when no session is active) ─────────────
+        # Cancel replaces Send while the agent is busy (not shown by default)
+        self._cancel_btn = _RoundedChip(
+            right_ctrls,
+            text=self._t("cancel"),
+            chip_bg=_c0.get("btn_cancel_bg", "#e53e3e"),
+            chip_fg=_c0.get("btn_cancel_fg", "#ffffff"),
+            parent_bg=_c0["input_bg"],
+            font=("TkDefaultFont", 11, "bold"),
+            padx=14, pady=5,
+            hover_bg=_c0.get("btn_cancel_hover", "#c53030"),
+            command=self._on_cancel,
+        )
+        self._i18n_widgets.append((self._cancel_btn, "text", "cancel"))
+        # Send is visible by default; Cancel swaps in when busy (pack_forget / pack)
+
+        # ── Placeholder (shown when no session is active) ─────────────────
+        # Grids at row=0 (the only row in `right`) so it fills the full pane.
         self._placeholder_frame = ttk.Frame(right)
         _ph_lbl = ttk.Label(
             self._placeholder_frame,
@@ -540,6 +718,38 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
 
         # Start in blank state — activated by session select or + New.
         self._set_chat_active(False)
+
+    # ------------------------------------------------------------------
+    # Effort level chip helpers
+    # ------------------------------------------------------------------
+
+    def _effort_chip_text(self) -> str:
+        """Return the effort chip label — current level display name + caret."""
+        level = self._effort_var.get() if hasattr(self, "_effort_var") else "medium"
+        return f"{self._t(level)} ▾"
+
+    def _show_effort_menu(self) -> None:
+        """Show a popup menu below the effort chip to switch the level."""
+        menu = tk.Menu(self.winfo_toplevel(), tearoff=0)
+        for _lvl in ("low", "medium", "high"):
+            menu.add_command(
+                label=self._t(_lvl),
+                command=lambda l=_lvl: self._select_effort(l),
+            )
+        try:
+            x = self._effort_chip.winfo_rootx()
+            y = self._effort_chip.winfo_rooty() + self._effort_chip.winfo_height()
+            menu.tk_popup(x, y)
+        finally:
+            menu.grab_release()
+
+    def _select_effort(self, level: str) -> None:
+        """Set the effort level and refresh the chip text."""
+        self._effort_var.set(level)
+        try:
+            self._effort_chip.set_text(self._effort_chip_text())
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Sidebar toggle
@@ -562,7 +772,7 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
                 self._saved_sash_pos = _SESSION_LIST_WIDTH
             self._paned.forget(self._sidebar_frame)
             self._sidebar_visible = False
-            self._toggle_sidebar_btn.configure(text="›")
+            self._toggle_sidebar_btn.set_sidebar_visible(False)
         else:
             # PanedWindow.add() appends, so remove chat first, then add
             # sidebar (→ position 0), then re-add chat (→ position 1).
@@ -575,7 +785,7 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
             )
             self._paned.add(self._chat_frame, minsize=500, stretch="always")
             self._sidebar_visible = True
-            self._toggle_sidebar_btn.configure(text="‹")
+            self._toggle_sidebar_btn.set_sidebar_visible(True)
 
     # ------------------------------------------------------------------
     # Rounded-corner list canvas
@@ -607,23 +817,19 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
         self._list_canvas.configure(bg=bg)
         self._list_inner.configure(bg=fill)
 
-        # Draw (or redraw) the rounded-rectangle fill
+        # Draw (or redraw) the rounded-rectangle with a subtle border outline
         self._list_canvas.delete("rrect")
-        r   = 10    # corner radius in px
+        r   = 12    # corner radius in px
         pad = 3     # gap between canvas edge and rounded rect
-        x1, y1, x2, y2 = pad, pad, w - pad, h - pad
-        # Smooth polygon approximating a rounded rect:
-        pts = [
-            x1 + r, y1,   x2 - r, y1,
-            x2,     y1,   x2,     y1 + r,
-            x2,     y2 - r, x2,   y2,
-            x2 - r, y2,   x1 + r, y2,
-            x1,     y2,   x1,     y2 - r,
-            x1,     y1 + r, x1,   y1,
-        ]
-        self._list_canvas.create_polygon(
-            pts, smooth=True,
-            fill=fill, outline="", tags="rrect",
+        border_col = c.get("input_border", "#cdd4e8")
+        draw_rounded_rect(
+            self._list_canvas,
+            pad, pad, w - pad, h - pad,
+            r=r,
+            fill=fill,
+            outline=border_col,
+            width=1,
+            tags="rrect",
         )
         self._list_canvas.tag_lower("rrect")
 
@@ -637,27 +843,250 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
         self._list_canvas.coords(self._list_canvas_id, inner_pad, inner_pad)
 
     # ------------------------------------------------------------------
+    # Compound input block canvas
+    # ------------------------------------------------------------------
+
+    def _redraw_input_block_canvas(self) -> None:
+        """Update colours of the input block widgets after a theme change.
+
+        The input block is now parented directly inside ``_hist_inner`` (no
+        separate outer canvas), so this method only needs to repaint chip
+        colours and background frames — no polygon drawing required.
+        """
+        if not hasattr(self, "_input_block"):
+            return
+
+        _mode = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
+        c = _THEME_COLORS.get(_mode, _THEME_COLORS["light"])
+
+        try:
+            self._input_block.configure(bg=c["input_bg"])
+        except Exception:
+            pass
+
+        # 1. Update quick-action chip colours
+        qa_bg      = c.get("qa_bg",       c["input_bg"])
+        qa_fg      = c.get("qa_fg",       c.get("text_fg", "#1a2744"))
+        qa_hov     = c.get("qa_bg_hover", qa_bg)
+        st_fg      = c.get("status_fg",   "#9aa5be")
+        _inp_bg_c  = c["input_bg"]
+        for i, chip in enumerate(self._qa_chips):
+            try:
+                if i == 0:
+                    chip.configure(bg=_inp_bg_c, fg=st_fg)
+                else:
+                    chip.update_style(
+                        chip_bg=qa_bg, chip_fg=qa_fg,
+                        hover_bg=qa_hov, parent_bg=_inp_bg_c,
+                    )
+            except Exception:
+                pass
+
+        # 2. Update background frames
+        for bg_widget in self._input_block_bgs:
+            try:
+                bg_widget.configure(bg=c["input_bg"])
+            except Exception:
+                pass
+
+        # 3. Update the input text widget colours
+        try:
+            self._redraw_input_text_cv()
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # Rounded input text-field canvas (nested inside the input card)
+    # ------------------------------------------------------------------
+
+    def _redraw_input_text_cv(self) -> None:
+        """Repaint the rounded border around the input text widget.
+
+        Called on every ``<Configure>`` of ``_input_text_cv`` and after each
+        theme change.  Draws a filled rounded rect (r=10) in ``text_bg`` with
+        a ``input_border`` outline, then sizes the inner text-window to fill
+        the padded interior.
+        """
+        if not hasattr(self, "_input_text_cv"):
+            return
+        w = self._input_text_cv.winfo_width()
+        h = self._input_text_cv.winfo_height()
+        if w <= 1 or h <= 1:
+            return
+        _mode = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
+        c = _THEME_COLORS.get(_mode, _THEME_COLORS["light"])
+
+        inner_bg = c.get("text_bg", "#ffffff")
+        border   = c.get("input_border", "#cdd4e8")
+        _cv_pad  = 4
+
+        self._input_text_cv.configure(bg=c["input_bg"])
+        self._input_text_cv.delete("itf")
+        # Inset 1 px so the 1-px outline is never clipped at the canvas edge.
+        draw_rounded_rect(
+            self._input_text_cv, 1, 1, w - 1, h - 1, r=10,
+            fill=inner_bg, outline=border, width=1,
+            tags="itf",
+        )
+        # Size the text window to fill inside the rounded rect
+        self._input_text_cv.itemconfigure(
+            self._input_text_cv_win,
+            width=max(1, w - 2 * _cv_pad),
+            height=max(1, h - 2 * _cv_pad),
+        )
+        self._input_text_cv.tag_raise(self._input_text_cv_win)
+
+        # Keep text widget colours in sync
+        try:
+            self._input_text.configure(
+                bg=inner_bg, fg=c["input_fg"],
+                insertbackground=c["input_fg"],
+            )
+        except Exception:
+            pass
+        try:
+            self._input_vsb.update_style(c["sb_color"], inner_bg)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # Rounded chat history canvas
+    # ------------------------------------------------------------------
+
+    def _redraw_hist_canvas(self) -> None:
+        """Repaint the rounded-rectangle card around the chat history area.
+
+        Called on every ``<Configure>`` of ``_hist_canvas`` / ``_hist_inner``
+        and after each theme change.  Uses the same Canvas-polygon technique
+        as the session list and input block.
+        """
+        if not hasattr(self, "_hist_canvas"):
+            return
+        w = self._hist_canvas.winfo_width()
+        h = self._hist_canvas.winfo_height()
+        if w <= 1 or h <= 1:
+            return
+        _mode = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
+        c = _THEME_COLORS.get(_mode, _THEME_COLORS["light"])
+
+        self._hist_canvas.configure(bg=c["window_bg"])
+        self._hist_canvas.delete("hc")
+        pad = 3
+        r   = 12
+        draw_rounded_rect(
+            self._hist_canvas,
+            pad, pad, w - pad, h - pad,
+            r=r,
+            fill=c["text_bg"],
+            outline=c.get("input_border", "#cdd4e8"),
+            width=1,
+            tags="hc",
+        )
+        # inner_pad must keep the _hist_inner frame's corners INSIDE the
+        # rounded polygon so the frame's rectangular bg colour doesn't bleed
+        # into the corner areas and make the card look square.
+        # For r=12, pad=3: corner centre at (pad+r, pad+r) = (15, 15).
+        # A point (p, p) is inside the arc iff sqrt(2)*(15-p) ≤ r=12
+        # → p ≥ 15 - 12/sqrt(2) ≈ 6.5 → use inner_pad = 8 for a safe margin.
+        inner_pad = 8
+        inner_w = max(1, w - 2 * inner_pad)
+        inner_h = max(1, h - 2 * inner_pad)
+        self._hist_canvas.itemconfigure(
+            self._hist_canvas_win, width=inner_w, height=inner_h,
+        )
+        self._hist_canvas.coords(self._hist_canvas_win, inner_pad, inner_pad)
+        self._hist_inner.configure(bg=c["text_bg"])
+        self._hist_canvas.tag_raise(self._hist_canvas_win)
+
+        # Update the separator between top bar and chat
+        try:
+            self._chat_separator.configure(bg=c.get("paned_bg", "#c8d0e0"))
+        except Exception:
+            pass
+
+        # Update the divider between chat and input
+        try:
+            self._card_sep.configure(bg=c.get("input_border", "#cdd4e8"))
+        except Exception:
+            pass
+
+        # Update input block colours
+        try:
+            self._redraw_input_block_canvas()
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # Auto-expand input text
+    # ------------------------------------------------------------------
+
+    def _auto_resize_input(self, event=None) -> None:
+        """Grow/shrink the input Text height to fit content (max 5 lines).
+
+        Growth always pushes the card upward (the chat history shrinks from
+        the bottom) because the input block sits in a fixed-weight grid row
+        at the bottom of the chat pane.  Once the 5-line limit is reached
+        the text widget scrolls internally — no further card expansion.
+
+        Uses ``text.count("1.0", "end-1c", "displaylines")`` rather than a
+        ``dlineinfo`` loop so the line count is accurate even when the text
+        has scrolled beyond the visible viewport (dlineinfo returns None for
+        off-screen lines and would collapse the widget to height=1).
+        """
+        try:
+            self._input_text.update_idletasks()   # flush wrapping before counting
+            n = self._input_text.count("1.0", "end-1c", "displaylines")
+            if n is None:
+                n = 0
+            # count() can return a tuple when multiple options are passed;
+            # unwrap it when it does.
+            if isinstance(n, tuple):
+                n = n[0] if n else 0
+            new_h = max(1, min(self._input_max_lines, n))
+            if int(str(self._input_text.cget("height"))) != new_h:
+                self._input_text.configure(height=new_h)
+                self.after(5, self._sync_input_text_cv_height)
+        except Exception:
+            pass
+
+    def _sync_input_text_cv_height(self) -> None:
+        """Resize the input canvas to match the text widget's current height.
+
+        Called after ``_auto_resize_input`` changes the Text height option and
+        also via the Text widget's ``<Configure>`` binding so the rounded-rect
+        canvas always wraps the content snugly.
+        """
+        if not hasattr(self, "_input_text_cv") or not hasattr(self, "_input_text"):
+            return
+        try:
+            req_h = self._input_text.winfo_reqheight()
+            if req_h < 2:
+                return
+            _cv_pad = 4
+            new_cv_h = req_h + 2 * _cv_pad
+            cur_cv_h = self._input_text_cv.winfo_height()
+            if abs(cur_cv_h - new_cv_h) > 1:
+                self._input_text_cv.configure(height=new_cv_h)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
     # Chat pane show / hide
     # ------------------------------------------------------------------
 
     def _set_chat_active(self, active: bool) -> None:
-        """Show the full chat UI (active=True) or a blank placeholder (active=False)."""
-        chat_widgets = [
-            self._chat_top_bar,
-            self._chat_separator,
-            self._hist_frame,
-            self._qa_frame,
-            self._input_frame,
-        ]
+        """Show the full chat UI (active=True) or a blank placeholder (active=False).
+
+        The top bar, separator, chat history, and input block all live inside
+        ``_hist_inner`` which is embedded in ``_hist_canvas`` — so toggling the
+        canvas alone is sufficient.  The placeholder fills the single row=0 cell.
+        """
         if active:
             self._placeholder_frame.grid_remove()
-            for w in chat_widgets:
-                w.grid()          # restores original grid options saved by grid_remove()
+            self._hist_canvas.grid()   # restores original grid options
         else:
-            for w in chat_widgets:
-                w.grid_remove()
-            self._placeholder_frame.grid(
-                row=0, column=0, rowspan=4, sticky="nsew")
+            self._hist_canvas.grid_remove()
+            self._placeholder_frame.grid(row=0, column=0, sticky="nsew")
 
     # ------------------------------------------------------------------
     # Window lifecycle
@@ -689,13 +1118,66 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
 
     def _set_busy(self, busy: bool, label: str = "") -> None:
         self._is_busy = busy
-        self._send_btn.configure(state="disabled" if busy else "normal")
-        self._busy_label.configure(text=label)
         if busy:
+            self._thinking_active = True
             self._cancel_event.clear()
-            self._cancel_btn.pack(fill="x", pady=(2, 0))
+            # Swap: hide Send, show Cancel in its place
+            self._send_btn.pack_forget()
+            self._cancel_btn.pack(side="left")
+            if label:
+                self._show_thinking(label)
         else:
+            # Kill indicator BEFORE swapping buttons so no flash
+            self._thinking_active = False
+            self._hide_thinking()
             self._cancel_btn.pack_forget()
+            self._send_btn.pack(side="left")
+
+    # ------------------------------------------------------------------
+    # Thinking indicator (lives in the chat window)
+    # ------------------------------------------------------------------
+
+    def _show_thinking(self, label: str) -> None:
+        """Insert (or replace) a thinking-progress indicator at the end of chat.
+
+        Uses the ``"thinking_indicator"`` tag; ``_hide_thinking`` locates and
+        deletes exactly the tagged range so it never touches other chat text.
+        Stale ``after()`` callbacks are silently dropped via ``_thinking_active``.
+        """
+        if not getattr(self, "_thinking_active", False):
+            return   # _set_busy(False) already ran — discard stale callback
+        if not hasattr(self, "_chat_text"):
+            return
+        try:
+            self._hide_thinking()   # remove any previous indicator first
+            t = self._chat_text
+            t.configure(state="normal")
+            t.insert("end", f"\n{label}\n", "thinking_indicator")
+            t.configure(state="disabled")
+            t.see("end")
+        except Exception:
+            pass
+
+    def _hide_thinking(self) -> None:
+        """Remove the thinking indicator by deleting its tagged text range.
+
+        Tag-range deletion is position-independent and cannot accidentally
+        remove chat text that was appended after the indicator.
+        """
+        if not hasattr(self, "_chat_text"):
+            return
+        try:
+            t = self._chat_text
+            ranges = t.tag_ranges("thinking_indicator")
+            if not ranges:
+                return
+            t.configure(state="normal")
+            # Iterate in reverse so earlier indices stay valid after each delete
+            for i in range(len(ranges) - 1, -1, -2):
+                t.delete(str(ranges[i - 1]), str(ranges[i]))
+            t.configure(state="disabled")
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------

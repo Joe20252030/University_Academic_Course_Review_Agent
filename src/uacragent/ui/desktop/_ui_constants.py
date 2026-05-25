@@ -21,8 +21,10 @@ from uacragent.domain.types import DocumentType
 # Constants
 # ---------------------------------------------------------------------------
 _WINDOW_TITLE = "UACRAgent - Course Review Assistant"
-_MIN_WIDTH = 1000
+_MIN_WIDTH  = 1000   # hard minimum — window cannot be shrunk below this
 _MIN_HEIGHT = 620
+_INIT_WIDTH  = 1280  # default size on first launch (larger for comfortable layout)
+_INIT_HEIGHT = 800
 _PAD = 8
 _SESSION_LIST_WIDTH = 220
 
@@ -56,11 +58,12 @@ _STRINGS: dict[str, dict[str, str]] = {
     "en": {
         # Session list
         "sessions":           "Sessions",
-        "new_session":        "+ New",
+        "new_session":        "+ New Session",
+        "app_settings":       "⚙  App Settings",
         "rename":             "✏  Rename",
         "delete":             "🗑  Delete",
         # Chat pane
-        "settings_btn":       "⚙  Settings",
+        "settings_btn":       "⚙  Session Settings",
         "quick_actions":      "Quick Actions",
         "review_summary":     "Review Summary",
         "practice_booklet":   "Practice Booklet",
@@ -324,11 +327,12 @@ _STRINGS: dict[str, dict[str, str]] = {
     "zh_CN": {
         # Session list
         "sessions":           "会话",
-        "new_session":        "+ 新建",
+        "new_session":        "+ 新建会话",
+        "app_settings":       "⚙  应用设置",
         "rename":             "✏  重命名",
         "delete":             "🗑  删除",
         # Chat pane
-        "settings_btn":       "⚙  设置",
+        "settings_btn":       "⚙  课程设置",
         "quick_actions":      "快速操作",
         "review_summary":     "复习摘要",
         "practice_booklet":   "练习册",
@@ -610,8 +614,24 @@ _THEME_COLORS: dict[str, dict[str, str]] = {
         "link_fg":        "#1b3167",
         "link_folder_fg": "#6b7280",
         # Primary action button (Send, Apply)
-        "btn_primary_bg": "#f5a623",   # logo gold
-        "btn_primary_fg": "#1a2744",
+        "btn_primary_bg":    "#f5a623",   # logo gold
+        "btn_primary_fg":    "#1a2744",
+        "btn_primary_hover": "#e8961a",   # darker gold on hover
+        # Rounded input border
+        "input_border":   "#cdd4e8",   # subtle blue-gray ring
+        # Overlay scrollbar — pill only (bg matches content so track is invisible)
+        "sb_color":       "#9aa5be",   # pill colour
+        "sb_bg":          "#ffffff",   # match text_bg → track disappears
+        # Quick-action chip buttons
+        "qa_bg":          "#edf0f8",   # chip fill
+        "qa_fg":          "#3d4f74",   # chip text
+        "qa_bg_hover":    "#dce3f2",   # chip hover
+        # Cancel button (replaces Send while busy)
+        "btn_cancel_bg":    "#e53e3e",   # red
+        "btn_cancel_fg":    "#ffffff",
+        "btn_cancel_hover": "#c53030",   # darker red on hover
+        # Session list item hover
+        "lb_hover_bg":    "#dfe4f0",
     },
     "dark": {
         # Surfaces — navy palette from the logo
@@ -638,15 +658,31 @@ _THEME_COLORS: dict[str, dict[str, str]] = {
         "link_fg":        "#81b4f5",
         "link_folder_fg": "#7f96bc",
         # Primary action button
-        "btn_primary_bg": "#f5a623",   # same gold
-        "btn_primary_fg": "#1a2744",
+        "btn_primary_bg":    "#f5a623",   # same gold
+        "btn_primary_fg":    "#1a2744",
+        "btn_primary_hover": "#e8961a",   # darker gold on hover
+        # Rounded input border
+        "input_border":   "#1e3566",   # navy ring
+        # Overlay scrollbar — pill only (bg matches content so track is invisible)
+        "sb_color":       "#3a5280",   # muted blue pill
+        "sb_bg":          "#13254e",   # match text_bg dark → track disappears
+        # Quick-action chip buttons
+        "qa_bg":          "#112040",   # chip fill
+        "qa_fg":          "#9ab8e0",   # chip text
+        "qa_bg_hover":    "#1a3060",   # chip hover
+        # Cancel button (replaces Send while busy)
+        "btn_cancel_bg":    "#e53e3e",   # red — same as light
+        "btn_cancel_fg":    "#ffffff",
+        "btn_cancel_hover": "#c53030",   # darker red on hover
+        # Session list item hover
+        "lb_hover_bg":    "#122040",
     },
 }
 
 _FONT_SIZE_VALUES: dict[str, int] = {
-    "small":  11,
-    "medium": 13,
-    "large":  15,
+    "small":  13,
+    "medium": 15,
+    "large":  17,
 }
 
 
