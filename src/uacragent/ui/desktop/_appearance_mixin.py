@@ -301,10 +301,20 @@ class AppearanceMixin:
             except Exception:
                 pass
         # Effort level chip (single dropdown trigger)
+        _act_hov = c.get("qa_bg_hover", _act_bg)
         try:
             self._effort_chip.update_style(
                 chip_bg=_act_bg, chip_fg=_inp_fg,
-                hover_bg=_act_bg, parent_bg=_inp_bg,
+                hover_bg=_act_hov, parent_bg=_inp_bg,
+                outline=_border,
+            )
+        except Exception:
+            pass
+        # Reasoning mode chip (same visual style as effort chip)
+        try:
+            self._reasoning_chip.update_style(
+                chip_bg=_act_bg, chip_fg=_inp_fg,
+                hover_bg=_act_hov, parent_bg=_inp_bg,
                 outline=_border,
             )
         except Exception:
