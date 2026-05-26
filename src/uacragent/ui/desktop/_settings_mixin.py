@@ -923,14 +923,17 @@ class SettingsMixin:
         self._update_api_key_row()
 
         # ── API key scope notice (rounded info box) ──────────────────────────
+        _info_bg  = c.get("info_bg",     "#e8f4fd")
+        _info_brd = c.get("info_border", "#90caf9")
+        _info_fg  = c.get("info_fg",     "#0d47a1")
         _note_cv, _note_shell = self._make_rounded_box(
-            akf, fill_color="#e8f4fd", border_color="#90caf9",
+            akf, fill_color=_info_bg, border_color=_info_brd,
             parent_bg=_cbg, r=8, padx=10, pady=6)
         _note_cv.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(8, 0))
         tk.Label(
             _note_shell,
             text=self._t("settings_api_key_note"),
-            background="#e8f4fd", foreground="#0d47a1",
+            background=_info_bg, foreground=_info_fg,
             font=("TkDefaultFont", _note_sz), anchor="w", justify="left", wraplength=440,
         ).pack(fill="x")
 
@@ -1055,21 +1058,25 @@ class SettingsMixin:
                      self._on_reset_workspace).grid(row=0, column=2, padx=(4, 0))
 
         # ── Deletion warning (rounded warning box) ────────────────────────
+        _warn_bg       = c.get("warn_bg",       "#fff3e0")
+        _warn_brd      = c.get("warn_border",    "#e65100")
+        _warn_title_fg = c.get("warn_title_fg",  "#bf360c")
+        _warn_body_fg  = c.get("warn_body_fg",   "#4e342e")
         _warn_cv, _warn_shell = self._make_rounded_box(
-            wf, fill_color="#fff3e0", border_color="#e65100",
+            wf, fill_color=_warn_bg, border_color=_warn_brd,
             parent_bg=_cbg, r=8, padx=10, pady=6)
         _warn_cv.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 2))
         tk.Label(
             _warn_shell,
             text=self._t("settings_deletion_warning_title"),
-            background="#fff3e0", foreground="#bf360c",
+            background=_warn_bg, foreground=_warn_title_fg,
             font=("TkDefaultFont", _note_sz, "bold"),
             anchor="w",
         ).pack(side="top", fill="x")
         tk.Label(
             _warn_shell,
             text=self._t("settings_deletion_warning_body"),
-            background="#fff3e0", foreground="#4e342e",
+            background=_warn_bg, foreground=_warn_body_fg,
             font=("TkDefaultFont", _note_sz),
             anchor="w", justify="left", wraplength=440,
         ).pack(side="top", fill="x")
@@ -1190,8 +1197,10 @@ class SettingsMixin:
                                                    pady=(2, 0))
                 return
 
+            _row_even = c.get("row_even_bg", "#f7f7f7")
+            _row_odd  = c.get("row_odd_bg",  "#ffffff")
             for row_idx, fpath in enumerate(files):
-                bg = "#f7f7f7" if row_idx % 2 == 0 else "#ffffff"
+                bg = _row_even if row_idx % 2 == 0 else _row_odd
 
                 row_f = tk.Frame(list_frame, background=bg)
                 row_f.grid(row=row_idx, column=0, sticky="ew", pady=1)
@@ -1884,6 +1893,39 @@ class SettingsMixin:
                 )
                 self._workspace_var.set(str(self._session.workspace_folder))
             self._workspace_committed = True
+
+        # ── Copy exam info file into workspace (M-4) ───────────────────────────
+        # Store a workspace-local copy so the session remains self-contained even
+        # if the original file is moved, renamed, or deleted by the user later.
+        # Only copy when: (a) a file is selected, (b) workspace is committed, and
+        # (c) the current path is NOT already inside the workspace (avoid re-copy).
+        _exam_src = self._session.exam_info_path
+        if _exam_src and self._session.workspace_folder:
+            _src_path = Path(_exam_src)
+            _ws_folder = self._session.workspace_folder
+            _exam_uploads = _ws_folder / ".uacragent" / "uploads" / "exam_info"
+            # Only copy if the file is not already in our workspace
+            if _src_path.exists() and not str(_src_path).startswith(str(_ws_folder)):
+                try:
+                    import shutil as _shutil
+                    _exam_uploads.mkdir(parents=True, exist_ok=True)
+                    _dest = _exam_uploads / _src_path.name
+                    # Avoid overwriting a different file with the same name
+                    _counter = 1
+                    while _dest.exists() and _dest.read_bytes() != _src_path.read_bytes():
+                        _dest = _exam_uploads / f"{_src_path.stem}_{_counter}{_src_path.suffix}"
+                        _counter += 1
+                    if not _dest.exists():
+                        _shutil.copy2(str(_src_path), str(_dest))
+                    # Update session and UI to point at the workspace copy
+                    self._session.exam_info_path = str(_dest)
+                    self._exam_info_path_var.set(str(_dest))
+                    # Invalidate the read cache so next read_exam_info() uses the copy
+                    self._session._exam_info_cache = None
+                except Exception as _exc:  # noqa: BLE001
+                    import logging as _logging
+                    _logging.getLogger(__name__).warning(
+                        "Could not copy exam info file to workspace: %s", _exc)
 
         self._save_current_session()
         self._refresh_session_list()

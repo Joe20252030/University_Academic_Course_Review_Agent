@@ -68,7 +68,14 @@ def _extract_file_text(path: str, mime: str) -> str:
         else:
             return Path(path).read_text(encoding="utf-8", errors="replace")
     except Exception as exc:  # noqa: BLE001
-        return f"[Could not extract text from {Path(path).name}: {exc}]"
+        # Return a clearly-marked error block so the LLM treats it as a signal
+        # rather than as file content, and can tell the user what went wrong.
+        return (
+            f"[FILE EXTRACTION ERROR: Could not read '{Path(path).name}'. "
+            f"Reason: {exc}. "
+            f"Please inform the user that this file could not be processed "
+            f"and ask them to check the file or try a different format.]"
+        )
 
 
 def _build_human_message(
@@ -220,10 +227,23 @@ _CHAT_STRINGS: dict[str, dict[str, str]] = {
 }
 
 # Language instructions injected into the system prompt.
+# "auto" (the default) lets the LLM detect and match the user's language.
 _LANGUAGE_INSTRUCTIONS: dict[str, str] = {
-    "en": "",   # English is the default; no explicit instruction needed.
+    "auto": (
+        "## Language\n\n"
+        "Detect the language of the user's most recent message and reply in "
+        "that same language. If the user writes in Chinese, respond in Chinese; "
+        "if in English, respond in English; and so on for any other language. "
+        "Maintain that language consistently throughout the reply. "
+        "Use English only for technical terms that have no established "
+        "translation in the user's language."
+    ),
+    "en": (
+        "## Language\n\n"
+        "Always respond in English, regardless of the language the user writes in."
+    ),
     "zh_CN": (
-        "## Language Requirement\n\n"
+        "## Language\n\n"
         "You MUST respond entirely in Simplified Chinese (简体中文). "
         "All replies, explanations, section headings, and any generated "
         "document content must be written in Chinese. "
@@ -295,7 +315,7 @@ class ConversationAgent:
         session: AgentSession,
         progress_cb: Callable[[str], None] | None = None,
         force_reindex: bool = False,
-        language: str = "en",
+        language: str = "auto",
     ) -> tuple[str, bool]:
         """Build or reuse the retriever for *session*.
 
@@ -320,7 +340,7 @@ class ConversationAgent:
                     wipe_session_uploads, wipe_session_vectorstore)
                 wipe_session_uploads(session)
                 wipe_session_vectorstore(session)
-            return (_ls(language, _INIT_STATUS, "no_docs"), False)
+            return (_ls(language, _INIT_STATUS, "no_docs"), False, None)
 
         try:
             settings = _settings_for_session(self.settings, session)
@@ -338,11 +358,25 @@ class ConversationAgent:
                             _ls(language, _INIT_STATUS, "ready_cached",
                                 n_files=n_files, n_types=n_types),
                             True,
+                            None,   # no warning
                         )
-                except Exception:  # noqa: BLE001
-                    pass  # fall through to full indexing
+                except Exception as exc:  # noqa: BLE001
+                    import logging as _logging
+                    _logging.getLogger(__name__).warning(
+                        "Fast-path session restore failed (falling back to full "
+                        "re-indexing — this may incur additional API usage): %s",
+                        exc, exc_info=True,
+                    )
+                    _fast_path_warning = (
+                        "⚠️ Cached index could not be loaded "
+                        f"({type(exc).__name__}: {exc}). "
+                        "Rebuilding from scratch — this may take a moment."
+                    )
 
             # ── Full indexing path ──────────────────────────────────────────────
+            # _fast_path_warning is set when the fast path raised an exception
+            # and we are now doing a forced rebuild (not just a normal Apply).
+            _warn = locals().get("_fast_path_warning")
             session.retriever = pipeline.prepare_session(session, progress_cb=progress_cb)
             n_types = len(session.active_files())
             n_files = sum(len(v) for v in session.active_files().values())
@@ -350,10 +384,11 @@ class ConversationAgent:
                 _ls(language, _INIT_STATUS, "ready_indexed",
                     n_files=n_files, n_types=n_types),
                 False,
+                _warn,
             )
         except Exception as exc:  # noqa: BLE001
             session.retriever = None
-            return (_ls(language, _INIT_STATUS, "init_failed", exc=exc), False)
+            return (_ls(language, _INIT_STATUS, "init_failed", exc=exc), False, None)
 
     # ------------------------------------------------------------------
     # Chat
@@ -366,7 +401,7 @@ class ConversationAgent:
         progress_cb: Callable[[str], None] | None = None,
         effort_level: str = "medium",
         reasoning_mode: str = "quick",
-        language: str = "en",
+        language: str = "auto",
         search_enabled: bool = False,
         attachments: list | None = None,
     ) -> ChatResponse:
@@ -512,7 +547,7 @@ class ConversationAgent:
             return "*(Context retrieval failed — answers are based on general knowledge only.)*"
 
     def _render_system_prompt(
-        self, session: AgentSession, context: str, language: str = "en"
+        self, session: AgentSession, context: str, language: str = "auto"
     ) -> str:
         """Fill the system prompt template with session values.
 
@@ -576,7 +611,7 @@ class ConversationAgent:
         progress_cb: Callable[[str], None] | None = None,
         effort_level: str = "medium",
         reasoning_mode: str = "quick",
-        language: str = "en",
+        language: str = "auto",
     ) -> str:
         """Run the generation pipeline and return the output markdown path."""
         from uacragent.agent.pipeline import AgentPipeline

@@ -31,7 +31,7 @@ Some plain paragraph text.
 
 @pytest.fixture
 def ws(tmp_path: Path):
-    w = workspace_paths(tmp_path, "test")
+    w = workspace_paths(workspace_folder=tmp_path / "test")
     ensure_workspace_dirs(w)
     return w
 

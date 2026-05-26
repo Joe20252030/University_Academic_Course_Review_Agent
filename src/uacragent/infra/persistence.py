@@ -120,7 +120,7 @@ def get_app_appearance() -> dict:
     """Return persisted appearance settings with safe defaults.
 
     Keys: ``color_mode`` ("light" | "dark"), ``font_size`` ("small" | "medium" | "large"),
-    ``language`` ("en" | "zh_CN").
+    ``language`` ("auto" | "en" | "zh_CN").
     """
     cfg = _load_config()
     return {
@@ -303,12 +303,19 @@ def list_sessions() -> list[dict]:
 def save_session(
     session: "AgentSession",  # type: ignore[name-defined]
     ui_extras: dict | None = None,
-) -> None:
+) -> bool:
     """Serialise *session* to ``<workspace>/.uacragent/session.json`` and update the index.
 
     All agent artefacts live inside the ``.uacragent`` subdirectory so they
     form a single, clearly-labelled bundle inside the user's workspace.
     The API key is never written.
+
+    Returns
+    -------
+    bool
+        ``True`` on success, ``False`` if the file could not be written
+        (e.g. disk full, permission denied).  The caller is responsible for
+        surfacing a visible error to the user when ``False`` is returned.
     """
     from uacragent.infra.workspace import AGENT_SUBDIR
 
@@ -354,12 +361,25 @@ def save_session(
             encoding="utf-8",
         )
         _upsert_index(workspace, session.course_name or str(workspace.name))
+        return True
     except Exception as exc:
         logger.warning("Could not save session to %s: %s", workspace, exc)
+        return False
 
 
 def load_session(workspace: Path) -> dict[str, Any] | None:
-    """Load session state from ``<workspace>/.uacragent/session.json``."""
+    """Load session state from ``<workspace>/.uacragent/session.json``.
+
+    Returns
+    -------
+    dict
+        The parsed session payload on success.
+    dict with ``_version_mismatch=True``
+        When the file exists but was written by a different app version.
+        Callers can detect this via ``data.get("_version_mismatch")``.
+    None
+        When the session file does not exist or could not be parsed.
+    """
     from uacragent.infra.workspace import AGENT_SUBDIR
 
     session_file = workspace / AGENT_SUBDIR / _SESSION_FILENAME
@@ -368,8 +388,12 @@ def load_session(workspace: Path) -> dict[str, Any] | None:
     try:
         raw = json.loads(session_file.read_text(encoding="utf-8"))
         if raw.get("version") != _VERSION:
-            logger.warning("Session version mismatch in %s — ignoring.", workspace)
-            return None
+            logger.warning(
+                "Session version mismatch in %s (file version=%s, expected=%s) — "
+                "cannot restore session state.",
+                workspace, raw.get("version"), _VERSION,
+            )
+            return {"_version_mismatch": True, "workspace_folder": str(workspace)}
         return raw
     except Exception as exc:
         logger.warning("Could not load session from %s: %s", workspace, exc)

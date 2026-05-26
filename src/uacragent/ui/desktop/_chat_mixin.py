@@ -114,14 +114,13 @@ class ChatMixin:
                 (self._t("attach_all"),       "*.*"),
             ],
         )
+        from uacragent.agent.conversation import _MIME_MAP
         for p in paths:
-            from pathlib import Path as _Path
-            suffix = _Path(p).suffix.lower()
-            from uacragent.agent.conversation import _MIME_MAP
+            suffix = Path(p).suffix.lower()
             mime = _MIME_MAP.get(suffix, "application/octet-stream")
             self._pending_attachments.append({
                 "path": p,
-                "name": _Path(p).name,
+                "name": Path(p).name,
                 "mime": mime,
             })
         if paths:
@@ -369,16 +368,15 @@ class ChatMixin:
             self._append_chat("system", self._t("files_unsupported"))
             return "refuse_drop"
 
+        from uacragent.agent.conversation import _MIME_MAP
         paths = self._parse_dnd_paths(getattr(event, "data", "") or "")
         added = 0
         for p in paths:
-            from pathlib import Path as _Path
-            suffix = _Path(p).suffix.lower()
-            from uacragent.agent.conversation import _MIME_MAP
+            suffix = Path(p).suffix.lower()
             mime = _MIME_MAP.get(suffix, "application/octet-stream")
             self._pending_attachments.append({
                 "path": p,
-                "name": _Path(p).name,
+                "name": Path(p).name,
                 "mime": mime,
             })
             added += 1
@@ -507,12 +505,12 @@ class ChatMixin:
         self._append_chat("system", busy_label)
 
         _show_err = show_error_dialog
-        # Capture agent, language, and session NOW on the main thread.
-        # _get_agent() lazily constructs self._agent and _on_apply_settings may
-        # set self._agent = None concurrently — capturing here is the only safe
-        # approach (same pattern already used by _on_send).
+        # Capture agent, language, session, and request token on the main thread.
+        # The token lets callbacks self-discard when the user cancels between the
+        # cancel-check and the after() post (TOCTOU race elimination).
         captured_agent = self._get_agent()
         captured_lang  = self._language_var.get()
+        captured_token = self._request_token
 
         def _work() -> None:
             # Capture session at thread-start so a mid-flight session swap
@@ -542,16 +540,19 @@ class ChatMixin:
                 agent = captured_agent
                 # force_reindex=True: Apply always runs the full pipeline so
                 # changes to files, embedding provider, or model take effect.
-                msg, _ = agent.initialize_session(
+                msg, _, warn = agent.initialize_session(
                     session, progress_cb=_progress,
                     force_reindex=True, language=captured_lang)
                 if not self._cancel_event.is_set():
-                    self.after(0, lambda m=msg, s=session: self._on_session_loaded(m, s))
+                    self.after(0, lambda m=msg, w=warn, s=session, t=captured_token:
+                               self._request_token == t and
+                               self._on_session_loaded(m, s, fast_path_warning=w))
             except Exception as exc:
                 if not self._cancel_event.is_set():
                     self.after(
                         0,
-                        lambda e=str(exc), s=session:
+                        lambda e=str(exc), s=session, t=captured_token:
+                            self._request_token == t and
                             self._on_session_load_error(e, s, _show_err),
                     )
 
@@ -608,11 +609,9 @@ class ChatMixin:
         self._set_busy(True, loading_label)
         self._session_status_var.set(loading_label)
         self._session.retriever = None
-        # Capture agent and language NOW on the main thread (same TOCTOU fix
-        # as _start_indexing and _on_send — avoids _get_agent() race with
-        # _on_apply_settings resetting self._agent).
         captured_agent = self._get_agent()
         captured_lang  = self._language_var.get()
+        captured_token = self._request_token
 
         def _work() -> None:
             # Capture session at thread-start so a mid-flight session swap
@@ -641,25 +640,30 @@ class ChatMixin:
             try:
                 agent = captured_agent
                 # force_reindex=False: use fast path when Chroma is current.
-                status, was_cached = agent.initialize_session(
+                status, was_cached, warn = agent.initialize_session(
                     session, progress_cb=_progress, language=captured_lang)
                 if not self._cancel_event.is_set():
                     self.after(
                         0,
-                        lambda s=status, c=was_cached, sess=session:
-                            self._on_attach_done(s, c, sess),
+                        lambda s=status, c=was_cached, w=warn, sess=session, t=captured_token:
+                            self._request_token == t and
+                            self._on_attach_done(s, c, sess, fast_path_warning=w),
                     )
             except Exception as exc:  # noqa: BLE001
                 if not self._cancel_event.is_set():
                     self.after(
                         0,
-                        lambda e=str(exc), s=session:
+                        lambda e=str(exc), s=session, t=captured_token:
+                            self._request_token == t and
                             self._on_session_load_error(e, s, False),
                     )
 
         threading.Thread(target=_work, daemon=True).start()
 
-    def _on_attach_done(self, status: str, was_cached: bool, session: object) -> None:
+    def _on_attach_done(
+        self, status: str, was_cached: bool, session: object,
+        fast_path_warning: str | None = None,
+    ) -> None:
         """Completion handler for _attach_session_async."""
         # Always release the busy lock so the UI is never permanently stuck.
         self._set_busy(False)
@@ -671,6 +675,9 @@ class ChatMixin:
         self._session_status_var.set(status)
         if self._settings_alive():
             self._settings_status_var.set(status)
+        # Show fast-path failure indicator before the completion notice.
+        if fast_path_warning:
+            self._append_chat("system", fast_path_warning)
         # Only add a chat notice when actual (re-)indexing was performed.
         # On the fast path the session is silently ready — no noise in chat.
         if not was_cached:
@@ -681,7 +688,10 @@ class ChatMixin:
             self._save_current_session()
         self._refresh_session_list()
 
-    def _on_session_loaded(self, status: str, session: object) -> None:
+    def _on_session_loaded(
+        self, status: str, session: object,
+        fast_path_warning: str | None = None,
+    ) -> None:
         """Completion handler for _start_indexing (the Apply path)."""
         # Always release the busy lock so the UI is never permanently stuck.
         self._set_busy(False)
@@ -692,6 +702,9 @@ class ChatMixin:
         self._session_status_var.set(status)
         if self._settings_alive():
             self._settings_status_var.set(status)
+        # Show fast-path failure indicator before the completion notice.
+        if fast_path_warning:
+            self._append_chat("system", fast_path_warning)
         # History is already visible — just append the completion notice.
         self._append_chat("system", self._t("docs_indexed").format(status=status))
         self._save_current_session()
@@ -776,9 +789,10 @@ class ChatMixin:
             if hasattr(self, "_reasoning_mode_var")
             else "quick"
         )
-        captured_lang   = self._language_var.get()
+        captured_lang    = self._language_var.get()
         captured_session = self._session
         captured_agent   = self._get_agent()
+        captured_token   = self._request_token
 
         def _work() -> None:
             def _progress(msg: str) -> None:
@@ -804,20 +818,18 @@ class ChatMixin:
                     search_enabled=captured_search,
                     attachments=captured_attachments,
                 )
-                if self._cancel_event.is_set():
+                if self._cancel_event.is_set() or self._request_token != captured_token:
                     # The LLM finished but the user cancelled before the response
-                    # was dispatched to the UI.  chat() already appended the turn
-                    # (human + AI) to session.chat_history — undo it so the
-                    # invisible response doesn't silently persist on disk.
-                    # pop_last_turn() is atomic: it removes both messages under
-                    # one lock, so the cancel can never leave a dangling human
-                    # message without its AI reply.
+                    # was dispatched to the UI (or a new operation started).
+                    # chat() already appended the turn (human + AI) to
+                    # session.chat_history — undo it so the invisible response
+                    # doesn't silently persist on disk.
                     captured_session.chat_history.pop_last_turn()
                 else:
                     self.after(0, lambda r=response, f=export_fmt, s=captured_session:
                                self._on_chat_response(r, f, s))
             except Exception as exc:
-                if not self._cancel_event.is_set():
+                if not self._cancel_event.is_set() and self._request_token == captured_token:
                     self.after(0, lambda e=str(exc), s=captured_session:
                                self._on_chat_error(e, s))
 
@@ -1200,7 +1212,13 @@ class ChatMixin:
             "embedding_provider":  self._emb_provider_var.get(),
             "local_embedding_model": self._local_model_var.get(),
         }
-        save_session(self._session, ui_extras)
+        ok = save_session(self._session, ui_extras)
+        if not ok:
+            self._append_chat(
+                "system",
+                "⚠️ Session could not be saved — changes may be lost on next launch. "
+                "Check available disk space and folder permissions.",
+            )
 
 
     def _on_cancel(self) -> None:

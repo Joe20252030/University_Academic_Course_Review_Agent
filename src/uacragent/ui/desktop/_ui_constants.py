@@ -673,6 +673,18 @@ _THEME_COLORS: dict[str, dict[str, str]] = {
         "btn_cancel_hover": "#c53030",   # darker red on hover
         # Session list item hover
         "lb_hover_bg":    "#dfe4f0",
+        # Info notice box (API key scope)
+        "info_bg":        "#e8f4fd",
+        "info_border":    "#90caf9",
+        "info_fg":        "#0d47a1",
+        # Warning box (workspace deletion)
+        "warn_bg":        "#fff3e0",
+        "warn_border":    "#e65100",
+        "warn_title_fg":  "#bf360c",
+        "warn_body_fg":   "#4e342e",
+        # Alternating rows in file lists
+        "row_even_bg":    "#f7f7f7",
+        "row_odd_bg":     "#ffffff",
     },
     "dark": {
         # Surfaces — neutral dark-gray palette (mirrors light mode design language)
@@ -722,6 +734,18 @@ _THEME_COLORS: dict[str, dict[str, str]] = {
         "btn_cancel_hover": "#c53030",   # darker red on hover
         # Session list item hover
         "lb_hover_bg":    "#1e2230",
+        # Info notice box (API key scope) — dark mode
+        "info_bg":        "#1a2a3a",
+        "info_border":    "#2952c4",
+        "info_fg":        "#7eb0f0",
+        # Warning box (workspace deletion) — dark mode
+        "warn_bg":        "#2d1f0f",
+        "warn_border":    "#c26a00",
+        "warn_title_fg":  "#f5a623",
+        "warn_body_fg":   "#c4a882",
+        # Alternating rows in file lists — dark mode
+        "row_even_bg":    "#2d3140",
+        "row_odd_bg":     "#252830",
     },
 }
 

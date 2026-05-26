@@ -179,6 +179,15 @@ class SessionMixin:
                 self._t("warn_load_fail").format(ws=ws),
             )
             return
+        if data.get("_version_mismatch"):
+            self._append_chat(
+                "system",
+                "⚠️ This session was saved by a different version of UACRAgent "
+                "and cannot be restored. Please re-create the session by clicking "
+                "**New Session**, adding your files again, and pressing **Apply**. "
+                f"(Session folder: {ws})",
+            )
+            return
         self._session = dict_to_session(data)
         # Sessions loaded from disk already have a committed workspace.
         self._workspace_committed = True

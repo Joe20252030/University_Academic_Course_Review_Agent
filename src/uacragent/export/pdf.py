@@ -170,6 +170,25 @@ def _sanitize_latin1(text: str) -> str:
 def save_pdf(md_text: str, workspace_paths: WorkspacePaths) -> str:
     Path(workspace_paths.outputs).mkdir(parents=True, exist_ok=True)
 
+    # Detect non-latin-1 content before building the PDF.  If no Unicode font
+    # is available and the content cannot be represented in latin-1, the fallback
+    # Helvetica path would silently replace every CJK / non-latin character with
+    # '?'.  Raising early gives the caller a clear, actionable error instead of
+    # producing a silently corrupted file.
+    fonts_available = _find_fonts() is not None
+    if not fonts_available:
+        try:
+            md_text.encode("latin-1")
+        except UnicodeEncodeError:
+            from uacragent.domain.errors import ExportError
+            raise ExportError(
+                "PDF export is unavailable: the document contains characters "
+                "(e.g. CJK / non-latin) that require a Unicode font, but no "
+                "suitable font was found on this system.  "
+                "Install Arial Unicode MS (macOS/Windows) or Noto Sans "
+                "(Linux: sudo apt-get install fonts-noto) and retry."
+            )
+
     pdf = _ReviewPDF()
     pdf.add_markdown(md_text)
 

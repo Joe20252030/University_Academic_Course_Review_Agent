@@ -170,6 +170,11 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         self._agent: ConversationAgent | None = None
         self._is_busy = False
         self._cancel_event = threading.Event()  # set to abort in-flight requests
+        # Request token: incremented at the start of every operation so that any
+        # callback queued before a cancel fires can detect it is stale and discard
+        # itself.  Eliminates the TOCTOU window between "check cancel" and "post
+        # after(0, callback)" in background threads.
+        self._request_token: int = 0
 
         # Sidebar collapse state
         self._sidebar_visible: bool = True
@@ -287,7 +292,7 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         if not hasattr(self, "_font_size_var"):
             self._font_size_var = tk.StringVar(value="medium")
         if not hasattr(self, "_language_var"):
-            self._language_var = tk.StringVar(value="en")
+            self._language_var = tk.StringVar(value="auto")
         # Rate-tier var: global, survives session switches.
         # Initialise from RATE_TIER env var so a .env override is honoured on
         # startup; fall back to "Free" (the safe default) when absent.
@@ -1421,6 +1426,7 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         if busy:
             self._thinking_active = True
             self._cancel_event.clear()
+            self._request_token += 1   # invalidate any callbacks from previous ops
             # Swap: hide Send, show Cancel in its place
             self._send_btn.pack_forget()
             self._cancel_btn.pack(side="left")
@@ -1666,6 +1672,11 @@ def main() -> None:
     # Redirect HuggingFace model downloads into the app data folder so all
     # agent data lives in one place.  Must run before any HF import.
     configure_hf_cache()
+
+    # Warn about env vars that look like uacragent settings but aren't recognised
+    # (e.g. GOGLE_API_KEY instead of GOOGLE_API_KEY).  Non-fatal — just logs.
+    from uacragent.infra.settings import warn_unrecognised_env_vars
+    warn_unrecognised_env_vars()
 
     # Remove the legacy last_session.json written by older app versions.
     # It is no longer used and its presence is misleading.  It never contained

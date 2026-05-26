@@ -3,7 +3,7 @@
 Study from course documents with a grounded academic assistant, and generate
 review materials when you need them through a persistent desktop chat workflow.
 
-- Ingest course materials (PDF, TXT, Markdown, or DOCX)
+- Ingest course materials (PDF, DOCX, CSV, and common text/code formats such as TXT, Markdown, JSON, HTML, XML, and source files)
 - Classify documents by type for optimized processing
 - Chunk documents using type-specific multi-stage splitting strategies
 - Embed into a local Chroma vector store
@@ -196,6 +196,12 @@ For local embeddings, you can choose the downloaded model with
 > Security note: API key fields are excluded from `Settings` repr output, and
 > the desktop session persistence layer intentionally does not write API keys to disk.
 
+Startup note:
+
+- The desktop app and API server now log a warning when they detect environment
+  variable names that look like UACRAgent settings but are misspelled, such as
+  a typo in `GOOGLE_API_KEY` or `LLM_PROVIDER`.
+
 ### Other settings
 
 Optional overrides (see defaults in [src/uacragent/infra/settings.py](src/uacragent/infra/settings.py)):
@@ -209,6 +215,15 @@ LOCAL_EMBEDDING_MODEL=all-MiniLM-L6-v2
 RETRIEVER_K=8
 RATE_TIER=free
 ```
+
+API-only optional hardening:
+
+```env
+UACRAGENT_ALLOWED_BASE_DIR=/absolute/path/that/api/uploads/must/live/under
+```
+
+When `UACRAGENT_ALLOWED_BASE_DIR` is set, the FastAPI server rejects any
+requested source file path outside that directory tree.
 
 #### Request Frequency / Rate Limiting
 
@@ -261,7 +276,7 @@ The GUI lets you:
 - Use quick actions to generate a Review Summary, Practice Booklet, Mock Exam, or Exam Prediction
 - Open generated outputs directly from the chat transcript
 - Cancel an in-flight indexing or chat request from the main panel
-- Open global app settings to change color mode, font size, language (`en` / `zh_CN`), and the shared app data directory
+- Open global app settings to change color mode, font size, language (`Auto`, `en`, or `zh_CN`), and the shared app data directory
 - Use the selected desktop language to steer assistant replies and generated document headings in English or Simplified Chinese
 
 Works on macOS, Windows, and Linux.
@@ -339,6 +354,7 @@ Useful desktop controls:
 - `Web search` is only available for providers that support it.
 - `File attachments` in chat are only available for providers that support them.
 - `Cancel` stops an in-flight indexing or chat task.
+- `Language` in App Settings supports `Auto`, English, and Simplified Chinese.
 
 Reopening sessions:
 
@@ -426,7 +442,7 @@ Notes:
 - The app data directory can be changed from the session-list pane’s global
   app settings button and takes full effect after restarting the app.
 - Global appearance settings are persisted in the bootstrap config and include
-  light/dark mode, small/medium/large font size, and `en` / `zh_CN` UI language.
+  light/dark mode, small/medium/large font size, and `Auto` / `en` / `zh_CN` UI language.
 - Local embedding models are cached under `<app_data_dir>/models/` via
   HuggingFace cache redirection.
 - All agent-generated files inside a workspace are grouped under
@@ -527,6 +543,12 @@ The API likewise respects `EMBEDDING_PROVIDER`, `EMBEDDING_MODEL`, and
 workspace's `.uacragent/uploads/` bundle during API generation. Leave it at
 `true` for the normal self-contained workspace behavior.
 
+API file-path rules:
+
+- every file path in `classified_files` must be absolute
+- the path must point to an existing regular file
+- if `UACRAGENT_ALLOWED_BASE_DIR` is set, the file must resolve under that directory
+
 The API currently exposes `effort_level` for retrieval depth, but not the
 desktop-only `reasoning_mode` selector. API generation therefore uses the
 default quick reasoning pipeline.
@@ -615,7 +637,7 @@ src/uacragent/
     types.py             Enums (DocumentType, ExamFormat, ExamType, TaskType, ExportFormat)
   infra/
     settings.py          Pydantic-based configuration (.env)
-    loaders.py           Document loading with multi-stage type-specific splitting
+    loaders.py           Document loading with multi-stage type-specific splitting, including CSV table ingestion
     vectorstore.py       Chroma vector store, manifest tracking, and weighted retriever
     llm.py               Provider-aware LLM client wrapper (Gemini / OpenAI / DeepSeek)
     auth.py              Provider-specific API key validation

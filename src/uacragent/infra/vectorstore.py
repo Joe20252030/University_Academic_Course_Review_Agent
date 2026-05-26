@@ -140,8 +140,16 @@ def _save_manifest(
             json.dumps({"files": files}, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
-    except Exception:
-        pass  # non-fatal; worst case we rebuild unnecessarily next time
+    except Exception as exc:  # noqa: BLE001
+        # Non-fatal but important: a failed manifest write means the next session
+        # open cannot detect which files are already indexed, so it will trigger a
+        # full re-embedding run (burning API quota) instead of the fast path.
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "Failed to write indexing manifest to %s — next session open will "
+            "rebuild the vector store from scratch: %s",
+            mp, exc,
+        )
 
 
 def _files_were_removed(

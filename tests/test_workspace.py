@@ -15,7 +15,7 @@ from uacragent.infra.workspace import (
 
 
 def test_workspace_paths_structure(tmp_path: Path):
-    ws = workspace_paths(tmp_path, "myws")
+    ws = workspace_paths(workspace_folder=tmp_path / "myws")
     assert ws.root == tmp_path / "myws"
     assert ws.agent_dir == tmp_path / "myws" / AGENT_SUBDIR
     assert ws.uploads == tmp_path / "myws" / AGENT_SUBDIR / "uploads"
@@ -24,7 +24,7 @@ def test_workspace_paths_structure(tmp_path: Path):
 
 
 def test_workspace_paths_all_doc_types(tmp_path: Path):
-    ws = workspace_paths(tmp_path, "test")
+    ws = workspace_paths(workspace_folder=tmp_path / "test")
     for doc_type in DocumentType:
         assert doc_type in ws.doc_folders
         assert ws.doc_folders[doc_type] == (
@@ -33,17 +33,19 @@ def test_workspace_paths_all_doc_types(tmp_path: Path):
 
 
 def test_workspace_paths_default_id(tmp_path: Path):
-    ws = workspace_paths(tmp_path, None)
-    assert ws.root == tmp_path / "default"
+    """workspace_id=None falls back to 'default' subfolder under app data dir."""
+    ws = workspace_paths(workspace_id=None)
+    assert ws.root.name == "default"
 
 
 def test_workspace_paths_empty_id(tmp_path: Path):
-    ws = workspace_paths(tmp_path, "")
-    assert ws.root == tmp_path / "default"
+    """Empty workspace_id string is treated as 'default'."""
+    ws = workspace_paths(workspace_id="")
+    assert ws.root.name == "default"
 
 
 def test_ensure_workspace_dirs_creates_all(tmp_path: Path):
-    ws = workspace_paths(tmp_path, "myws")
+    ws = workspace_paths(workspace_folder=tmp_path / "myws")
     ensure_workspace_dirs(ws)
 
     assert ws.root.is_dir()
@@ -56,13 +58,13 @@ def test_ensure_workspace_dirs_creates_all(tmp_path: Path):
 
 
 def test_ensure_workspace_dirs_idempotent(tmp_path: Path):
-    ws = workspace_paths(tmp_path, "myws")
+    ws = workspace_paths(workspace_folder=tmp_path / "myws")
     ensure_workspace_dirs(ws)
     ensure_workspace_dirs(ws)  # Should not raise
 
 
 def test_workspace_paths_different_ids_are_isolated(tmp_path: Path):
-    ws1 = workspace_paths(tmp_path, "project_a")
-    ws2 = workspace_paths(tmp_path, "project_b")
+    ws1 = workspace_paths(workspace_folder=tmp_path / "project_a")
+    ws2 = workspace_paths(workspace_folder=tmp_path / "project_b")
     assert ws1.root != ws2.root
     assert ws1.chroma != ws2.chroma

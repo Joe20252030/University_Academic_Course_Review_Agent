@@ -249,21 +249,67 @@ class DocumentLoader:
         self.settings = settings
 
     def load_single_file(self, path: str) -> list[Document]:
-        """Load a single file and return raw LangChain Documents."""
+        """Load a single file and return raw LangChain Documents.
+
+        Supported formats:
+        - PDF  (.pdf)   — via PyPDFLoader (text-layer extraction)
+        - Word (.docx)  — via Docx2txtLoader
+        - Text (.txt, .md, .py, .js, .ts, .html, .htm, .xml, .json)
+        - CSV  (.csv)   — read and formatted as a plain-text table
+        """
         try:
             ext = Path(path).suffix.lower()
             if ext == ".pdf":
                 return PyPDFLoader(path).load()
-            elif ext in [".txt", ".md"]:
-                return TextLoader(path).load()
+            elif ext in {".txt", ".md", ".py", ".js", ".ts",
+                         ".html", ".htm", ".xml", ".json"}:
+                return TextLoader(path, encoding="utf-8").load()
             elif ext == ".docx":
                 return Docx2txtLoader(path).load()
+            elif ext == ".csv":
+                return self._load_csv(path)
             else:
                 raise IngestError(f"Unsupported file type: {path}")
         except IngestError:
             raise
         except Exception as exc:  # noqa: BLE001
             raise IngestError(f"Failed to load {path}: {exc}") from exc
+
+    @staticmethod
+    def _load_csv(path: str) -> list[Document]:
+        """Load a CSV file as a plain-text document with aligned columns.
+
+        Each CSV is returned as a single Document whose page_content is a
+        human-readable table (header row + data rows, pipe-separated).
+        This format is LLM-friendly and keeps row context together for
+        retrieval — no chunking artefacts from cutting mid-row.
+        """
+        import csv as _csv
+
+        with open(path, newline="", encoding="utf-8", errors="replace") as fh:
+            reader = _csv.reader(fh)
+            rows = list(reader)
+
+        if not rows:
+            return [Document(page_content="(empty CSV)", metadata={"source": path})]
+
+        # Compute column widths for readable alignment
+        col_widths = [0] * max(len(r) for r in rows)
+        for row in rows:
+            for i, cell in enumerate(row):
+                col_widths[i] = max(col_widths[i], len(cell))
+
+        def _fmt_row(row: list[str]) -> str:
+            padded = [cell.ljust(col_widths[i]) for i, cell in enumerate(row)]
+            return " | ".join(padded)
+
+        lines = [_fmt_row(rows[0])]
+        if len(rows) > 1:
+            lines.append("-+-".join("-" * w for w in col_widths))
+            lines.extend(_fmt_row(r) for r in rows[1:])
+
+        content = f"[CSV file: {Path(path).name}]\n\n" + "\n".join(lines)
+        return [Document(page_content=content, metadata={"source": path})]
 
     def copy_to_workspace(
         self,

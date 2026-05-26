@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -114,3 +117,79 @@ class Settings(BaseSettings):
 
 def get_settings() -> Settings:
     return Settings()
+
+
+# ---------------------------------------------------------------------------
+# Env-var typo detection
+# ---------------------------------------------------------------------------
+
+# All env var aliases recognised by Settings — exact names that pydantic-settings
+# will consume.  Any env var *close* to one of these but not in the set is a
+# likely typo.
+_KNOWN_ALIASES: frozenset[str] = frozenset({
+    "LLM_PROVIDER", "llm_provider",
+    "LLM_MODEL", "llm_model",
+    "GOOGLE_API_KEY", "google_api_key",
+    "OPENAI_API_KEY", "openai_api_key",
+    "DEEPSEEK_API_KEY", "deepseek_api_key",
+    "EMBEDDING_PROVIDER", "embedding_provider",
+    "EMBEDDING_MODEL", "embedding_model",
+    "LOCAL_EMBEDDING_MODEL", "local_embedding_model",
+    "RETRIEVER_K", "retriever_k",
+    "RATE_TIER", "rate_tier",
+    "LLM_REQUEST_DELAY", "llm_request_delay",
+    "LLM_MAX_RETRIES", "llm_max_retries",
+    "LLM_RETRY_BASE_DELAY", "llm_retry_base_delay",
+})
+
+# Only examine env vars whose names suggest they could be uacragent settings.
+_SUSPECT_PREFIXES: tuple[str, ...] = (
+    "LLM_", "GOOGLE_", "OPENAI_", "DEEPSEEK_",
+    "EMBEDDING_", "LOCAL_EMBEDDING", "RETRIEVER_", "RATE_",
+)
+
+
+def warn_unrecognised_env_vars() -> None:
+    """Log a warning for env vars that look like uacragent settings but aren't.
+
+    Uses :func:`difflib.get_close_matches` to detect likely typos such as
+    ``GOGLE_API_KEY`` (should be ``GOOGLE_API_KEY``) or ``LLM_PROIVDER``
+    (should be ``LLM_PROVIDER``).  Call once at app startup so operators
+    notice misconfigured ``.env`` files before a run begins.
+
+    Two passes:
+    1. Prefix filter — env vars that start with a known prefix but aren't
+       in the exact aliases list (fast, catches intra-word typos like PROIVDER).
+    2. Similarity scan — all remaining env vars are compared against known
+       uppercase aliases with a high cutoff (catches prefix typos like GOGLE_).
+    """
+    import difflib
+    import os
+
+    _known_upper = {a.upper() for a in _KNOWN_ALIASES}
+
+    # All env vars that look related but aren't in the exact known set
+    unrecognised = [
+        key for key in os.environ
+        if key not in _KNOWN_ALIASES and key.upper() not in _known_upper
+        and (
+            # Known prefix but body is wrong (e.g. LLM_PROIVDER)
+            any(key.upper().startswith(pfx) for pfx in _SUSPECT_PREFIXES)
+            # Or contains API_KEY / _KEY suffix — catches GOGLE_API_KEY etc.
+            or key.upper().endswith(("_API_KEY", "_KEY"))
+        )
+    ]
+
+    for key in unrecognised:
+        close = difflib.get_close_matches(
+            key.upper(), list(_known_upper),
+            n=1, cutoff=0.75,
+        )
+        if close:
+            # Prefer the UPPER_CASE canonical form for readability in warnings
+            match = close[0]
+            logger.warning(
+                "Env var '%s' is not a recognised UACRAgent setting — "
+                "did you mean '%s'? This value will be ignored.",
+                key, match,
+            )

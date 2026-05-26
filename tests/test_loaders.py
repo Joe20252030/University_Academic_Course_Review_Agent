@@ -93,8 +93,9 @@ def test_load_md_file(loader: DocumentLoader, tmp_path: Path):
 
 def test_load_unsupported_extension_raises(loader: DocumentLoader, tmp_path: Path):
     from uacragent.domain.errors import IngestError
-    f = tmp_path / "data.csv"
-    f.write_text("a,b,c")
+    # .csv is now supported; use a genuinely unsupported extension instead
+    f = tmp_path / "data.xyz"
+    f.write_text("some content")
     with pytest.raises(IngestError, match="Unsupported file type"):
         loader.load_single_file(str(f))
 
@@ -115,7 +116,7 @@ def test_copy_to_workspace(loader: DocumentLoader, tmp_path: Path):
     src = tmp_path / "notes.txt"
     src.write_text("hello")
 
-    ws = workspace_paths(tmp_path, "ws1")
+    ws = workspace_paths(workspace_folder=tmp_path / "ws1")
     ensure_workspace_dirs(ws)
 
     dest = loader.copy_to_workspace(str(src), DocumentType.lecture_note, ws)
@@ -129,7 +130,7 @@ def test_copy_to_workspace_avoids_overwrite(loader: DocumentLoader, tmp_path: Pa
     src = tmp_path / "notes.txt"
     src.write_text("hello")
 
-    ws = workspace_paths(tmp_path, "ws2")
+    ws = workspace_paths(workspace_folder=tmp_path / "ws2")
     ensure_workspace_dirs(ws)
 
     dest1 = loader.copy_to_workspace(str(src), DocumentType.other, ws)

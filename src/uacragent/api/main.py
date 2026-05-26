@@ -26,6 +26,10 @@ async def _lifespan(app: FastAPI):
     from uacragent.infra.persistence import configure_hf_cache
     configure_hf_cache()
 
+    # Warn about env vars that look like uacragent settings but aren't recognised.
+    from uacragent.infra.settings import warn_unrecognised_env_vars
+    warn_unrecognised_env_vars()
+
     yield   # server runs here
 
 
