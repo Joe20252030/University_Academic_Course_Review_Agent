@@ -449,15 +449,6 @@ class ChatMixin:
                     self._t("warn_no_api_key").format(label=label))
             return
 
-        if not self._has_embedding_key():
-            if show_error_dialog:
-                self._show_info_dialog(
-                    self._t("mb_embed_key_title"),
-                    self._t("mb_embed_key_body"))
-            else:
-                self._append_chat("system", self._t("warn_no_embed_key"))
-            return
-
         if not self._session.course_name:
             if show_error_dialog:
                 self._show_info_dialog(
@@ -500,8 +491,15 @@ class ChatMixin:
         else:
             busy_label = self._t("indexing_docs")
 
-        self._set_busy(True, busy_label)
+        self._set_busy(True, busy_label, mode="index")
         self._session_status_var.set(busy_label)
+        # Mirror the busy label in the settings dialog status bar (if open) so
+        # it always shows what is actually happening, not a stale prior message.
+        if self._settings_alive():
+            try:
+                self._settings_status_var.set(busy_label)
+            except tk.TclError:
+                pass
         self._append_chat("system", busy_label)
 
         _show_err = show_error_dialog
@@ -582,10 +580,6 @@ class ChatMixin:
                 self._t("warn_no_api_key").format(label=label))
             return
 
-        if not self._has_embedding_key():
-            self._append_chat("system", self._t("warn_no_embed_key"))
-            return
-
         if not self._session.course_name:
             self._append_chat("system", self._t("warn_no_course"))
             return
@@ -606,7 +600,7 @@ class ChatMixin:
             return
 
         loading_label = self._t("loading_session")
-        self._set_busy(True, loading_label)
+        self._set_busy(True, loading_label, mode="index")
         self._session_status_var.set(loading_label)
         self._session.retriever = None
         captured_agent = self._get_agent()
@@ -718,7 +712,15 @@ class ChatMixin:
         # Discard stale errors from a session that is no longer active.
         if self._session is not session:
             return
-        self._session_status_var.set(self._t("error_status").format(error=error))
+        _err_status = self._t("error_status").format(error=error)
+        self._session_status_var.set(_err_status)
+        # Mirror the error in the settings dialog status bar so it never gets
+        # stuck on "Applying settings and re-indexing…" after a failure.
+        if self._settings_alive():
+            try:
+                self._settings_status_var.set(_err_status)
+            except tk.TclError:
+                pass
         self._append_chat("system", self._t("indexing_failed").format(error=error))
         if not show_dialog:
             return

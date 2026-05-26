@@ -733,6 +733,9 @@ class AgentPipeline:
             )
 
         _progress(f"Building vector index ({len(chunks)} chunks)…")
-        vectorstore = get_or_create_vectorstore(chunks, self.settings, ws,
-                                                classified_files=session.classified_files)
+        vectorstore = get_or_create_vectorstore(
+            chunks, self.settings, ws,
+            classified_files=session.classified_files,
+            progress_cb=_progress,
+        )
         return build_retriever(vectorstore, self.settings)

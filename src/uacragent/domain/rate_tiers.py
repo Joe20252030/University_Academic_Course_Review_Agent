@@ -9,16 +9,17 @@ Each tier maps a named API plan category to three concrete pipeline parameters:
                            (doubles each attempt, capped at 60 s).
 
 Tier thresholds are based on published rate limits of the most common LLM plans
-(as of mid-2025):
+(as of 2026):
 
-┌─────────────┬───────────────────────────────────────────────────────────────┐
-│ Tier        │ Typical plans                                                  │
-├─────────────┼───────────────────────────────────────────────────────────────┤
-│ free        │ Gemini Free (15 RPM), most provider trial / free tiers         │
-│ standard    │ DeepSeek standard (60 RPM), OpenAI Tier 1 (≈60–100 RPM)       │
-│ pro         │ OpenAI Tier 2–3 (≈500 RPM), Gemini Pay-as-you-go (2 000 RPM)  │
-│ unlimited   │ OpenAI Tier 4–5, Gemini Enterprise (10 000+ RPM)              │
-└─────────────┴───────────────────────────────────────────────────────────────┘
+┌─────────────┬─────────────────────────────────────────────────────────────────┐
+│ Tier        │ Typical plans                                                    │
+├─────────────┼─────────────────────────────────────────────────────────────────┤
+│ free        │ Gemini Free (10 RPM for 2.5-flash, 5 RPM for 2.5-pro)           │
+│ standard    │ OpenAI Tier 1 (500 RPM), DeepSeek (~300 RPM dynamic),           │
+│             │ Gemini Pay-as-you-go Tier 1 (150–300 RPM)                       │
+│ pro         │ OpenAI Tier 2–3 (5 000–10 000 RPM), Gemini Tier 2 (1 000+ RPM) │
+│ unlimited   │ OpenAI Tier 4–5 (10 000–15 000 RPM), Gemini Enterprise (4 000+) │
+└─────────────┴─────────────────────────────────────────────────────────────────┘
 """
 from __future__ import annotations
 
@@ -58,37 +59,50 @@ RATE_TIERS: dict[str, RateTierConfig] = {
     "free": RateTierConfig(
         id="free",
         display_name="Free",
+        # 6 s gives ~10 RPM effective — exactly matches Gemini 2.5-flash free limit.
+        # Extra retries (4) and a long base back-off (20 s) absorb the frequent
+        # 429 storms that free-tier accounts experience during peak hours.
         request_delay=6.0,
-        max_retries=3,
-        retry_base_delay=15.0,
-        plans_hint="Gemini Free (15 RPM), most provider trial / free tiers",
+        max_retries=4,
+        retry_base_delay=20.0,
+        plans_hint="Gemini Free (10 RPM for 2.5-flash, 5 RPM for 2.5-pro)",
         hint_i18n_key="rate_hint_free",
     ),
     "standard": RateTierConfig(
         id="standard",
         display_name="Standard",
-        request_delay=1.5,
-        max_retries=2,
+        # 0.5 s gives ~120 RPM effective — safely under all standard paid limits:
+        #   • OpenAI Tier 1: 500 RPM  (0.12 s minimum → 0.5 s = 4× headroom)
+        #   • Gemini Pay-as-you-go Tier 1: 150–300 RPM (0.2–0.4 s minimum → safe)
+        #   • DeepSeek: ~300 RPM dynamic (concurrency-based; 0.5 s is conservative)
+        request_delay=0.5,
+        max_retries=3,
         retry_base_delay=8.0,
-        plans_hint="DeepSeek (60 RPM), OpenAI Tier 1 (60–100 RPM)",
+        plans_hint="OpenAI Tier 1 (500 RPM), Gemini Paid Tier 1 (150–300 RPM), DeepSeek (~300 RPM)",
         hint_i18n_key="rate_hint_standard",
     ),
     "pro": RateTierConfig(
         id="pro",
         display_name="Pro",
-        request_delay=0.3,
+        # 0.1 s gives ~600 RPM effective — well within all pro-tier limits:
+        #   • OpenAI Tier 2: 5 000 RPM; Tier 3: 10 000 RPM
+        #   • Gemini Tier 2: 1 000+ RPM (0.06 s minimum → 0.1 s is safe)
+        request_delay=0.1,
         max_retries=2,
-        retry_base_delay=4.0,
-        plans_hint="OpenAI Tier 2–3, Gemini Paid (500–2 000 RPM)",
+        retry_base_delay=3.0,
+        plans_hint="OpenAI Tier 2–3 (5 000–10 000 RPM), Gemini Tier 2 (1 000+ RPM)",
         hint_i18n_key="rate_hint_pro",
     ),
     "unlimited": RateTierConfig(
         id="unlimited",
         display_name="Unlimited",
+        # No inter-request delay; relies solely on retry back-off for transient errors.
+        # Suitable for OpenAI Tier 4–5 (10 000–15 000 RPM) and Gemini Enterprise
+        # (4 000+ RPM) where throughput is effectively unconstrained for this app.
         request_delay=0.0,
         max_retries=1,
         retry_base_delay=2.0,
-        plans_hint="OpenAI Tier 4–5, Gemini Enterprise (10 000+ RPM)",
+        plans_hint="OpenAI Tier 4–5 (10 000–15 000 RPM), Gemini Enterprise (4 000+ RPM)",
         hint_i18n_key="rate_hint_unlimited",
     ),
 }

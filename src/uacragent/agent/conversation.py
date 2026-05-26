@@ -205,8 +205,9 @@ _CHAT_STRINGS: dict[str, dict[str, str]] = {
             "\n\n📄 The document has been saved as **{name}** "
             "in the outputs folder of your workspace.\n"
             "Full path: `{path}`\n\n"
-            "*(This file remains on disk permanently — use the path above "
-            "to locate it if you close and reopen the app.)*"
+            "*(This file remains on disk permanently — if you leave and reopen the session, "
+            "you can find it via the path above or in the **Generated Outputs** section "
+            "inside Session Settings.)*"
         ),
     },
     "zh_CN": {
@@ -221,7 +222,8 @@ _CHAT_STRINGS: dict[str, dict[str, str]] = {
             "\n\n📄 文档已保存为 **{name}**，"
             "位于工作空间的 outputs 文件夹中。\n"
             "完整路径：`{path}`\n\n"
-            "*(此文件将永久保存在磁盘上——关闭并重新打开应用后可通过上述路径找到。)*"
+            "*(此文件将永久保存在磁盘上——离开并重新打开会话后，"
+            "可通过上述路径找到，也可在会话设置的**生成输出**部分中查看。)*"
         ),
     },
 }

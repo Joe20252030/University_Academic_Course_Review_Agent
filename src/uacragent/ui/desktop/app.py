@@ -1421,23 +1421,48 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
     # Busy state
     # ------------------------------------------------------------------
 
-    def _set_busy(self, busy: bool, label: str = "") -> None:
+    def _set_busy(self, busy: bool, label: str = "", mode: str = "chat") -> None:
+        """Enter or leave the busy state.
+
+        Parameters
+        ----------
+        busy:
+            True to enter busy state, False to leave it.
+        label:
+            Progress text shown in the thinking indicator.
+        mode:
+            ``"chat"``  — Send button swaps to Cancel (LLM generation).
+            ``"index"`` — Send button stays visible but is disabled (document
+                          indexing / session loading).  No Cancel button is
+                          shown because the user is not waiting for a chat reply.
+        """
         self._is_busy = busy
         if busy:
             self._thinking_active = True
             self._cancel_event.clear()
             self._request_token += 1   # invalidate any callbacks from previous ops
-            # Swap: hide Send, show Cancel in its place
-            self._send_btn.pack_forget()
-            self._cancel_btn.pack(side="left")
+            self._busy_mode = mode
+            if mode == "index":
+                # Keep Send visible but grayed-out so users know chat is coming
+                # once indexing finishes — not a cancel target.
+                self._send_btn.set_state(False)
+            else:
+                # Chat mode: swap Send → Cancel so the user can abort the LLM call
+                self._send_btn.pack_forget()
+                self._cancel_btn.pack(side="left")
             if label:
                 self._show_thinking(label)
         else:
-            # Kill indicator BEFORE swapping buttons so no flash
+            # Kill indicator BEFORE swapping buttons so there is no visual flash
             self._thinking_active = False
             self._hide_thinking()
-            self._cancel_btn.pack_forget()
-            self._send_btn.pack(side="left")
+            _prev_mode = getattr(self, "_busy_mode", "chat")
+            if _prev_mode == "index":
+                self._send_btn.set_state(True)
+            else:
+                self._cancel_btn.pack_forget()
+                self._send_btn.pack(side="left")
+            self._busy_mode = "chat"
 
     # ------------------------------------------------------------------
     # Thinking indicator (lives in the chat window)

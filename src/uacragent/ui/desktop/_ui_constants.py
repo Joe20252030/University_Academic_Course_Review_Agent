@@ -163,29 +163,31 @@ _STRINGS: dict[str, dict[str, str]] = {
         "settings_no_outputs_folder": (
             "No output files yet — outputs folder will be created on first generation."
         ),
+        "settings_emb_cache_legend": "✓ installed locally · ⬇ not yet downloaded",
         "settings_emb_local_hint": (
             "Downloaded from HuggingFace on first use, then cached in the app data "
             "folder.  Subsequent uses are instant with no internet required."
         ),
-        "settings_applying":       "Applying settings and re-indexing…",
         # Rate-frequency tier section
         "settings_rate_section":   "Request Frequency",
         "settings_rate_tier_label": "API plan tier:",
         "rate_hint_free": (
-            "6 s delay · 3 retries  —  for free-tier plans (e.g. Gemini Free, 15 RPM). "
+            "6 s delay · 4 retries  —  for free-tier plans "
+            "(Gemini Free: 10 RPM for 2.5-flash, 5 RPM for 2.5-pro). "
             "Safe for the slowest APIs; generation takes longer."
         ),
         "rate_hint_standard": (
-            "1.5 s delay · 2 retries  —  for entry-level paid plans "
-            "(e.g. DeepSeek standard, OpenAI Tier 1, ~60–100 RPM)."
+            "0.5 s delay · 3 retries  —  for entry-level paid plans "
+            "(OpenAI Tier 1: 500 RPM · Gemini Pay-as-you-go Tier 1: 150–300 RPM · "
+            "DeepSeek: ~300 RPM dynamic)."
         ),
         "rate_hint_pro": (
-            "0.3 s delay · 2 retries  —  for professional paid plans "
-            "(e.g. OpenAI Tier 2–3, Gemini Pay-as-you-go, ~500–2 000 RPM)."
+            "0.1 s delay · 2 retries  —  for professional paid plans "
+            "(OpenAI Tier 2–3: 5 000–10 000 RPM · Gemini Tier 2: 1 000+ RPM)."
         ),
         "rate_hint_unlimited": (
             "No delay · 1 retry  —  for high-capacity or enterprise plans "
-            "(e.g. OpenAI Tier 4–5, Gemini Enterprise, 10 000+ RPM)."
+            "(OpenAI Tier 4–5: 10 000–15 000 RPM · Gemini Enterprise: 4 000+ RPM)."
         ),
         # Rate-tier suggestion labels (shown when current ≠ provider's default)
         "rate_suggest_mismatch": "💡 Suggested for {provider}: {tier}",
@@ -443,29 +445,31 @@ _STRINGS: dict[str, dict[str, str]] = {
         "settings_no_outputs_folder": (
             "暂无输出文件——将在首次生成时创建输出文件夹。"
         ),
+        "settings_emb_cache_legend": "✓ 已下载  · ⬇ 尚未下载",
         "settings_emb_local_hint": (
             "首次使用时从 HuggingFace 下载，随后缓存在应用数据文件夹中。"
             "后续使用无需联网，速度即时。"
         ),
-        "settings_applying":       "正在应用设置并重新索引…",
         # Rate-frequency tier section
         "settings_rate_section":   "请求频率",
         "settings_rate_tier_label": "API 计划等级:",
         "rate_hint_free": (
-            "6 秒延迟 · 重试 3 次  —  适用于免费计划（如 Gemini 免费版，15 RPM）。"
+            "6 秒延迟 · 重试 4 次  —  适用于免费计划"
+            "（Gemini 免费版：2.5-flash 10 RPM，2.5-pro 5 RPM）。"
             "对最慢的 API 安全可靠，但生成时间较长。"
         ),
         "rate_hint_standard": (
-            "1.5 秒延迟 · 重试 2 次  —  适用于入门付费计划"
-            "（如 DeepSeek 标准版、OpenAI Tier 1，约 60–100 RPM）。"
+            "0.5 秒延迟 · 重试 3 次  —  适用于入门付费计划"
+            "（OpenAI Tier 1：500 RPM · Gemini 按量计费 Tier 1：150–300 RPM · "
+            "DeepSeek：约 300 RPM 动态限速）。"
         ),
         "rate_hint_pro": (
-            "0.3 秒延迟 · 重试 2 次  —  适用于专业付费计划"
-            "（如 OpenAI Tier 2–3、Gemini 按量计费，约 500–2 000 RPM）。"
+            "0.1 秒延迟 · 重试 2 次  —  适用于专业付费计划"
+            "（OpenAI Tier 2–3：5 000–10 000 RPM · Gemini Tier 2：1 000+ RPM）。"
         ),
         "rate_hint_unlimited": (
             "无延迟 · 重试 1 次  —  适用于高容量或企业计划"
-            "（如 OpenAI Tier 4–5、Gemini Enterprise，10 000+ RPM）。"
+            "（OpenAI Tier 4–5：10 000–15 000 RPM · Gemini Enterprise：4 000+ RPM）。"
         ),
         # Rate-tier suggestion labels
         "rate_suggest_mismatch": "💡 {provider} 建议等级：{tier}",

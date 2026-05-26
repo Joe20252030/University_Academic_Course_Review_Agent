@@ -22,7 +22,16 @@ from uacragent.infra.settings import Settings
 from uacragent.infra.workspace import WorkspacePaths
 
 
-def _build_embeddings(settings: Settings) -> Any:
+_DEFAULT_LOCAL_MODEL = "all-MiniLM-L6-v2"
+
+import logging as _logging
+_vs_logger = _logging.getLogger(__name__)
+
+
+def _build_embeddings(
+    settings: Settings,
+    progress_cb: "Callable[[str], None] | None" = None,
+) -> Any:
     """Return an embedding model based on *settings.embedding_provider*.
 
     Providers
@@ -31,59 +40,142 @@ def _build_embeddings(settings: Settings) -> Any:
     "openai"  — OpenAI embeddings              (needs OPENAI_API_KEY)
     "local"   — HuggingFace sentence-transformers, runs entirely on device,
                 free with no API key required.
+
+    Fallback policy
+    ---------------
+    If the selected cloud provider fails (missing API key, network error,
+    quota exceeded, etc.) the function automatically falls back to the local
+    sentence-transformers model ``all-MiniLM-L6-v2``.  If that model is not
+    yet cached it will be downloaded on first use.  The *progress_cb* is called
+    with a visible warning message so the caller can surface it in the UI.
     """
-    from uacragent.domain.errors import ConfigurationError
+    from collections.abc import Callable  # noqa: F401 (used in type hint only)
 
     provider = getattr(settings, "embedding_provider", "gemini")
 
     if provider == "local":
-        return _build_local_embeddings(
-            getattr(settings, "local_embedding_model", "all-MiniLM-L6-v2")
+        local_model = getattr(settings, "local_embedding_model", _DEFAULT_LOCAL_MODEL)
+        if progress_cb:
+            progress_cb(f"Loading local embedding model ({local_model})…")
+        return _build_local_embeddings(local_model, progress_cb=progress_cb)
+
+    # ── Attempt cloud embeddings; fall back to local on any failure ───────────
+    try:
+        if provider == "openai":
+            if not settings.openai_api_key:
+                raise ValueError("OPENAI_API_KEY is not set.")
+            from langchain_openai import OpenAIEmbeddings
+            return OpenAIEmbeddings(api_key=settings.openai_api_key)  # type: ignore[arg-type]
+
+        # Default: "gemini"
+        if not settings.google_api_key:
+            raise ValueError("GOOGLE_API_KEY is not set.")
+        from langchain_google_genai import GoogleGenerativeAIEmbeddings
+        return GoogleGenerativeAIEmbeddings(
+            model=settings.embedding_model,
+            google_api_key=settings.google_api_key,  # type: ignore[arg-type]
         )
 
-    if provider == "openai":
-        if not settings.openai_api_key:
-            raise ConfigurationError(
-                "OpenAI embeddings require OPENAI_API_KEY. "
-                "Enter it in ⚙ Settings → API Key or set OPENAI_API_KEY in .env."
-            )
-        from langchain_openai import OpenAIEmbeddings
-        return OpenAIEmbeddings(api_key=settings.openai_api_key)  # type: ignore[arg-type]
-
-    # Default: "gemini"
-    if not settings.google_api_key:
-        raise ConfigurationError(
-            "Gemini embeddings require GOOGLE_API_KEY. "
-            "Enter it in ⚙ Settings → API Key or set GOOGLE_API_KEY in .env."
+    except Exception as exc:  # noqa: BLE001
+        _warn = (
+            f"⚠️ {provider.title()} embedding provider unavailable "
+            f"({type(exc).__name__}: {exc}). "
+            f"Falling back to free local model '{_DEFAULT_LOCAL_MODEL}' — "
+            f"this will be downloaded if not already cached."
         )
-    from langchain_google_genai import GoogleGenerativeAIEmbeddings
-    return GoogleGenerativeAIEmbeddings(
-        model=settings.embedding_model,
-        google_api_key=settings.google_api_key,  # type: ignore[arg-type]
-    )
+        _vs_logger.warning("%s", _warn)
+        if progress_cb:
+            progress_cb(_warn)
+        return _build_local_embeddings(_DEFAULT_LOCAL_MODEL, progress_cb=progress_cb)
 
 
-def _build_local_embeddings(model_name: str) -> Any:
+def _build_local_embeddings(
+    model_name: str,
+    progress_cb: "Callable[[str], None] | None" = None,
+) -> Any:
     """Load a local sentence-transformers model — free, no API key needed.
 
     The model is downloaded from HuggingFace Hub on first use and cached
     locally in the app-managed HuggingFace cache directory.
 
-    Requires ``sentence-transformers`` (and optionally ``langchain-huggingface``).
+    If ``sentence-transformers`` or ``langchain-huggingface`` are absent they
+    are auto-installed via ``pip`` before the first attempt.  *progress_cb* is
+    called with status messages so the caller can surface them in the UI.
     """
-    try:
-        from langchain_huggingface import HuggingFaceEmbeddings  # preferred
-    except ImportError:
+    _PACKAGES = ["sentence-transformers", "langchain-huggingface"]
+
+    def _try_load() -> Any:
+        """Attempt import + instantiation; raises ImportError on any missing dep.
+
+        Always prefers ``langchain_huggingface`` (no deprecation warning).
+        Falls back to the ``langchain_community`` shim only when the preferred
+        package is absent, suppressing the LangChainDeprecationWarning that the
+        shim emits so it never reaches the user's terminal.
+        """
+        import warnings
+
         try:
-            from langchain_community.embeddings import HuggingFaceEmbeddings  # type: ignore[no-redef]
-        except ImportError as exc:
+            from langchain_huggingface import HuggingFaceEmbeddings  # preferred
+        except ImportError:
+            # langchain-huggingface not installed; fall back to community shim.
+            # Suppress the LangChainDeprecationWarning that the shim emits on
+            # import and instantiation — the user cannot act on it and it is
+            # noise in the terminal.  The auto-install path below will install
+            # langchain-huggingface so subsequent runs use the preferred class.
+            try:
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", category=DeprecationWarning)
+                    warnings.filterwarnings("ignore", message=".*langchain.huggingface.*")
+                    from langchain_community.embeddings import HuggingFaceEmbeddings  # type: ignore[no-redef]
+            except ImportError as exc:
+                raise ImportError("langchain_community missing") from exc
+
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=DeprecationWarning)
+                return HuggingFaceEmbeddings(model_name=model_name)
+        except Exception as exc:
+            # Catches ModuleNotFoundError("No module named 'sentence_transformers'")
+            # raised during instantiation when the package is not yet installed.
+            if "sentence_transformers" in str(exc) or isinstance(exc, ImportError):
+                raise ImportError(str(exc)) from exc
+            raise
+
+    try:
+        return _try_load()
+    except ImportError:
+        # ── Auto-install the missing packages and retry ───────────────────────
+        _info = (
+            "📦 Installing required packages for local embedding model "
+            f"({', '.join(_PACKAGES)}) — this may take a minute…"
+        )
+        _vs_logger.info("%s", _info)
+        if progress_cb:
+            progress_cb(_info)
+
+        import importlib
+        import subprocess
+        import sys
+
+        try:
+            subprocess.check_call(
+                [sys.executable, "-m", "pip", "install", "--quiet"] + _PACKAGES,
+            )
+        except subprocess.CalledProcessError as pip_exc:
             from uacragent.domain.errors import ConfigurationError
             raise ConfigurationError(
-                "Local embeddings require the 'sentence-transformers' package.\n"
-                "Install it with:  pip install sentence-transformers langchain-huggingface"
-            ) from exc
+                f"Auto-install of {', '.join(_PACKAGES)} failed.\n"
+                f"Please run manually:  pip install {' '.join(_PACKAGES)}"
+            ) from pip_exc
 
-    return HuggingFaceEmbeddings(model_name=model_name)
+        # Force Python's import finder to rescan sys.path so the packages just
+        # installed by pip are visible to the current process without a restart.
+        importlib.invalidate_caches()
+
+        if progress_cb:
+            progress_cb("✅ Packages installed — loading embedding model…")
+
+        return _try_load()
 
 
 
@@ -194,6 +286,7 @@ def get_or_create_vectorstore(
     settings: Settings,
     workspace_paths: WorkspacePaths,
     classified_files: dict[DocumentType, list[str]] | None = None,
+    progress_cb: "Callable[[str], None] | None" = None,
 ) -> VectorStore:
     """Build or update the Chroma vector store for the current session.
 
@@ -212,7 +305,7 @@ def get_or_create_vectorstore(
     (``indexed_files.json`` in the agent dir) so the next run can detect
     removals.
     """
-    embeddings = _build_embeddings(settings)
+    embeddings = _build_embeddings(settings, progress_cb=progress_cb)
     chroma_dir = Path(workspace_paths.chroma)
 
     # ── Removal check: wipe and rebuild if files were removed ─────────

@@ -576,7 +576,6 @@ class AppearanceMixin:
         win.title(self._t("app_settings_title"))
         win.configure(bg=_wbg)
         win.resizable(False, False)
-        win.grab_set()
 
         # Snapshot current appearance so Cancel can revert live previews.
         _saved_color = self._color_mode_var.get()

@@ -1453,27 +1453,42 @@ class SettingsMixin:
                      bg=_cbg, fg=_fg).grid(
                 row=0, column=0, sticky="w", padx=(0, 8))
 
-            def _on_local_model_selected() -> None:
-                self._local_model_var.set(
-                    self._FREE_EMB_MODELS.get(
-                        self._local_model_disp_var.get(), "all-MiniLM-L6-v2"))
+            # ── Install-status helpers ─────────────────────────────────────
+            def _badge(display_name: str) -> str:
+                """Return '✓' when model is cached locally, '⬇' otherwise."""
+                model_id = self._FREE_EMB_MODELS.get(display_name, "")
+                return "  ✓" if self._is_model_cached(model_id) else "  ⬇"
 
-            # Build a chip using the display-label list.  We size it to the
-            # widest option so the widget width never changes on selection.
+            def _chip_text(display_name: str) -> str:
+                return f"{display_name}{_badge(display_name)} ▾"
+
+            def _on_local_model_selected() -> None:
+                disp = self._local_model_disp_var.get()
+                self._local_model_var.set(
+                    self._FREE_EMB_MODELS.get(disp, "all-MiniLM-L6-v2"))
+                # Refresh chip label so the badge reflects actual cache state.
+                if _local_chip_holder[0] is not None:
+                    _local_chip_holder[0].set_text(_chip_text(disp))
+
+            # Build a chip sized to the widest possible label (badge included).
             _chip_sz = max(_sz - 1, 10)
             _local_opts = list(self._FREE_EMB_MODELS.keys())
+            # Use the longest badge (✓ and ⬇ occupy the same width; ✓ is fine)
             _local_size_text = max(
-                [f"{o} ▾" for o in _local_opts], key=len) if _local_opts else ""
+                [f"{o}  ✓ ▾" for o in _local_opts], key=len) if _local_opts else ""
             _local_chip_holder: list = [None]
 
             def _show_local_menu() -> None:
                 menu = tk.Menu(frame, tearoff=0)
                 for opt in _local_opts:
+                    # Recompute badge at menu-open time so it reflects the
+                    # current cache state even if something was just installed.
+                    menu_label = f"{opt}{_badge(opt)}"
                     def _sel(o=opt) -> None:
                         self._local_model_disp_var.set(o)
-                        _local_chip_holder[0].set_text(f"{o} ▾")
+                        _local_chip_holder[0].set_text(_chip_text(o))
                         _on_local_model_selected()
-                    menu.add_command(label=opt, command=_sel)
+                    menu.add_command(label=menu_label, command=_sel)
                 try:
                     x = _local_chip_holder[0].winfo_rootx()
                     y = (_local_chip_holder[0].winfo_rooty()
@@ -1495,17 +1510,26 @@ class SettingsMixin:
                 outline=c_chip["input_border"], outline_width=1,
                 command=_show_local_menu,
             )
-            _local_chip.set_text(
-                f"{self._local_model_disp_var.get()} ▾")
+            _local_chip.set_text(_chip_text(self._local_model_disp_var.get()))
             _local_chip_holder[0] = _local_chip
             _local_chip.grid(row=0, column=1, sticky="w")
+
+            # ── Legend ────────────────────────────────────────────────────
+            tk.Label(
+                frame,
+                text=self._t("settings_emb_cache_legend"),
+                bg=_cbg, fg="#6b7280",
+                font=("TkDefaultFont", max(_sz - 2, 9)),
+                anchor="w",
+            ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(2, 0))
+
             tk.Label(
                 frame,
                 text=self._t("settings_emb_local_hint"),
                 bg=_cbg, fg="#6b7280",
                 font=("TkDefaultFont", max(_sz - 1, 10)),
                 wraplength=400, anchor="w",
-            ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(3, 0))
+            ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(2, 0))
         else:
             # API-based: show a key entry field for the embedding provider.
             env_var = "GOOGLE_API_KEY" if provider == "gemini" else "OPENAI_API_KEY"
@@ -1585,17 +1609,49 @@ class SettingsMixin:
         """Show a confirmation dialog before downloading a local embedding model.
 
         Returns True if the user confirmed (or the model is already cached),
-        False if the user cancelled.  Only relevant when embedding_provider == "local".
+        False if the user cancelled.
+
+        Two situations trigger a download prompt:
+
+        1. **Explicit local provider** — the user-selected model is not yet
+           cached on disk.
+        2. **Cloud provider with missing API key** — the runtime will fall back
+           to the default local model (all-MiniLM-L6-v2) automatically; the
+           prompt warns the user *before* the background thread starts so they
+           can decide whether to proceed.
+
+        Reads from ``os.environ`` (the committed state) rather than the live
+        UI StringVars so that sidebar-triggered indexing (where the Settings
+        dialog is closed) always sees the correct provider and model.
         """
-        if self._emb_provider_var.get() != "local":
+        from uacragent.infra.vectorstore import _DEFAULT_LOCAL_MODEL
+
+        # ── Determine which model will actually be used ───────────────────
+        # Use os.environ (committed by _inject_api_keys on Apply) as the
+        # ground truth; fall back to the live UI vars only when env is absent.
+        provider = os.environ.get("EMBEDDING_PROVIDER",
+                                  self._emb_provider_var.get() or "gemini")
+
+        if provider == "local":
+            # Explicit local provider: check the user-selected model.
+            model_name = os.environ.get(
+                "LOCAL_EMBEDDING_MODEL",
+                self._local_model_var.get() or _DEFAULT_LOCAL_MODEL,
+            )
+        elif not self._has_embedding_key():
+            # Cloud key is absent — runtime will silently fall back to the
+            # default local model.  Pre-check so the user can decide now.
+            model_name = _DEFAULT_LOCAL_MODEL
+        else:
+            # Cloud provider with a key: no local download will occur.
             return True
 
-        model_name = self._local_model_var.get()
         if self._is_model_cached(model_name):
-            return True  # already on disk — no need to ask
+            return True  # already on disk — nothing to download
 
-        # Work out display size from the label string
-        disp = self._local_model_disp_var.get()
+        # ── Model not cached — ask the user ───────────────────────────────
+        # Look up the display label to extract the size hint (e.g. "~80 MB").
+        disp = self._FREE_EMB_MODEL_TO_DISPLAY.get(model_name, model_name)
         size_match = re.search(r"~([\d.]+ MB)", disp)
         size_str = size_match.group(1) if size_match else "unknown size"
 
@@ -1929,9 +1985,4 @@ class SettingsMixin:
 
         self._save_current_session()
         self._refresh_session_list()
-        if self._settings_alive():
-            try:
-                self._settings_status_var.set(self._t("settings_applying"))
-            except tk.TclError:
-                pass
         self._start_indexing(show_error_dialog=True)

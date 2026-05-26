@@ -75,8 +75,10 @@ PROVIDERS: dict[str, ProviderConfig] = {
             "gemini-1.5-flash",
         ),
         label_i18n_key="api_key_google",
-        # Gemini Free tier is available on 2.5-flash and 3.5-flash.
-        # Most users start on the free tier, so "free" is the safest default.
+        # Gemini Free: 10 RPM (2.5-flash), 5 RPM (2.5-pro, billing required since Apr 2026).
+        # Most developers start on the free tier → "free" is the safest initial suggestion.
+        # Users who enable billing (Pay-as-you-go Tier 1: 150–300 RPM) should switch to
+        # "standard"; Tier 2 ($250+ cumulative, 1 000+ RPM) maps to "pro".
         default_rate_tier="free",
         supports_search=True,
         supports_files=True,
@@ -116,7 +118,9 @@ PROVIDERS: dict[str, ProviderConfig] = {
             "o1",
         ),
         label_i18n_key="api_key_openai",
-        # OpenAI requires a funded account; Tier 1 baseline is ~60-100 RPM.
+        # OpenAI Tier 1 (first paid tier): 500 RPM for GPT-4o / GPT-4.1 / GPT-5.
+        # "standard" (0.5 s delay, ~120 RPM effective) gives 4× headroom at Tier 1.
+        # Tier 2 (5 000 RPM) → switch to "pro"; Tier 4–5 (10 000–15 000 RPM) → "unlimited".
         default_rate_tier="standard",
         supports_search=True,
         supports_files=True,
@@ -136,7 +140,9 @@ PROVIDERS: dict[str, ProviderConfig] = {
         ),
         base_url="https://api.deepseek.com",
         label_i18n_key="api_key_deepseek",
-        # DeepSeek standard plan is 60 RPM → "standard" is appropriate.
+        # DeepSeek uses dynamic concurrency-based limiting (no fixed RPM table).
+        # Practical ceiling is ~300 RPM for standard accounts; heavy paid usage can
+        # reach 1 500+ RPM.  "standard" (0.5 s delay) is a safe conservative default.
         default_rate_tier="standard",
     ),
 }

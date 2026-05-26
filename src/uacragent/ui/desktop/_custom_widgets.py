@@ -484,12 +484,44 @@ class _RoundedChip(tk.Canvas):
             )
 
     # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _resize_to_fit(self) -> None:
+        """Resize the canvas so the current text + font fit without clipping.
+
+        Called whenever the label text or font changes after construction so
+        the chip always expands (or contracts) to exactly hold its content.
+        ``update_idletasks`` is called after ``configure`` so the geometry
+        manager processes the new size before ``_redraw`` queries
+        ``winfo_width``/``winfo_height``.
+        """
+        try:
+            parent_widget = self.nametowidget(self.winfo_parent())
+        except Exception:
+            parent_widget = self
+
+        _tmp = tk.Label(parent_widget, text=self._text, font=self._font)
+        _tmp.update_idletasks()
+        _tw = _tmp.winfo_reqwidth()
+        _th = _tmp.winfo_reqheight()
+        _tmp.destroy()
+
+        _cw = max(_tw + self._padx * 2, 1)
+        _ch = max(_th + self._pady * 2, 1)
+        tk.Canvas.configure(self, width=_cw, height=_ch)
+        # Flush geometry so winfo_width/height return the new values
+        # immediately when _redraw() runs next.
+        self.update_idletasks()
+
+    # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
     def set_text(self, text: str) -> None:
-        """Update the chip label and redraw."""
+        """Update the chip label, resize the canvas to fit, and redraw."""
         self._text = text
+        self._resize_to_fit()
         self._redraw()
 
     def set_state(self, enabled: bool) -> None:
@@ -518,16 +550,20 @@ class _RoundedChip(tk.Canvas):
         text_anchor: str | None = None,
     ) -> None:
         """Re-apply theme colours / font — call after every theme switch."""
-        if text         is not None: self._text          = text
-        if chip_bg      is not None: self._chip_bg       = chip_bg
-        if chip_fg      is not None: self._chip_fg       = chip_fg
-        if hover_bg     is not None: self._hover_bg      = hover_bg
-        if outline      is not None: self._outline       = outline
+        if text          is not None: self._text          = text
+        if chip_bg       is not None: self._chip_bg       = chip_bg
+        if chip_fg       is not None: self._chip_fg       = chip_fg
+        if hover_bg      is not None: self._hover_bg      = hover_bg
+        if outline       is not None: self._outline       = outline
         if outline_width is not None: self._outline_width = outline_width
-        if font         is not None: self._font          = font
-        if text_anchor  is not None: self._text_anchor   = text_anchor
-        if parent_bg    is not None:
+        if font          is not None: self._font          = font
+        if text_anchor   is not None: self._text_anchor   = text_anchor
+        if parent_bg     is not None:
             tk.Canvas.configure(self, bg=parent_bg)
+        # Resize the canvas whenever content dimensions may have changed
+        # (font or text updated) so larger fonts are never clipped.
+        if font is not None or text is not None:
+            self._resize_to_fit()
         self._redraw()
 
 
