@@ -685,7 +685,7 @@ class AgentPipeline:
             workspace_folder=session.workspace_folder,
         )
 
-        if not chroma_is_current(ws, session.classified_files):
+        if not chroma_is_current(ws, session.classified_files, self.settings):
             return None
 
         # Open the existing store — empty chunk list means nothing is added or

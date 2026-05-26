@@ -204,32 +204,67 @@ def _manifest_path(workspace_paths: WorkspacePaths) -> Path:
     return Path(workspace_paths.agent_dir) / _MANIFEST_FILENAME
 
 
-def _load_manifest(workspace_paths: WorkspacePaths) -> set[tuple[str, str]]:
-    """Return the set of ``(doc_type_value, file_path)`` pairs from the last run."""
+def _embedding_fingerprint(settings: Any) -> str:
+    """Return a string that uniquely identifies the active embedding configuration.
+
+    Used by the manifest to detect when the embedding provider or model has
+    changed between runs — a mismatch means the stored vectors are incompatible
+    with the current query embeddings and a full re-index is required.
+
+    This is purely an internal cache-validity tag, not an API credential.
+    Format: ``"<provider>::<model>"``
+
+    Examples::
+
+        "local::all-MiniLM-L6-v2"        # free, no API key
+        "gemini::models/text-embedding-004"
+        "openai::"
+    """
+    provider = getattr(settings, "embedding_provider", "gemini")
+    if provider == "local":
+        model = getattr(settings, "local_embedding_model", _DEFAULT_LOCAL_MODEL)
+    else:
+        # Cloud providers expose their model via embedding_model (Gemini) or
+        # use a fixed default (OpenAI).  Store it so a model-name change also
+        # triggers re-indexing.
+        model = getattr(settings, "embedding_model", "")
+    return f"{provider}::{model}"
+
+
+def _load_manifest(workspace_paths: WorkspacePaths) -> dict:
+    """Return the full manifest dict from the last indexing run.
+
+    Keys: ``"files"`` (list of ``{doc_type, path}`` dicts),
+    ``"embedding_config"`` (provider::model string).
+    Returns an empty dict when the manifest does not exist or is unreadable.
+    """
     mp = _manifest_path(workspace_paths)
     if not mp.exists():
-        return set()
+        return {}
     try:
-        data = json.loads(mp.read_text(encoding="utf-8"))
-        return {(f["doc_type"], f["path"]) for f in data.get("files", [])}
+        return json.loads(mp.read_text(encoding="utf-8"))
     except Exception:
-        return set()
+        return {}
 
 
 def _save_manifest(
     workspace_paths: WorkspacePaths,
     classified_files: dict[DocumentType, list[str]],
+    settings: Any = None,
 ) -> None:
-    """Persist the current file set so the next run can detect removals."""
+    """Persist the current file set and embedding config for the next run."""
     mp = _manifest_path(workspace_paths)
     files = [
         {"doc_type": dt.value, "path": p}
         for dt, paths in classified_files.items()
         for p in paths
     ]
+    data: dict = {"files": files}
+    if settings is not None:
+        data["embedding_config"] = _embedding_fingerprint(settings)
     try:
         mp.write_text(
-            json.dumps({"files": files}, indent=2, ensure_ascii=False),
+            json.dumps(data, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
     except Exception as exc:  # noqa: BLE001
@@ -253,9 +288,12 @@ def _files_were_removed(
     A missing manifest (first run) is treated as "no removals" — there is
     nothing to purge yet.
     """
-    prev = _load_manifest(workspace_paths)
-    if not prev:
+    data = _load_manifest(workspace_paths)
+    if not data:
         return False  # first indexing run; Chroma is empty anyway
+    prev = {(f["doc_type"], f["path"]) for f in data.get("files", [])}
+    if not prev:
+        return False
     curr = {(dt.value, p) for dt, paths in classified_files.items() for p in paths}
     return bool(prev - curr)  # files in prev that are no longer in curr
 
@@ -332,7 +370,7 @@ def get_or_create_vectorstore(
 
     # ── Persist manifest so the next run can detect removals ──────────
     if classified_files is not None:
-        _save_manifest(workspace_paths, classified_files)
+        _save_manifest(workspace_paths, classified_files, settings)
 
     return db
 
@@ -484,19 +522,38 @@ def reset_manifest(workspace_paths: WorkspacePaths) -> None:
 def chroma_is_current(
     workspace_paths: WorkspacePaths,
     classified_files: dict[DocumentType, list[str]],
+    settings: Any = None,
 ) -> bool:
     """Return True when the ChromaDB on disk is up to date with *classified_files*.
 
-    Specifically: the Chroma directory exists and is non-empty, AND the
-    indexed-files manifest exactly matches the current file set (no additions,
-    no removals).  A True result means a retriever can be opened from disk
-    without any re-embedding work.
+    Checks three things:
+
+    1. The Chroma directory exists and is non-empty.
+    2. The indexed-files manifest exactly matches the current file set (no
+       additions, no removals).
+    3. If *settings* is provided, the embedding provider and model recorded in
+       the manifest match the current configuration.  A mismatch means the
+       stored vectors were built with a different embedding space and the DB
+       must be rebuilt.
+
+    A True result means a retriever can be opened from disk without any
+    re-embedding work.
     """
     chroma_dir = Path(workspace_paths.chroma)
     if not chroma_dir.exists() or not any(chroma_dir.iterdir()):
         return False
-    prev = _load_manifest(workspace_paths)
-    if not prev:
+    data = _load_manifest(workspace_paths)
+    if not data:
         return False
-    curr = {(dt.value, p) for dt, paths in classified_files.items() for p in paths}
-    return prev == curr
+    prev_files = {(f["doc_type"], f["path"]) for f in data.get("files", [])}
+    curr_files = {(dt.value, p) for dt, paths in classified_files.items() for p in paths}
+    if prev_files != curr_files:
+        return False
+    # Check embedding config only when settings are provided and the manifest
+    # has a recorded key (old manifests without the key are treated as a miss
+    # so they get rebuilt once with the key stored).
+    if settings is not None:
+        stored_key = data.get("embedding_config")
+        if stored_key is None or stored_key != _embedding_fingerprint(settings):
+            return False
+    return True

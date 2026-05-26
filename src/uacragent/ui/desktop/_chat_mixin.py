@@ -536,15 +536,18 @@ class ChatMixin:
 
             try:
                 agent = captured_agent
-                # force_reindex=True: Apply always runs the full pipeline so
-                # changes to files, embedding provider, or model take effect.
-                msg, _, warn = agent.initialize_session(
+                # force_reindex=False: let the manifest decide whether re-indexing
+                # is actually needed.  The fast path is taken when the file set,
+                # embedding provider, and model all match what was last indexed —
+                # avoiding redundant embedding API calls when only non-index
+                # settings (course name, exam format, LLM provider, etc.) changed.
+                msg, cached, warn = agent.initialize_session(
                     session, progress_cb=_progress,
-                    force_reindex=True, language=captured_lang)
+                    force_reindex=False, language=captured_lang)
                 if not self._cancel_event.is_set():
-                    self.after(0, lambda m=msg, w=warn, s=session, t=captured_token:
+                    self.after(0, lambda m=msg, c=cached, w=warn, s=session, t=captured_token:
                                self._request_token == t and
-                               self._on_session_loaded(m, s, fast_path_warning=w))
+                               self._on_session_loaded(m, s, was_cached=c, fast_path_warning=w))
             except Exception as exc:
                 if not self._cancel_event.is_set():
                     self.after(
@@ -684,6 +687,7 @@ class ChatMixin:
 
     def _on_session_loaded(
         self, status: str, session: object,
+        was_cached: bool = False,
         fast_path_warning: str | None = None,
     ) -> None:
         """Completion handler for _start_indexing (the Apply path)."""
@@ -699,8 +703,12 @@ class ChatMixin:
         # Show fast-path failure indicator before the completion notice.
         if fast_path_warning:
             self._append_chat("system", fast_path_warning)
-        # History is already visible — just append the completion notice.
-        self._append_chat("system", self._t("docs_indexed").format(status=status))
+        # When the fast path was used (nothing index-relevant changed), show a
+        # lighter "settings saved" notice instead of "documents indexed".
+        if was_cached:
+            self._append_chat("system", self._t("settings_saved_cached"))
+        else:
+            self._append_chat("system", self._t("docs_indexed").format(status=status))
         self._save_current_session()
         self._refresh_session_list()
 

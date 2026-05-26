@@ -243,6 +243,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
         # Completion / error notices
         "docs_indexed":       "✓ Documents indexed. {status}",
+        "settings_saved_cached": "✓ Settings saved. No re-indexing needed — existing index is still current.",
         "error_status":       "Error: {error}",
         "indexing_failed":    "⚠️ Indexing failed: {error}",
         "chat_error":         "⚠️ Error: {error}",
@@ -524,6 +525,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
         # Completion / error notices
         "docs_indexed":       "✓ 文档已索引。{status}",
+        "settings_saved_cached": "✓ 设置已保存。无需重新索引——现有索引仍然有效。",
         "error_status":       "错误：{error}",
         "indexing_failed":    "⚠️ 索引失败：{error}",
         "chat_error":         "⚠️ 错误：{error}",
