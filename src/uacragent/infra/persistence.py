@@ -342,6 +342,7 @@ def save_session(
         "extra_instructions": session.extra_instructions,
         "classified_files": _serialise_files(session.classified_files),
         "chat_history": _serialise_history(session.chat_history),
+        "history_summary": session.history_summary,
     }
     # Defensive key-name blocklist: cover every name a caller might accidentally
     # pass, now and in the future.  API keys are NEVER written to disk.
@@ -471,6 +472,7 @@ def dict_to_session(data: dict[str, Any]) -> "AgentSession":  # type: ignore[nam
         extra_instructions=data.get("extra_instructions", ""),
         classified_files=_deserialise_files(data.get("classified_files", {})),
         chat_history=_deserialise_history(data.get("chat_history", [])),
+        history_summary=data.get("history_summary", ""),
     )
 
 

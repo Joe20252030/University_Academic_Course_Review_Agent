@@ -1,10 +1,30 @@
 """ConversationAgent — drives the chat loop and delegates task generation."""
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+
+_logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Chat-history budget constants
+# ---------------------------------------------------------------------------
+# History is trimmed by *character count* (a provider-agnostic proxy for
+# tokens; roughly 4 chars ≈ 1 token).  When the budget is exceeded the oldest
+# middle turns are dropped and compressed into a short LLM-generated summary
+# that is injected into the system prompt so semantic context is never lost.
+#
+# Layout preserved after trim:
+#   [first KEEP_FIRST_TURNS turns]  ← often sets important session context
+#   [summary of dropped turns]      ← injected into system prompt
+#   [newest turns that fit budget]  ← conversational coherence window
+#
+_MAX_HISTORY_CHARS: int = 32_000   # ≈ 8 000 tokens; headroom for any provider
+_KEEP_LAST_TURNS:   int = 3        # most recent N turns always kept verbatim
+_KEEP_FIRST_TURNS:  int = 1        # oldest N turns always kept (context-setting)
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
@@ -436,7 +456,10 @@ class ConversationAgent:
 
         # -- 2. Build message list ---------------------------------------------
         provider_id = (session.llm_provider or "gemini").lower()
-        system_content = self._render_system_prompt(session, context, language=language)
+        system_content = self._render_system_prompt(
+            session, context, language=language,
+            history_summary=session.history_summary,
+        )
         messages: list = [SystemMessage(content=system_content)]
         # Use snapshot() to get a consistent, lock-safe copy of history.
         # This prevents a concurrent cancel from mutating the list mid-iteration.
@@ -504,7 +527,7 @@ class ConversationAgent:
             HumanMessage(content=message),
             AIMessage(content=reply),
         )
-        session.trim_history()
+        self._smart_trim_history(session, llm)
 
         return ChatResponse(
             text=reply,
@@ -549,12 +572,20 @@ class ConversationAgent:
             return "*(Context retrieval failed — answers are based on general knowledge only.)*"
 
     def _render_system_prompt(
-        self, session: AgentSession, context: str, language: str = "auto"
+        self,
+        session: AgentSession,
+        context: str,
+        language: str = "auto",
+        history_summary: str = "",
     ) -> str:
         """Fill the system prompt template with session values.
 
         *language* is used to inject a language-steering instruction so the LLM
         responds in the user's chosen locale (``"en"`` or ``"zh_CN"``).
+
+        *history_summary* is appended as an extra section when non-empty,
+        giving the LLM context about conversation turns that were trimmed from
+        the live history window to stay within the token budget.
         """
         prompt_path = _PROMPTS_DIR / "conversation_system.md"
         try:
@@ -588,7 +619,7 @@ class ConversationAgent:
 
         response_language = _LANGUAGE_INSTRUCTIONS.get(language, "")
 
-        return template.format(
+        rendered = template.format(
             course_name=prefs.get("course_name") or "this course",
             course_meta=course_meta,
             university_name=prefs.get("university_name") or "Not specified",
@@ -605,6 +636,175 @@ class ConversationAgent:
             context=context,
             response_language=response_language,
         )
+
+        if history_summary:
+            rendered += (
+                "\n\n## Earlier Conversation Summary\n"
+                "The following is a compressed summary of earlier turns in this "
+                "session that are no longer in the active history window. Use it "
+                "to maintain continuity.\n\n"
+                + history_summary
+            )
+
+        return rendered
+
+    # ------------------------------------------------------------------
+    # Smart history trim
+    # ------------------------------------------------------------------
+
+    def _smart_trim_history(
+        self,
+        session: AgentSession,
+        llm_client: "LLMClient",
+    ) -> None:
+        """Token-budget trim with LLM summarisation of dropped turns.
+
+        Strategy
+        --------
+        1. If total history chars ≤ ``_MAX_HISTORY_CHARS``: no action.
+        2. Otherwise, partition turns into three groups:
+
+           * **first** — the oldest ``_KEEP_FIRST_TURNS`` turns, always kept
+             (they often establish important session context such as "I'm
+             studying for a closed-book exam").
+           * **last** — the newest ``_KEEP_LAST_TURNS`` turns, always kept
+             (conversational coherence window).
+           * **middle** — everything in between.  Turns are kept newest-first
+             until the remaining character budget is exhausted; surplus turns
+             are dropped.
+
+        3. Dropped turns are summarised via a short LLM call and the result
+           is merged with any existing ``session.history_summary``.  If the
+           summarisation call fails, a plain fallback string is used so the
+           trim still proceeds.
+
+        The in-memory ``_HistoryStore`` is rewritten with the kept messages
+        under its own lock so the operation is atomic.
+        """
+        snapshot = session.chat_history.snapshot()
+        total_chars = sum(len(str(m.content)) for m in snapshot)
+        if total_chars <= _MAX_HISTORY_CHARS:
+            return  # within budget — nothing to do
+
+        # Convert flat message list to (human, ai) turn pairs.
+        # Guard against odd-length lists (e.g. a dangling message after a bug).
+        turns: list[tuple] = []
+        for i in range(0, len(snapshot) - 1, 2):
+            turns.append((snapshot[i], snapshot[i + 1]))
+
+        min_turns = _KEEP_FIRST_TURNS + _KEEP_LAST_TURNS + 1
+        if len(turns) < min_turns:
+            return  # not enough turns to trim meaningfully
+
+        first_turns = turns[:_KEEP_FIRST_TURNS]
+        last_turns  = turns[-_KEEP_LAST_TURNS:]
+        middle_turns = turns[_KEEP_FIRST_TURNS : len(turns) - _KEEP_LAST_TURNS]
+
+        # Remaining budget after mandatory keeps
+        mandatory_chars = sum(
+            len(str(m.content))
+            for t in first_turns + last_turns
+            for m in t
+        )
+        budget = _MAX_HISTORY_CHARS - mandatory_chars
+
+        # Fill from newest middle turn backward until budget is exhausted
+        kept_middle: list[tuple] = []
+        dropped_middle: list[tuple] = []
+        for turn in reversed(middle_turns):
+            turn_chars = sum(len(str(m.content)) for m in turn)
+            if budget >= turn_chars:
+                kept_middle.insert(0, turn)
+                budget -= turn_chars
+            else:
+                dropped_middle.insert(0, turn)
+
+        if not dropped_middle:
+            return  # nothing actually needed dropping
+
+        # Summarise dropped turns (merges with any existing summary)
+        dropped_msgs = [m for t in dropped_middle for m in t]
+        new_summary = self._summarise_turns(
+            dropped_msgs,
+            existing_summary=session.history_summary,
+            llm_client=llm_client,
+        )
+
+        # Rebuild the in-memory store atomically
+        kept_turns = first_turns + kept_middle + last_turns
+        kept_msgs = [m for t in kept_turns for m in t]
+        with session.chat_history._lock:
+            session.chat_history._messages = kept_msgs
+
+        session.history_summary = new_summary
+        _logger.debug(
+            "History trimmed: kept %d turns, dropped %d turns, summary len=%d",
+            len(kept_turns), len(dropped_middle), len(new_summary),
+        )
+
+    def _summarise_turns(
+        self,
+        messages: list,
+        existing_summary: str,
+        llm_client: "LLMClient",
+    ) -> str:
+        """Return a 3-5 sentence summary of *messages*, merged with *existing_summary*.
+
+        Called only when history exceeds the token budget.  Uses a short,
+        focused prompt so the call is fast and cheap.  On any failure a plain
+        fallback string is returned so the trim still proceeds.
+        """
+        # Build a condensed transcript of the turns to summarise.
+        # Cap individual messages at 800 chars so one massive AI response
+        # (e.g. a document preview) does not dominate the summary.
+        transcript_parts: list[str] = []
+        for m in messages:
+            role = "Student" if isinstance(m, HumanMessage) else "Assistant"
+            snippet = str(m.content)[:800]
+            if len(str(m.content)) > 800:
+                snippet += "…"
+            transcript_parts.append(f"{role}: {snippet}")
+        transcript = "\n\n".join(transcript_parts)
+
+        if existing_summary:
+            context_prefix = (
+                f"There is already a summary of even earlier turns:\n"
+                f"{existing_summary}\n\n"
+                f"Now incorporate the following additional exchanges into an "
+                f"updated summary:\n\n"
+            )
+        else:
+            context_prefix = "Summarise the following conversation exchanges:\n\n"
+
+        prompt = (
+            f"{context_prefix}{transcript}\n\n"
+            "Write a concise summary (3-5 sentences) covering:\n"
+            "- What topics or questions were discussed\n"
+            "- Any study documents that were generated (type and subject)\n"
+            "- Key preferences or constraints the student mentioned\n"
+            "Be factual and brief. Do not add commentary."
+        )
+
+        try:
+            resp = llm_client.invoke([
+                SystemMessage(content=(
+                    "You are a precise summariser. Return only the summary text, "
+                    "no preamble, no labels."
+                )),
+                HumanMessage(content=prompt),
+            ])
+            summary = str(getattr(resp, "content", resp)).strip()
+            # Cap at 800 chars to keep the system prompt lean
+            return summary[:800]
+        except Exception as exc:  # noqa: BLE001
+            _logger.warning("History summarisation failed (%s); using fallback.", exc)
+            n_turns = len(messages) // 2
+            if existing_summary:
+                return existing_summary  # keep what we had rather than losing it
+            return (
+                f"[Earlier in this session: {n_turns} conversation turns covered "
+                "course material, questions, and study topics.]"
+            )
 
     def _run_task(
         self,

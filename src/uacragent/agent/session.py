@@ -151,6 +151,12 @@ class AgentSession:
     # Cache for read_exam_info() — invalidated when exam_info_path changes.
     _exam_info_cache: tuple[str, str] | None = field(default=None, repr=False)
 
+    # Compressed summary of conversation turns that were trimmed from the
+    # in-memory history to stay within the token budget.  Injected into the
+    # system prompt so the LLM retains semantic context even after old turns
+    # are dropped.  Persisted to disk so it survives session reloads.
+    history_summary: str = field(default="", repr=False)
+
     # ── Initialisation ────────────────────────────────────────────────────
 
     def __post_init__(self) -> None:
@@ -216,5 +222,5 @@ class AgentSession:
         }
 
     def trim_history(self, max_turns: int = 20) -> None:
-        """Keep the chat history from growing without bound."""
+        """Simple turn-count trim (kept for compatibility — prefer smart_trim)."""
         self.chat_history.trim(max_turns)
