@@ -83,8 +83,11 @@ def _cli(args: argparse.Namespace) -> None:
 
     # ── Startup: must run before any HuggingFace / sentence-transformers import
     from dotenv import load_dotenv
-    load_dotenv()
-    from uacragent.infra.persistence import configure_hf_cache
+    from uacragent.infra.persistence import configure_hf_cache, get_app_data_dir
+    _app_env = get_app_data_dir() / ".env"
+    if _app_env.exists():
+        load_dotenv(_app_env)
+    load_dotenv()   # cwd fallback; won't override keys already loaded above
     configure_hf_cache()
 
     from uacragent.agent.conversation import ConversationAgent

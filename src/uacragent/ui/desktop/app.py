@@ -1441,10 +1441,19 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
 # ---------------------------------------------------------------------------
 def main() -> None:
     from dotenv import load_dotenv
-    load_dotenv()
+    from uacragent.infra.persistence import configure_hf_cache, get_app_data_dir
+
+    # Load .env from the app workspace folder (~/.uacragent/.env) so the app
+    # picks up API keys regardless of which directory it was launched from.
+    # A .env in the current working directory is also honoured afterwards as a
+    # lower-priority fallback (useful during development).
+    _app_env = get_app_data_dir() / ".env"
+    if _app_env.exists():
+        load_dotenv(_app_env)
+    load_dotenv()   # cwd fallback; won't override keys already loaded above
+
     # Redirect HuggingFace model downloads into the app data folder so all
     # agent data lives in one place.  Must run before any HF import.
-    from uacragent.infra.persistence import configure_hf_cache
     configure_hf_cache()
 
     # Remove the legacy last_session.json written by older app versions.
