@@ -252,6 +252,7 @@ The GUI lets you:
 - Search and filter saved sessions from the sidebar search bar
 - Choose exam settings and export format
 - Choose per-message effort level (`low`, `medium`, `high`) for chat and generated outputs
+- Choose a generation reasoning mode in chat: `Quick Review` for faster single-pass output or `Deep Analysis` for topic extraction plus critic refinement on generated study documents
 - Pick a custom workspace folder before the first **Apply**, or let the app auto-create one
 - Use **Apply** to commit setting changes and re-index with the updated session configuration
 - Chat with the assistant about the course material
@@ -269,6 +270,9 @@ Desktop note:
 - File drag-and-drop in the chat area uses `tkinterdnd2` when the Tk extension
   is available. The desktop app still works without it; only drag-and-drop is
   disabled in that case.
+- The desktop chat pane currently exposes both depth controls: `effort level`
+  changes retrieval/context size for each turn, while `reasoning mode` changes
+  the document-generation pipeline used after a chat-triggered quick action.
 
 When you reopen an existing desktop session from the sidebar, the app first
 tries a fast attach path. If the saved Chroma index and indexed-file manifest
@@ -332,6 +336,10 @@ embedding costs.
 
 The CLI also supports `--effort-level low|medium|high` to control retrieval
 depth for each chat turn and generated document request.
+
+The current CLI does not expose the desktop-only `Quick Review` / `Deep
+Analysis` reasoning-mode toggle. Generated documents from the CLI use the
+default quick reasoning pipeline.
 
 How the current CLI works:
 
@@ -400,6 +408,10 @@ The API likewise respects `EMBEDDING_PROVIDER`, `EMBEDDING_MODEL`, and
 workspace's `.uacragent/uploads/` bundle during API generation. Leave it at
 `true` for the normal self-contained workspace behavior.
 
+The API currently exposes `effort_level` for retrieval depth, but not the
+desktop-only `reasoning_mode` selector. API generation therefore uses the
+default quick reasoning pipeline.
+
 Endpoints:
 
 - `GET /health` — health check
@@ -430,9 +442,10 @@ Endpoints:
   ```
 
 `course_name` is required in the review request. `effort_level` is optional and
-accepts `low`, `medium`, or `high`. All other fields (`university_name`,
-`major`, `course_code`, `professor_name`, `semester`, `exam_duration`,
-`exam_info`) are optional.
+accepts `low`, `medium`, or `high`. The API does not currently expose the
+desktop app's separate `reasoning_mode` control. All other fields
+(`university_name`, `major`, `course_code`, `professor_name`, `semester`,
+`exam_duration`, `exam_info`) are optional.
 
 ## Output
 

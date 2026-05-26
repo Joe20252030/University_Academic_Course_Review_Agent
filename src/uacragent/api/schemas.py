@@ -42,8 +42,9 @@ class ReviewRequest(BaseModel):
         description="Safe workspace identifier — letters, digits, hyphens, underscores only.",
     )
     copy_to_workspace: bool = True
-    # Retrieval / generation depth — controls how many chunks are retrieved
-    # and how much of the corpus is sampled for plan generation.
+    # Retrieval depth only. This API currently exposes the effort axis
+    # (retrieval / context size), but not the desktop app's separate
+    # reasoning-mode axis for quick vs. deep generation pipelines.
     effort_level: str = Field(default="medium", pattern=r"^(low|medium|high)$")
     # Optional course information
     university_name: str = ""

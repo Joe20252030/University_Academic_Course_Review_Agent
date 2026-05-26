@@ -223,32 +223,75 @@ class ChatMixin:
         Safe no-op when tkinterdnd2 is not installed or the Tk extension is
         unavailable — the app works normally without drag-and-drop in that case.
 
-        tkinterdnd2 requires ``drop_target_register(DND_FILES)`` to be called
-        on each widget *before* ``dnd_bind`` — without it the widget never
-        receives <<Drop>> events.
+        ## Why we register on every widget in the chat area
 
-        The drop overlay (``_dnd_overlay``) is also registered so that once it
-        appears during a drag it continues to receive events without flickering.
+        tkdnd routes DnD events to the *topmost* widget under the cursor.
+        On macOS (Cocoa DnD), tkdnd does NOT walk up to the nearest registered
+        ancestor — if the topmost widget is unregistered the event is silently
+        discarded.  We use a two-layer strategy:
+
+        Layer 1 — Static targets: root window + ``_msg_canvas`` + ``_msg_frame``
+          + ``_dnd_overlay``.  These cover the empty canvas area below all
+          messages and the overlay itself.
+
+        Layer 2 — Dynamic targets: every widget created inside a message bubble
+          (``_append_chat_user``, ``_append_chat_assistant``, system labels)
+          calls ``_dnd_register(widget)`` when it is created.  This ensures that
+          no matter which ``tk.Label`` or ``tk.Frame`` is topmost under the
+          cursor, it is always a registered drop target.
+
+        ## Correct event names for drop targets
+
+        tkdnd distinguishes drag-SOURCE events from drop-TARGET events:
+          - Drop target: ``<<DropEnter>>``, ``<<DropPosition>>``,
+                         ``<<DropLeave>>``, ``<<Drop>>``
+          - Drag source: ``<<DragInitCmd>>``, ``<<DragEndCmd>>``
+
+        The previous code mistakenly bound ``<<DragEnter>>`` / ``<<DragLeave>>``
+        (drag-source events) — those never fire on a drop target, so the overlay
+        never appeared and the whole DnD flow silently failed.
+
+        ## Return values
+
+        ``<<DropEnter>>``, ``<<DropPosition>>``, and ``<<Drop>>`` callbacks must
+        return an action string (``"copy"``, ``"refuse_drop"``, etc.) so the OS
+        updates the cursor correctly.  ``<<DropLeave>>`` needs no return value.
         """
         try:
             from tkinterdnd2 import DND_FILES as _DND_FILES
         except Exception:
             return  # tkinterdnd2 not installed
 
-        # All widgets that should act as drop targets — include the overlay so
-        # events aren't lost when it's placed on top of the canvas during drag.
-        _targets = [self._msg_canvas, self._msg_frame, self._hist_canvas]
-        if hasattr(self, "_dnd_overlay"):
-            _targets.append(self._dnd_overlay)
+        # Store so _dnd_register() can use it without a repeated import.
+        self._dnd_files_type = _DND_FILES
+
+        # Layer 1: static targets — root window, message canvas/frame, overlay.
+        root = self.winfo_toplevel()
+        _targets: list = [root]
+        for attr in ("_msg_canvas", "_msg_frame", "_dnd_overlay"):
+            if hasattr(self, attr):
+                _targets.append(getattr(self, attr))
 
         for widget in _targets:
-            try:
-                widget.drop_target_register(_DND_FILES)
-                widget.dnd_bind("<<Drop>>",      self._on_dnd_drop)
-                widget.dnd_bind("<<DragEnter>>", self._on_dnd_enter)
-                widget.dnd_bind("<<DragLeave>>", self._on_dnd_leave)
-            except Exception:
-                pass  # individual widget may not support DnD
+            self._dnd_register(widget)
+
+    def _dnd_register(self, widget) -> None:
+        """Register *widget* as a DnD drop target for files.
+
+        Safe no-op when ``_setup_drag_drop`` has not run yet (i.e. tkinterdnd2
+        is unavailable) — callers need not guard with ``hasattr`` checks.
+        """
+        _dnd_files_type = getattr(self, "_dnd_files_type", None)
+        if _dnd_files_type is None:
+            return
+        try:
+            widget.drop_target_register(_dnd_files_type)
+            widget.dnd_bind("<<Drop>>",         self._on_dnd_drop)
+            widget.dnd_bind("<<DropEnter>>",    self._on_dnd_enter)
+            widget.dnd_bind("<<DropPosition>>", self._on_dnd_position)
+            widget.dnd_bind("<<DropLeave>>",    self._on_dnd_leave)
+        except Exception:
+            pass
 
     @staticmethod
     def _parse_dnd_paths(raw: str) -> list[str]:
@@ -272,14 +315,59 @@ class ChatMixin:
                 raw = parts[1].strip() if len(parts) > 1 else ""
         return [p for p in paths if p]
 
-    def _on_dnd_drop(self, event) -> None:
-        """Handle files dropped onto the chat area."""
-        # Remove drop-zone highlight first
-        self._on_dnd_leave(event)
+    def _is_over_chat_area(self, event) -> bool:
+        """Return True when the drag/drop cursor is inside the message canvas.
+
+        Uses ``event.x_root`` / ``event.y_root`` (screen coordinates provided
+        by tkinterdnd2) to compare against the message canvas screen position.
+        Falls back to False on any error so callers can degrade gracefully.
+        """
+        try:
+            x, y = event.x_root, event.y_root
+            cv   = self._msg_canvas
+            cx, cy = cv.winfo_rootx(), cv.winfo_rooty()
+            return cx <= x <= cx + cv.winfo_width() and cy <= y <= cy + cv.winfo_height()
+        except Exception:
+            return False
+
+    def _on_dnd_enter(self, event) -> str:
+        """``<<DropEnter>>`` — drag entered the root window.
+
+        Show the overlay only when the cursor is already over the chat area;
+        ``<<DropPosition>>`` will update visibility as the cursor moves.
+        Must return an action string so the OS shows the correct cursor.
+        """
+        if self._is_over_chat_area(event):
+            self._show_dnd_overlay()
+            return "copy"
+        return "refuse_drop"
+
+    def _on_dnd_position(self, event) -> str:
+        """``<<DropPosition>>`` — cursor moved while dragging over the window.
+
+        Shows/hides the overlay as the cursor crosses the chat-area boundary
+        and returns ``"copy"`` / ``"refuse_drop"`` to update the OS cursor.
+        """
+        if self._is_over_chat_area(event):
+            self._show_dnd_overlay()
+            return "copy"
+        self._hide_dnd_overlay()
+        return "refuse_drop"
+
+    def _on_dnd_leave(self, event) -> None:
+        """``<<DropLeave>>`` — drag left the root window entirely."""
+        self._hide_dnd_overlay()
+
+    def _on_dnd_drop(self, event) -> str:
+        """``<<Drop>>`` — files dropped; process only when over the chat area."""
+        self._hide_dnd_overlay()
+
+        if not self._is_over_chat_area(event):
+            return "refuse_drop"
 
         if not self._provider_supports_files():
             self._append_chat("system", self._t("files_unsupported"))
-            return
+            return "refuse_drop"
 
         paths = self._parse_dnd_paths(getattr(event, "data", "") or "")
         added = 0
@@ -298,10 +386,11 @@ class ChatMixin:
         if added:
             self._rebuild_attach_strip()
 
+        return "copy"
+
     def _show_dnd_overlay(self) -> None:
         """Show the drop overlay that covers the message canvas."""
         try:
-            # Refresh overlay colours to match current theme before showing
             from ._ui_constants import _THEME_COLORS
             mode = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
             c = _THEME_COLORS.get(mode, _THEME_COLORS["light"])
@@ -313,7 +402,6 @@ class ChatMixin:
                 text=self._t("dnd_drop_label"),
                 bg=_dnd_bg, fg=_dnd_fg,
             )
-            # Place overlay on top of the message canvas, covering it entirely
             self._dnd_overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
             self._dnd_overlay.lift()
         except Exception:
@@ -325,14 +413,6 @@ class ChatMixin:
             self._dnd_overlay.place_forget()
         except Exception:
             pass
-
-    def _on_dnd_enter(self, event) -> None:
-        """Show the drop overlay when files are dragged over the chat area."""
-        self._show_dnd_overlay()
-
-    def _on_dnd_leave(self, event) -> None:
-        """Hide the drop overlay when the drag leaves the chat area."""
-        self._hide_dnd_overlay()
 
     def _get_agent(self) -> ConversationAgent:
         if self._agent is None:
@@ -849,6 +929,7 @@ class ChatMixin:
                 lambda e, w=lbl: w.configure(wraplength=max(80, e.width - 40)),
             )
             self._bind_chat_scroll(lbl)
+            self._dnd_register(lbl)
             self._scroll_chat_to_bottom()
             return
 
@@ -924,6 +1005,7 @@ class ChatMixin:
 
         for w in (cv, shell, role_lbl, body_lbl):
             self._bind_chat_scroll(w)
+            self._dnd_register(w)
 
     def _append_chat_assistant(self, c, card_bg, sz, text, _H_PAD, _V_PAD) -> None:
         """Render an assistant message as plain text — no bounding box."""
@@ -963,6 +1045,7 @@ class ChatMixin:
 
         for w in (shell, role_lbl, body_lbl):
             self._bind_chat_scroll(w)
+            self._dnd_register(w)
 
     def _append_output_link(
         self,
