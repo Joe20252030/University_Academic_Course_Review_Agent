@@ -44,11 +44,11 @@ Each task uses dedicated planner and writer prompts tuned for its output format.
 
 The project supports multiple LLM providers for chat, planning, and writing:
 
-| Provider | Use Cases                           | Required Key       |
-|----------|-------------------------------------|--------------------|
-| Gemini   | Chat, planning, writing, embeddings | `GOOGLE_API_KEY`   |
-| OpenAI   | Chat, planning, writing, embeddings | `OPENAI_API_KEY`   |
-| DeepSeek | Chat, planning, writing             | `DEEPSEEK_API_KEY` |
+| Provider | Use Cases                           | Desktop Chat Extras                  | Required Key       |
+|----------|-------------------------------------|--------------------------------------|--------------------|
+| Gemini   | Chat, planning, writing, embeddings | Web search + file attachments        | `GOOGLE_API_KEY`   |
+| OpenAI   | Chat, planning, writing, embeddings | Web search + file attachments        | `OPENAI_API_KEY`   |
+| DeepSeek | Chat, planning, writing             | Standard chat only                   | `DEEPSEEK_API_KEY` |
 
 ## Embedding Providers
 
@@ -249,11 +249,14 @@ The GUI lets you:
 - Pick a free local embedding model when using on-device embeddings
 - Enter a **course name** and optional course details
 - Add files to different document type categories (Syllabus, Lecture Notes, etc.)
+- Search and filter saved sessions from the sidebar search bar
 - Choose exam settings and export format
 - Choose per-message effort level (`low`, `medium`, `high`) for chat and generated outputs
 - Pick a custom workspace folder before the first **Apply**, or let the app auto-create one
 - Use **Apply** to commit setting changes and re-index with the updated session configuration
 - Chat with the assistant about the course material
+- Toggle provider-backed web search for the next message when supported by the active provider
+- Attach supported files to chat messages, including drag-and-drop onto the chat area when desktop drag-and-drop support is available
 - Use quick actions to generate a Review Summary, Practice Booklet, Mock Exam, or Exam Prediction
 - Open generated outputs directly from the chat transcript
 - Cancel an in-flight indexing or chat request from the main panel
@@ -261,6 +264,11 @@ The GUI lets you:
 - Use the selected desktop language to steer assistant replies and generated document headings in English or Simplified Chinese
 
 Works on macOS, Windows, and Linux.
+
+Desktop note:
+- File drag-and-drop in the chat area uses `tkinterdnd2` when the Tk extension
+  is available. The desktop app still works without it; only drag-and-drop is
+  disabled in that case.
 
 When you reopen an existing desktop session from the sidebar, the app first
 tries a fast attach path. If the saved Chroma index and indexed-file manifest

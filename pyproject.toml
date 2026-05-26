@@ -9,7 +9,7 @@ description = "University Academic Course Review Agent — conversational course
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
-keywords = ["rag", "llm", "education", "study-assistant", "gemini", "openai", "deepseek", "langchain"]
+keywords = ["rag", "llm", "education", "study-assistant", "desktop-app", "tkinter", "gemini", "openai", "deepseek", "langchain"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Education",

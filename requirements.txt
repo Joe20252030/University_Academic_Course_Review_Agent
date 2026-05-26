@@ -29,7 +29,8 @@ Pillow>=10.0         # desktop app icon loading via PIL.ImageTk
 fastapi>=0.100
 uvicorn[standard]>=0.23
 
+# ── Desktop UI extras ────────────────────────────────────────────────────────
+tkinterdnd2>=0.3     # optional drag-and-drop support for desktop chat attachments
+
 # ── Development / testing ─────────────────────────────────────────────────────
 pytest>=8.0
-
-tkinterdnd2>=0.3

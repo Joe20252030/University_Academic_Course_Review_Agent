@@ -1,4 +1,4 @@
-"""UACRAgent conversational desktop GUI — pure tkinter, cross-platform.
+"""UACRAgent conversational desktop GUI — tkinter-based, cross-platform.
 
 Layout
 ------
@@ -16,14 +16,15 @@ or:
 
 Architecture
 ------------
-The ``ConversationApp`` class is assembled from four thin mixin modules so
-that each concern lives in its own file:
+The ``ConversationApp`` class is assembled from four thin mixin modules plus
+shared widget helpers so that each concern lives in its own file:
 
     _ui_constants.py    — string tables, colour palettes, OS helpers
     _appearance_mixin.py — theme / language / App Settings dialog
     _settings_mixin.py  — Session Settings dialog (all 25+ methods)
     _session_mixin.py   — session list panel (refresh, select, new, delete)
     _chat_mixin.py      — chat send/receive and document-indexing
+    _custom_widgets.py  — rounded chips, session list, and overlay widgets
 
 All mixin methods access shared state through ``self`` — the instance
 variables are initialised once in ``ConversationApp.__init__`` and
