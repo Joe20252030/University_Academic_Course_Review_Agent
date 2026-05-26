@@ -822,21 +822,28 @@ class SettingsMixin:
         tk.Label(mf, text=self._t("settings_provider_label"),
                  bg=_cbg, fg=_fg).grid(
             row=0, column=0, sticky="w", padx=(0, 8))
+        # Wrap both model-section chips in a compact sub-frame so they share
+        # the same width (= the wider chip's natural size) without stretching
+        # across the full dialog column.
+        _mchips = tk.Frame(mf, bg=_cbg)
+        _mchips.grid(row=0, column=1, rowspan=2, sticky="nw")
+        _mchips.columnconfigure(0, weight=1)
+
         _mk_option_chip(
-            mf, self._llm_provider_var,
+            _mchips, self._llm_provider_var,
             ["gemini", "openai", "deepseek"],
             on_change=self._on_provider_changed,
-        ).grid(row=0, column=1, sticky="w")
+        ).grid(row=0, column=0, sticky="ew")
 
         tk.Label(mf, text=self._t("settings_model_label"),
                  bg=_cbg, fg=_fg).grid(
             row=1, column=0, sticky="w", padx=(0, 8), pady=(6, 0))
         self._model_chip = _mk_option_chip(
-            mf, self._llm_model_var,
+            _mchips, self._llm_model_var,
             lambda: models_for(self._llm_provider_var.get()),
             on_change=None,   # var is updated by _select inside the chip
         )
-        self._model_chip.grid(row=1, column=1, sticky="w", pady=(6, 0))
+        self._model_chip.grid(row=1, column=0, sticky="ew", pady=(6, 0))
         self._update_model_list()   # populate for current provider
 
         # ── Request Frequency ─────────────────────────────────────────
@@ -975,18 +982,25 @@ class SettingsMixin:
         tk.Label(ef, text=self._t("settings_exam_type_label"),
                  bg=_cbg, fg=_fg).grid(
             row=0, column=0, sticky="w", padx=(0, 6))
-        _mk_option_chip(
-            ef, self._exam_type_var,
-            [e.value for e in ExamType],
-        ).grid(row=0, column=1, sticky="w")
-
         tk.Label(ef, text=self._t("settings_exam_format_label"),
                  bg=_cbg, fg=_fg).grid(
             row=1, column=0, sticky="w", padx=(0, 6), pady=(4, 0))
+
+        # Wrap both exam chips in a compact sub-frame so they share the same
+        # width (= the wider chip's natural size) without filling the column.
+        _echips = tk.Frame(ef, bg=_cbg)
+        _echips.grid(row=0, column=1, rowspan=2, sticky="nw")
+        _echips.columnconfigure(0, weight=1)
+
         _mk_option_chip(
-            ef, self._exam_format_var,
+            _echips, self._exam_type_var,
+            [e.value for e in ExamType],
+        ).grid(row=0, column=0, sticky="ew")
+
+        _mk_option_chip(
+            _echips, self._exam_format_var,
             [e.value for e in ExamFormat],
-        ).grid(row=1, column=1, sticky="w", pady=(4, 0))
+        ).grid(row=1, column=0, sticky="ew", pady=(4, 0))
 
         tk.Label(ef, text=self._t("settings_exam_duration_label"),
                  bg=_cbg, fg=_fg).grid(
