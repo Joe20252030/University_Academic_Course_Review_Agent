@@ -1,3 +1,11 @@
+"""Repo-level helper entry points for one-shot programmatic generation.
+
+This module is not the main interactive interface for the project. Use
+``python -m uacragent`` for the desktop GUI or conversational CLI.
+
+`main()` expects pre-classified files and forwards them to `AgentService`.
+`main_simple()` treats every input file as `DocumentType.other`.
+"""
 from __future__ import annotations
 
 import sys

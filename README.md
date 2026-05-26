@@ -96,7 +96,7 @@ When generating output you can supply context about the course. The **Course Nam
 All fields are passed to every planner and writer prompt, so the LLM can tailor content to the specific course and context. The **Exam Duration** and **Exam Info Sheet** fields are especially useful for generating realistic mock exams and practice booklets that match the actual exam constraints.
 
 Interface note:
-- The desktop GUI accepts an exam info sheet as a file attachment.
+- The desktop GUI accepts an exam info sheet file from the Session Settings dialog.
 - The API accepts `exam_info` as plain text in the request body.
 - The current CLI does not expose a dedicated exam-info argument.
 
@@ -281,6 +281,125 @@ re-embedding or making new embedding API calls. A full re-index runs when the
 files changed, the index is missing, or you click **Apply** to force current
 settings to take effect. On this fast path the session becomes ready silently,
 without adding a new "documents indexed" notice to the chat transcript.
+
+## Detailed Use Instructions
+
+### Desktop GUI: Recommended workflow
+
+For most users, the desktop GUI is the easiest way to use the project.
+
+1. Launch the app with `python -m uacragent --gui` or simply `python -m uacragent`.
+2. Create a new session from the left sidebar.
+3. Open **Settings**.
+4. Enter a **Course Name**. This is the only required course field.
+5. Choose your LLM provider and model.
+6. Add the matching API key in the settings dialog if it is not already loaded from `.env`.
+7. Choose an embedding provider:
+   - `gemini` or `openai` if you want cloud embeddings
+   - `local` if you want free on-device embeddings
+8. Add course files into the appropriate document buckets:
+   - syllabus
+   - lecture notes
+   - textbook
+   - assignment
+   - past exam
+   - other
+9. Optionally fill in:
+   - university / major / course code / professor / semester
+   - exam type / exam format / exam duration
+   - extra instructions
+   - exam information sheet file
+   - export format
+10. Optionally choose a custom workspace folder before the first **Apply**.
+11. Click **Apply**.
+
+What **Apply** does:
+
+- commits the current session settings
+- locks in the workspace folder for that session
+- saves the session to disk
+- copies uploaded files into the session workspace when needed
+- builds or refreshes the Chroma index
+- makes the current provider / embedding / model settings take effect
+
+After indexing finishes, you can use the session in two main ways:
+
+- Ask normal study questions in chat, for example:
+  - `Explain the most important topics from these lecture notes.`
+  - `What should I focus on for the final?`
+  - `Summarize the difference between DFS and BFS from the uploaded materials.`
+- Generate study documents either:
+  - by pressing a quick-action button, or
+  - by asking naturally in chat, for example `Generate a review summary for this course.`
+
+Useful desktop controls:
+
+- `Effort level` changes retrieval/context depth for each turn.
+- `Reasoning mode` changes the generation pipeline depth for study-document tasks.
+- `Web search` is only available for providers that support it.
+- `File attachments` in chat are only available for providers that support them.
+- `Cancel` stops an in-flight indexing or chat task.
+
+Reopening sessions:
+
+- Reopen a saved session from the sidebar.
+- If the file set and saved Chroma index still match, the app reuses the existing retriever without re-embedding.
+- If files changed, or you click **Apply**, the app performs a full re-index.
+
+### Desktop GUI: Best practices
+
+- Put files into the most accurate document type bucket you can. Retrieval quality is better when syllabi, lecture notes, assignments, and past exams are separated correctly.
+- Add past exams when available. The weighted retriever gives them more influence for exam-oriented tasks.
+- Use `Quick Review` when you want faster, cheaper output.
+- Use `Deep Analysis` when quality matters more than latency or token cost.
+- Use local embeddings if you want to reduce cloud costs.
+- Reuse the same session for the same course so the app can reuse the saved index and chat history.
+
+### CLI: Step-by-step
+
+The CLI is an interactive terminal assistant, not a one-shot generator.
+
+1. Install the package with `pip install -e .`.
+2. Set your provider key(s) in `.env` or your shell environment.
+3. Start the CLI with one or more course files and a course name.
+4. Wait for startup indexing to finish.
+5. Ask questions or request generated study documents in natural language.
+6. Exit with `exit`, `quit`, `Ctrl-C`, or `Ctrl-D`.
+
+Example:
+
+```bash
+python -m uacragent outline.pdf lecture1.pdf lecture2.pdf \
+  --course-name "Introduction to Algorithms" \
+  --doc-type lecture_note \
+  --exam-type final \
+  --exam-format written \
+  --effort-level medium \
+  --workspace-id algo-final
+```
+
+CLI behavior to remember:
+
+- All positional files are treated as the same `--doc-type` when you provide one.
+- If you omit `--doc-type`, all input files are treated as `other`.
+- The CLI reuses the same workspace when you reuse `--workspace-id`.
+- The CLI currently exposes `effort_level` only, not the desktop reasoning-mode toggle.
+
+### API: Step-by-step
+
+The FastAPI layer is the programmatic one-shot generation interface.
+
+1. Start the server with `uvicorn uacragent.api.main:app --reload`.
+2. Prepare a JSON body with:
+   - `classified_files`
+   - `course_name`
+   - optional exam/course metadata
+   - `task_type`
+   - optional `effort_level`
+3. Send a `POST /review` request.
+4. Read the returned plan plus the saved markdown path.
+
+Use the API when you want to integrate generation into another app, script, or service. Use the desktop GUI when you want persistent sessions, interactive study chat, and richer controls.
 
 ### Desktop Session Persistence
 
