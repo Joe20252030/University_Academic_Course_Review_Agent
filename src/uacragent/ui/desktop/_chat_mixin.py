@@ -21,6 +21,319 @@ from ._ui_constants import _strip_markdown, _open_file_in_os, _open_folder_in_os
 
 class ChatMixin:
     """Mixin: chat send/receive, document indexing, and chat-display helpers."""
+
+    # ------------------------------------------------------------------
+    # Provider capability checks
+    # ------------------------------------------------------------------
+
+    def _provider_supports_search(self) -> bool:
+        from uacragent.domain.providers import get_provider
+        return get_provider(self._session.llm_provider or "gemini").supports_search
+
+    def _provider_supports_files(self) -> bool:
+        from uacragent.domain.providers import get_provider
+        return get_provider(self._session.llm_provider or "gemini").supports_files
+
+    def _update_tool_btns(self) -> None:
+        """Enable/disable search and upload buttons based on active provider capabilities."""
+        can_search = self._provider_supports_search()
+        can_files  = self._provider_supports_files()
+        try:
+            self._search_btn.set_state(can_search)
+        except Exception:
+            pass
+        try:
+            self._upload_btn.set_state(can_files)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # Search toggle
+    # ------------------------------------------------------------------
+
+    def _toggle_search(self) -> None:
+        if not self._provider_supports_search():
+            self._append_chat("system", self._t("search_unsupported"))
+            return
+        self._search_active = not self._search_active
+        self._refresh_search_btn()
+        # Rebuild the strip so the "🌐 Web search ON" chip appears/disappears
+        self._rebuild_attach_strip()
+
+    def _refresh_search_btn(self) -> None:
+        """Update search button visual state and base colours for current theme.
+
+        Inactive: qa_bg chip fill (visible against input_bg).
+        Active:   btn_primary_bg (gold) to show search is on for the next send.
+        """
+        from ._ui_constants import _THEME_COLORS
+        mode = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
+        c = _THEME_COLORS.get(mode, _THEME_COLORS["light"])
+        _tbg  = c.get("qa_bg", "#edf0f8")
+        _tfg  = c.get("qa_fg", c["input_fg"])
+        _thov = c.get("qa_bg_hover", "#dce3f2")
+        try:
+            if self._search_active:
+                self._search_btn.update_style(
+                    chip_bg=c.get("btn_primary_bg", "#f5a623"),
+                    chip_fg=c.get("btn_primary_fg", "#1a2744"),
+                    hover_bg=c.get("btn_primary_hover", "#e8961a"),
+                )
+            else:
+                self._search_btn.update_style(
+                    chip_bg=_tbg, chip_fg=_tfg, hover_bg=_thov)
+        except Exception:
+            pass
+        # Keep upload button colours in sync with theme too
+        try:
+            self._upload_btn.update_style(
+                chip_bg=_tbg, chip_fg=_tfg, hover_bg=_thov)
+        except Exception:
+            pass
+        # Rebuild the strip so the search chip colour matches the new theme
+        try:
+            self._rebuild_attach_strip()
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # File attachment
+    # ------------------------------------------------------------------
+
+    def _pick_files(self) -> None:
+        if not self._provider_supports_files():
+            return
+        from tkinter import filedialog
+        paths = filedialog.askopenfilenames(
+            title=self._t("attach_files_title"),
+            filetypes=[
+                (self._t("attach_supported"), "*.png *.jpg *.jpeg *.gif *.webp *.bmp *.pdf *.docx *.txt *.md *.py *.csv *.json *.xml *.html"),
+                (self._t("attach_images"),    "*.png *.jpg *.jpeg *.gif *.webp *.bmp"),
+                (self._t("attach_docs"),      "*.pdf *.docx"),
+                (self._t("attach_text"),      "*.txt *.md *.py *.csv *.json"),
+                (self._t("attach_all"),       "*.*"),
+            ],
+        )
+        for p in paths:
+            from pathlib import Path as _Path
+            suffix = _Path(p).suffix.lower()
+            from uacragent.agent.conversation import _MIME_MAP
+            mime = _MIME_MAP.get(suffix, "application/octet-stream")
+            self._pending_attachments.append({
+                "path": p,
+                "name": _Path(p).name,
+                "mime": mime,
+            })
+        if paths:
+            self._rebuild_attach_strip()
+
+    def _remove_attachment(self, idx: int) -> None:
+        if 0 <= idx < len(self._pending_attachments):
+            self._pending_attachments.pop(idx)
+        self._rebuild_attach_strip()
+
+    def _rebuild_attach_strip(self) -> None:
+        """Rebuild the attachment / search-state chip strip above the input field.
+
+        The strip is visible whenever:
+        * one or more files are pending attachment, OR
+        * web search is toggled ON for the next send.
+
+        All chips use _RoundedChip for consistent rounded styling.
+        Clicking anywhere on a chip removes the file / turns off search.
+        """
+        from ._custom_widgets import _RoundedChip
+        from ._ui_constants import _THEME_COLORS
+
+        strip = self._attach_strip
+        for w in strip.winfo_children():
+            w.destroy()
+
+        _search_on = getattr(self, "_search_active", False)
+
+        if not self._pending_attachments and not _search_on:
+            try:
+                strip.grid_remove()
+            except Exception:
+                pass
+            return
+
+        # Show the strip
+        strip.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 4))
+        mode    = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
+        c       = _THEME_COLORS.get(mode, _THEME_COLORS["light"])
+        pbg     = c.get("input_bg",       "#ffffff")   # strip/parent background
+        chip_bg = c.get("qa_bg",          "#edf0f8")
+        chip_fg = c.get("input_fg",       "#1a2744")
+        hov_bg  = c.get("qa_bg_hover",    "#dce3f2")
+
+        # ── Web-search indicator chip ─────────────────────────────────────────
+        if _search_on:
+            _sbg  = c.get("btn_primary_bg",    "#f5a623")
+            _sfg  = c.get("btn_primary_fg",    "#1a2744")
+            _shov = c.get("btn_primary_hover", "#e8961a")
+
+            def _turn_off(_e=None):
+                if getattr(self, "_search_active", False):
+                    self._toggle_search()
+
+            _RoundedChip(
+                strip,
+                text="🌐  Web search ON  ×",
+                chip_bg=_sbg, chip_fg=_sfg,
+                parent_bg=pbg,
+                font=("TkDefaultFont", 10, "bold"),
+                padx=10, pady=4,
+                hover_bg=_shov,
+                command=_turn_off,
+            ).pack(side="left", padx=(0, 6), pady=2)
+
+        # ── File attachment chips ─────────────────────────────────────────────
+        for idx, att in enumerate(self._pending_attachments):
+            mime = att.get("mime", "")
+            if mime.startswith("image/"):
+                icon = "🖼"
+            elif mime == "application/pdf":
+                icon = "📄"
+            else:
+                icon = "📎"
+
+            name = att["name"]
+            if len(name) > 20:
+                name = name[:9] + "…" + name[-8:]
+
+            _RoundedChip(
+                strip,
+                text=f"{icon}  {name}  ×",
+                chip_bg=chip_bg, chip_fg=chip_fg,
+                parent_bg=pbg,
+                font=("TkDefaultFont", 10),
+                padx=10, pady=4,
+                hover_bg=hov_bg,
+                command=lambda i=idx: self._remove_attachment(i),
+            ).pack(side="left", padx=(0, 4), pady=2)
+
+    # ------------------------------------------------------------------
+    # Drag-and-drop file support
+    # ------------------------------------------------------------------
+
+    def _setup_drag_drop(self) -> None:
+        """Bind tkinterdnd2 drop events to the chat canvas area.
+
+        Safe no-op when tkinterdnd2 is not installed or the Tk extension is
+        unavailable — the app works normally without drag-and-drop in that case.
+
+        tkinterdnd2 requires ``drop_target_register(DND_FILES)`` to be called
+        on each widget *before* ``dnd_bind`` — without it the widget never
+        receives <<Drop>> events.
+
+        The drop overlay (``_dnd_overlay``) is also registered so that once it
+        appears during a drag it continues to receive events without flickering.
+        """
+        try:
+            from tkinterdnd2 import DND_FILES as _DND_FILES
+        except Exception:
+            return  # tkinterdnd2 not installed
+
+        # All widgets that should act as drop targets — include the overlay so
+        # events aren't lost when it's placed on top of the canvas during drag.
+        _targets = [self._msg_canvas, self._msg_frame, self._hist_canvas]
+        if hasattr(self, "_dnd_overlay"):
+            _targets.append(self._dnd_overlay)
+
+        for widget in _targets:
+            try:
+                widget.drop_target_register(_DND_FILES)
+                widget.dnd_bind("<<Drop>>",      self._on_dnd_drop)
+                widget.dnd_bind("<<DragEnter>>", self._on_dnd_enter)
+                widget.dnd_bind("<<DragLeave>>", self._on_dnd_leave)
+            except Exception:
+                pass  # individual widget may not support DnD
+
+    @staticmethod
+    def _parse_dnd_paths(raw: str) -> list[str]:
+        """Parse tkinterdnd2 path data into individual file paths.
+
+        tkinterdnd2 returns paths space-separated; paths containing spaces are
+        wrapped in braces:  ``{/path/with spaces/file.pdf} /simple/path.png``
+        """
+        paths: list[str] = []
+        raw = raw.strip()
+        while raw:
+            if raw.startswith("{"):
+                end = raw.find("}")
+                if end == -1:
+                    break
+                paths.append(raw[1:end])
+                raw = raw[end + 1:].strip()
+            else:
+                parts = raw.split(None, 1)
+                paths.append(parts[0])
+                raw = parts[1].strip() if len(parts) > 1 else ""
+        return [p for p in paths if p]
+
+    def _on_dnd_drop(self, event) -> None:
+        """Handle files dropped onto the chat area."""
+        # Remove drop-zone highlight first
+        self._on_dnd_leave(event)
+
+        if not self._provider_supports_files():
+            self._append_chat("system", self._t("files_unsupported"))
+            return
+
+        paths = self._parse_dnd_paths(getattr(event, "data", "") or "")
+        added = 0
+        for p in paths:
+            from pathlib import Path as _Path
+            suffix = _Path(p).suffix.lower()
+            from uacragent.agent.conversation import _MIME_MAP
+            mime = _MIME_MAP.get(suffix, "application/octet-stream")
+            self._pending_attachments.append({
+                "path": p,
+                "name": _Path(p).name,
+                "mime": mime,
+            })
+            added += 1
+
+        if added:
+            self._rebuild_attach_strip()
+
+    def _show_dnd_overlay(self) -> None:
+        """Show the drop overlay that covers the message canvas."""
+        try:
+            # Refresh overlay colours to match current theme before showing
+            from ._ui_constants import _THEME_COLORS
+            mode = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
+            c = _THEME_COLORS.get(mode, _THEME_COLORS["light"])
+            _dnd_bg = c.get("qa_bg", "#edf0f8")
+            _dnd_fg = c.get("text_fg", "#1a2744")
+            _dnd_ac = c.get("btn_primary_bg", "#f5a623")
+            self._dnd_overlay.configure(bg=_dnd_bg, highlightbackground=_dnd_ac)
+            self._dnd_overlay_lbl.configure(
+                text=self._t("dnd_drop_label"),
+                bg=_dnd_bg, fg=_dnd_fg,
+            )
+            # Place overlay on top of the message canvas, covering it entirely
+            self._dnd_overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
+            self._dnd_overlay.lift()
+        except Exception:
+            pass
+
+    def _hide_dnd_overlay(self) -> None:
+        """Hide the drop overlay."""
+        try:
+            self._dnd_overlay.place_forget()
+        except Exception:
+            pass
+
+    def _on_dnd_enter(self, event) -> None:
+        """Show the drop overlay when files are dragged over the chat area."""
+        self._show_dnd_overlay()
+
+    def _on_dnd_leave(self, event) -> None:
+        """Hide the drop overlay when the drag leaves the chat area."""
+        self._hide_dnd_overlay()
+
     def _get_agent(self) -> ConversationAgent:
         if self._agent is None:
             from uacragent.infra.settings import get_settings
@@ -344,6 +657,13 @@ class ChatMixin:
         message = self._input_text.get("1.0", tk.END).strip()
         if not message:
             return
+        # Capture and clear attachments/search state before any thread starts
+        captured_attachments = list(self._pending_attachments)
+        captured_search      = self._search_active
+        self._pending_attachments.clear()
+        self._search_active = False
+        self._rebuild_attach_strip()
+        self._refresh_search_btn()
         # Use the committed session state — do NOT read live StringVars here.
         # Settings only take effect after the user clicks Apply.
         provider = self._session.llm_provider or "gemini"
@@ -395,6 +715,8 @@ class ChatMixin:
                     progress_cb=_progress,
                     effort_level=effort_level,
                     language=captured_lang,
+                    search_enabled=captured_search,
+                    attachments=captured_attachments,
                 )
                 if self._cancel_event.is_set():
                     # The LLM finished but the user cancelled before the response

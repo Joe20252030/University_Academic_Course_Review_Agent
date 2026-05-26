@@ -71,12 +71,22 @@ from ._settings_mixin import SettingsMixin
 from ._session_mixin import SessionMixin
 from ._chat_mixin import ChatMixin
 
+# ---------------------------------------------------------------------------
+# Optional drag-and-drop base class (requires tkinterdnd2)
+# ---------------------------------------------------------------------------
+try:
+    from tkinterdnd2 import TkinterDnD as _TkinterDnD
+    _TK_BASE: type = _TkinterDnD.Tk
+    _HAS_DND: bool = True
+except Exception:               # ImportError or Tcl/Tk extension not found
+    _TK_BASE = tk.Tk
+    _HAS_DND = False
 
 # ---------------------------------------------------------------------------
 # Main window
 # ---------------------------------------------------------------------------
 
-class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, tk.Tk):
+class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _TK_BASE):  # type: ignore[misc]
     """Three-panel app: session list | chat area.
 
     Settings live in a separate Toplevel dialog.  All domain logic is
@@ -581,25 +591,25 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
             "<Configure>", lambda e: self._on_msg_canvas_configure(e))
 
         # Platform mousewheel scroll (canvas only — child bubbles get bound
-        # individually in _append_chat via _bind_chat_scroll)
+        # individually in _append_chat via _bind_chat_scroll).
+        # Guards prevent any scroll when content fully fits in the viewport
+        # (lo==0 and hi==1) and stop over-scroll past either end.
         import sys as _sys_plat
         if _sys_plat.platform == "darwin":
             self._msg_canvas.bind(
                 "<MouseWheel>",
-                lambda e: self._msg_canvas.yview_scroll(
-                    int(-1 * e.delta), "units"))
+                lambda e: self._bounded_chat_scroll(int(-1 * e.delta)))
         elif _sys_plat.platform.startswith("win"):
             self._msg_canvas.bind(
                 "<MouseWheel>",
-                lambda e: self._msg_canvas.yview_scroll(
-                    int(-1 * (e.delta / 120)), "units"))
+                lambda e: self._bounded_chat_scroll(int(-1 * (e.delta / 120))))
         else:
             self._msg_canvas.bind(
                 "<Button-4>",
-                lambda _e: self._msg_canvas.yview_scroll(-1, "units"))
+                lambda _e: self._bounded_chat_scroll(-1))
             self._msg_canvas.bind(
                 "<Button-5>",
-                lambda _e: self._msg_canvas.yview_scroll(1, "units"))
+                lambda _e: self._bounded_chat_scroll(1))
 
         # Clicking the message area returns focus to the main window so the
         # search entry doesn't keep capturing keystrokes.
@@ -624,6 +634,10 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
         self._input_block_seps: list  = []   # unused; kept for compat
         self._input_block_bgs: list[tk.Widget] = []
         self._effort_flat_widgets: list[tk.Widget] = []
+
+        # New state for web search toggle and file attachments
+        self._pending_attachments: list[dict] = []
+        self._search_active: bool = False
 
         # Session Settings hover state
         self._sess_settings_visible = False   # starts hidden
@@ -663,7 +677,19 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
             self._qa_chips.append(_chip)
             self._i18n_widgets.append((_chip, "text", _qa_key))
 
-        # ── row 1: rounded input canvas + text widget ─────────────
+        # ── row 1: attachment strip (hidden by default) ───────────────
+        self._attach_strip = tk.Frame(self._input_block, bg=_c0["input_bg"])
+        # Not gridded yet — shown/hidden by _rebuild_attach_strip()
+        self._input_block_bgs.append(self._attach_strip)
+
+        # ── row 2: input row wrapper ──────────────────────────────────
+        # Contains [_input_text_cv fills column 0] [button stack at column 1]
+        _input_row = tk.Frame(self._input_block, bg=_c0["input_bg"])
+        _input_row.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 6))
+        _input_row.columnconfigure(0, weight=1)
+        self._input_block_bgs.append(_input_row)
+
+        # ── input text canvas + text widget (inside _input_row at col 0) ─────
         # A Canvas draws the rounded rectangle border; the Text widget sits
         # inside it via create_window.  The canvas height is kept in sync with
         # the text widget's required height by _sync_input_text_cv_height().
@@ -672,13 +698,12 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
         _cv_pad   = 4   # gap between canvas edge and inner text window
 
         self._input_text_cv = tk.Canvas(
-            self._input_block,
+            _input_row,
             bg=_c0["input_bg"],
             highlightthickness=0, bd=0,
             height=38,   # initial single-line height; updated dynamically
         )
-        self._input_text_cv.grid(row=1, column=0, sticky="ew",
-                                  padx=12, pady=(0, 6))
+        self._input_text_cv.grid(row=0, column=0, sticky="nsew")
         self._input_text_cv.bind(
             "<Configure>", lambda _: self._redraw_input_text_cv())
 
@@ -710,9 +735,52 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
         )
         self._input_text.configure(yscrollcommand=self._input_vsb.set)
 
-        # ── row 2: controls row ───────────────────────────────────────
+        # ── tool buttons (column 1 of _input_row): search + upload, side-by-side ─
+        # Buttons share the qa_bg chip colour so they are visually distinct from
+        # the plain input_bg background and easy to spot at a glance.
+        _tbg    = _c0.get("qa_bg", "#edf0f8")          # visible chip fill
+        _tfg    = _c0.get("qa_fg", _c0["input_fg"])
+        _thov   = _c0.get("qa_bg_hover", "#dce3f2")
+        _tbdr   = _c0.get("input_border", "#cdd4e8")
+        _tpbg   = _c0["input_bg"]                       # parent bg (for anti-alias)
+
+        _tool_btn_row = tk.Frame(_input_row, bg=_tpbg)
+        _tool_btn_row.grid(row=0, column=1, sticky="n", padx=(6, 0))
+        self._input_block_bgs.append(_tool_btn_row)
+
+        self._search_btn = _RoundedChip(
+            _tool_btn_row,
+            text="🌐",
+            chip_bg=_tbg,
+            chip_fg=_tfg,
+            parent_bg=_tpbg,
+            font=("TkDefaultFont", 13),
+            padx=7, pady=5,
+            hover_bg=_thov,
+            outline=_tbdr,
+            outline_width=1,
+            command=self._toggle_search,
+        )
+        self._search_btn.pack(side="left", padx=(0, 4))
+
+        self._upload_btn = _RoundedChip(
+            _tool_btn_row,
+            text="+",
+            chip_bg=_tbg,
+            chip_fg=_tfg,
+            parent_bg=_tpbg,
+            font=("TkDefaultFont", 14, "bold"),
+            padx=8, pady=5,
+            hover_bg=_thov,
+            outline=_tbdr,
+            outline_width=1,
+            command=self._pick_files,
+        )
+        self._upload_btn.pack(side="left")
+
+        # ── row 3: controls row ───────────────────────────────────────
         controls_row = tk.Frame(self._input_block, bg=_c0["input_bg"])
-        controls_row.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 8))
+        controls_row.grid(row=3, column=0, sticky="ew", padx=12, pady=(0, 8))
         controls_row.columnconfigure(1, weight=1)
         self._input_block_bgs.append(controls_row)
 
@@ -800,6 +868,34 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
 
         # Session Settings button is always visible inside the input block.
         self._show_sess_settings()
+
+        # ── DnD drop overlay (hidden by default, placed over message area) ──
+        # A semi-transparent-ish frame with a centred "Drop to attach" label
+        # that appears whenever the user drags files over the chat region.
+        # Parented to _msg_canvas so place(relwidth=1, relheight=1) covers it.
+        from ._ui_constants import _THEME_COLORS as _TC_dnd
+        _dnd_mode = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
+        _dnd_c  = _TC_dnd.get(_dnd_mode, _TC_dnd["light"])
+        _dnd_bg = _dnd_c.get("qa_bg", "#edf0f8")
+        _dnd_fg = _dnd_c.get("text_fg", "#1a2744")
+        _dnd_ac = _dnd_c.get("btn_primary_bg", "#f5a623")
+        self._dnd_overlay = tk.Frame(
+            self._msg_canvas, bg=_dnd_bg,
+            highlightthickness=3, highlightbackground=_dnd_ac,
+        )
+        self._dnd_overlay_lbl = tk.Label(
+            self._dnd_overlay,
+            text=self._t("dnd_drop_label"),
+            bg=_dnd_bg, fg=_dnd_fg,
+            font=("TkDefaultFont", 18, "bold"),
+        )
+        self._dnd_overlay_lbl.place(relx=0.5, rely=0.5, anchor="center")
+        # Overlay is invisible initially; _on_dnd_enter / _on_dnd_leave toggle it.
+
+        # ── Drag-and-drop onto the chat area ──────────────────────────────
+        # Wires up tkinterdnd2 handlers so users can drop files directly onto
+        # the message canvas.  Safe no-op when tkinterdnd2 is not available.
+        self._setup_drag_drop()
 
         # ── Placeholder (shown when no session is active) ─────────────────
         # Grids at row=0 (the only row in `right`) so it fills the full pane.
@@ -1194,6 +1290,10 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
         if active:
             self._placeholder_frame.grid_remove()
             self._hist_canvas.grid()   # restores original grid options
+            try:
+                self._update_tool_btns()
+            except Exception:
+                pass
         else:
             self._hist_canvas.grid_remove()
             self._placeholder_frame.grid(row=0, column=0, sticky="nsew")
@@ -1310,6 +1410,25 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
         except Exception:
             pass
 
+    def _bounded_chat_scroll(self, units: int) -> None:
+        """Scroll the message canvas by *units* while respecting content bounds.
+
+        Prevents scrolling past the top (lo ≤ 0) or bottom (hi ≥ 1), and is
+        a complete no-op when all content already fits in the viewport
+        (lo == 0 and hi == 1).
+        """
+        if not hasattr(self, "_msg_canvas"):
+            return
+        try:
+            lo, hi = self._msg_canvas.yview()
+            if units < 0 and lo <= 0.0:
+                return   # already at top
+            if units > 0 and hi >= 1.0:
+                return   # already at bottom
+            self._msg_canvas.yview_scroll(units, "units")
+        except Exception:
+            pass
+
     def _scroll_chat_to_bottom(self) -> None:
         """Scroll the message bubble canvas to reveal the latest message."""
         if not hasattr(self, "_msg_canvas"):
@@ -1405,33 +1524,35 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
             pass
 
     def _bind_chat_scroll(self, widget: tk.Widget) -> None:
-        """Bind mousewheel events on *widget* to scroll the message canvas."""
+        """Bind mousewheel events on *widget* to scroll the message canvas.
+
+        Uses :meth:`_bounded_chat_scroll` so scrolling stops cleanly at both
+        ends of the content instead of firing no-op events past the boundary.
+        """
         import sys as _sys_bs
         if not hasattr(self, "_msg_canvas"):
             return
         if _sys_bs.platform == "darwin":
             widget.bind(
                 "<MouseWheel>",
-                lambda e: self._msg_canvas.yview_scroll(
-                    int(-1 * e.delta), "units"),
+                lambda e: self._bounded_chat_scroll(int(-1 * e.delta)),
                 add="+",
             )
         elif _sys_bs.platform.startswith("win"):
             widget.bind(
                 "<MouseWheel>",
-                lambda e: self._msg_canvas.yview_scroll(
-                    int(-1 * (e.delta / 120)), "units"),
+                lambda e: self._bounded_chat_scroll(int(-1 * (e.delta / 120))),
                 add="+",
             )
         else:
             widget.bind(
                 "<Button-4>",
-                lambda _e: self._msg_canvas.yview_scroll(-1, "units"),
+                lambda _e: self._bounded_chat_scroll(-1),
                 add="+",
             )
             widget.bind(
                 "<Button-5>",
-                lambda _e: self._msg_canvas.yview_scroll(1, "units"),
+                lambda _e: self._bounded_chat_scroll(1),
                 add="+",
             )
 

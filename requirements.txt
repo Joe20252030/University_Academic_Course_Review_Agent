@@ -31,3 +31,5 @@ uvicorn[standard]>=0.23
 
 # ── Development / testing ─────────────────────────────────────────────────────
 pytest>=8.0
+
+tkinterdnd2>=0.3

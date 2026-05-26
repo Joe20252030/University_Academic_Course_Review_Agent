@@ -323,6 +323,18 @@ _STRINGS: dict[str, dict[str, str]] = {
         "mb_delete_file_body":    "Permanently delete:\n{name}?",
         "mb_delete_fail_title":   "Delete Failed",
         "output_copy_dest_title": "Choose destination folder",
+        # File attachment / web search
+        "attach_files_title": "Select files to attach",
+        "attach_supported":   "Supported files",
+        "attach_images":      "Images",
+        "attach_docs":        "Documents",
+        "attach_text":        "Text files",
+        "attach_all":         "All files",
+        "search_unsupported": "Web search is not supported by the current provider.",
+        "files_unsupported":  "File upload is not supported by the current provider.",
+        "search_on":          "🌐 Web search ON — will apply to next message",
+        "search_off":         "Web search OFF",
+        "dnd_drop_label":     "📎  Drop files here to attach",
     },
     "zh_CN": {
         # Session list
@@ -582,6 +594,18 @@ _STRINGS: dict[str, dict[str, str]] = {
         "mb_delete_file_body":    "永久删除：\n{name}？",
         "mb_delete_fail_title":   "删除失败",
         "output_copy_dest_title": "选择目标文件夹",
+        # File attachment / web search
+        "attach_files_title": "选择要附加的文件",
+        "attach_supported":   "支持的文件",
+        "attach_images":      "图片",
+        "attach_docs":        "文档",
+        "attach_text":        "文本文件",
+        "attach_all":         "所有文件",
+        "search_unsupported": "当前提供商不支持网络搜索。",
+        "files_unsupported":  "当前提供商不支持文件上传。",
+        "search_on":          "🌐 网络搜索已开启 — 将应用于下一条消息",
+        "search_off":         "网络搜索已关闭",
+        "dnd_drop_label":     "📎  拖放文件以附加",
     },
 }
 
@@ -639,53 +663,53 @@ _THEME_COLORS: dict[str, dict[str, str]] = {
         "lb_hover_bg":    "#dfe4f0",
     },
     "dark": {
-        # Surfaces — navy palette from the logo
-        "window_bg":      "#0d1b3e",   # logo deep navy
-        "sidebar_bg":     "#091528",   # darker sidebar
-        "paned_bg":       "#091528",
-        "text_bg":        "#13254e",   # chat area: medium navy
-        "input_bg":       "#0f1f42",   # input slightly darker
+        # Surfaces — neutral dark-gray palette (mirrors light mode design language)
+        "window_bg":      "#1a1d23",   # deep neutral dark (main surface)
+        "sidebar_bg":     "#14171c",   # slightly darker sidebar
+        "paned_bg":       "#14171c",
+        "text_bg":        "#252830",   # chat area: medium dark card
+        "input_bg":       "#1e2128",   # input slightly lighter than window_bg
         # Text
-        "text_fg":        "#dde6f5",   # soft-white text
-        "input_fg":       "#dde6f5",
-        "status_fg":      "#7f96bc",   # muted blue-gray
+        "text_fg":        "#e2e8f0",   # near-white body text
+        "input_fg":       "#e2e8f0",
+        "status_fg":      "#8892a4",   # muted neutral gray
         # Session listbox
-        "lb_bg":          "#091528",
-        "lb_fg":          "#b8cde8",   # light blue-gray items
-        "lb_sel_bg":      "#2952c4",   # accent blue selection
+        "lb_bg":          "#14171c",
+        "lb_fg":          "#c4cdd8",   # light neutral items
+        "lb_sel_bg":      "#2952c4",   # accent blue selection (kept from light)
         "lb_sel_fg":      "#ffffff",
         # Chat bubbles
-        "user_fg":        "#81b4f5",   # soft cornflower blue
-        "assist_fg":      "#f5a623",   # logo gold for assistant label
-        "assist_body":    "#c0d4ee",   # light blue-gray body text
-        "system_fg":      "#7f96bc",   # muted blue-gray system messages
+        "user_fg":        "#7eb0f0",   # soft cornflower blue
+        "assist_fg":      "#f5a623",   # logo gold for assistant label (unchanged)
+        "assist_body":    "#c4cdd8",   # light neutral body text
+        "system_fg":      "#8892a4",   # muted neutral system messages
         # Chat bubble backgrounds
-        "user_bubble_bg":     "#0f1e40",   # slightly lighter than text_bg
-        "user_bubble_border": "#1e3566",   # navy ring
-        "asst_bubble_bg":     "#162847",   # warm-tinted navy for assistant
-        "asst_bubble_border": "#1e3566",   # navy ring
+        "user_bubble_bg":     "#1e2533",   # soft blue-tinted dark
+        "user_bubble_border": "#2a3650",   # subtle blue ring
+        "asst_bubble_bg":     "#272318",   # subtle warm tint for assistant
+        "asst_bubble_border": "#3d3224",   # subtle amber ring
         # Links inside chat
-        "link_fg":        "#81b4f5",
-        "link_folder_fg": "#7f96bc",
+        "link_fg":        "#7eb0f0",
+        "link_folder_fg": "#8892a4",
         # Primary action button
-        "btn_primary_bg":    "#f5a623",   # same gold
+        "btn_primary_bg":    "#f5a623",   # same logo gold
         "btn_primary_fg":    "#1a2744",
         "btn_primary_hover": "#e8961a",   # darker gold on hover
         # Rounded input border
-        "input_border":   "#1e3566",   # navy ring
+        "input_border":   "#353a45",   # neutral dark ring
         # Overlay scrollbar — pill only (bg matches content so track is invisible)
-        "sb_color":       "#3a5280",   # muted blue pill
-        "sb_bg":          "#13254e",   # match text_bg dark → track disappears
+        "sb_color":       "#4a5568",   # neutral gray pill
+        "sb_bg":          "#252830",   # match text_bg → track disappears
         # Quick-action chip buttons
-        "qa_bg":          "#112040",   # chip fill
-        "qa_fg":          "#9ab8e0",   # chip text
-        "qa_bg_hover":    "#1a3060",   # chip hover
+        "qa_bg":          "#2d3140",   # chip fill
+        "qa_fg":          "#9aa8c0",   # chip text
+        "qa_bg_hover":    "#363c50",   # chip hover
         # Cancel button (replaces Send while busy)
         "btn_cancel_bg":    "#e53e3e",   # red — same as light
         "btn_cancel_fg":    "#ffffff",
         "btn_cancel_hover": "#c53030",   # darker red on hover
         # Session list item hover
-        "lb_hover_bg":    "#122040",
+        "lb_hover_bg":    "#1e2230",
     },
 }
 

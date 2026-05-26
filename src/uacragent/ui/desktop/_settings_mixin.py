@@ -144,10 +144,12 @@ class SettingsMixin:
         """Show a themed information dialog (replaces messagebox.showinfo)."""
         c     = self._themed_colors()
         _wbg  = c["window_bg"]
+        _cbg  = c.get("text_bg", "#ffffff")      # card fill
         _fg   = c["text_fg"]
         _pbg  = c["btn_primary_bg"]
         _pfg  = c["btn_primary_fg"]
         _phov = c.get("btn_primary_hover", _pbg)
+        _brd  = c.get("input_border", "#cdd4e8")
         _sz   = self._font_size() if hasattr(self, "_font_size") else 13
 
         win = self._make_toplevel()
@@ -156,22 +158,27 @@ class SettingsMixin:
         win.resizable(False, False)
         win.grab_set()
 
-        frm = tk.Frame(win, bg=_wbg, padx=24, pady=20)
+        # Outer padding frame (window_bg) → inner card (text_bg)
+        outer = tk.Frame(win, bg=_wbg, padx=12, pady=12)
+        outer.pack(fill="both", expand=True)
+
+        frm = tk.Frame(outer, bg=_cbg, padx=20, pady=18,
+                       highlightthickness=1, highlightbackground=_brd)
         frm.pack(fill="both", expand=True)
 
         tk.Label(
             frm, text=message,
-            bg=_wbg, fg=_fg,
+            bg=_cbg, fg=_fg,
             font=("TkDefaultFont", _sz),
             justify="left", anchor="w", wraplength=360,
         ).pack(anchor="w", pady=(0, 16))
 
-        btn_row = tk.Frame(frm, bg=_wbg)
+        btn_row = tk.Frame(frm, bg=_cbg)
         btn_row.pack(anchor="e")
         _RoundedChip(
             btn_row, text="OK",
             chip_bg=_pbg, chip_fg=_pfg,
-            parent_bg=_wbg,
+            parent_bg=_cbg,
             font=("TkDefaultFont", _sz, "bold"),
             padx=14, pady=6,
             hover_bg=_phov,
@@ -191,6 +198,7 @@ class SettingsMixin:
         """Show a themed yes/no dialog. Returns True if confirmed."""
         c        = self._themed_colors()
         _wbg     = c["window_bg"]
+        _cbg     = c.get("text_bg", "#ffffff")    # card fill
         _fg      = c["text_fg"]
         _sz      = self._font_size() if hasattr(self, "_font_size") else 13
         _border  = c["input_border"]
@@ -214,17 +222,22 @@ class SettingsMixin:
         win.resizable(False, False)
         win.grab_set()
 
-        frm = tk.Frame(win, bg=_wbg, padx=24, pady=20)
+        # Outer padding frame (window_bg) → inner card (text_bg)
+        outer = tk.Frame(win, bg=_wbg, padx=12, pady=12)
+        outer.pack(fill="both", expand=True)
+
+        frm = tk.Frame(outer, bg=_cbg, padx=20, pady=18,
+                       highlightthickness=1, highlightbackground=_border)
         frm.pack(fill="both", expand=True)
 
         tk.Label(
             frm, text=message,
-            bg=_wbg, fg=_fg,
+            bg=_cbg, fg=_fg,
             font=("TkDefaultFont", _sz),
             justify="left", anchor="w", wraplength=400,
         ).pack(anchor="w", pady=(0, 20))
 
-        btn_row = tk.Frame(frm, bg=_wbg)
+        btn_row = tk.Frame(frm, bg=_cbg)
         btn_row.pack(anchor="e")
 
         def _ok():
@@ -235,7 +248,7 @@ class SettingsMixin:
             btn_row,
             text=confirm_text or "OK",
             chip_bg=_cfm_bg, chip_fg=_cfm_fg,
-            parent_bg=_wbg,
+            parent_bg=_cbg,
             font=("TkDefaultFont", _sz, "bold"),
             padx=14, pady=6,
             hover_bg=_cfm_hov,
@@ -244,8 +257,8 @@ class SettingsMixin:
 
         _RoundedChip(
             btn_row, text=self._t("cancel_btn"),
-            chip_bg=_wbg, chip_fg=_fg,
-            parent_bg=_wbg,
+            chip_bg=_cbg, chip_fg=_fg,
+            parent_bg=_cbg,
             font=("TkDefaultFont", _sz),
             padx=14, pady=6,
             outline=_border, outline_width=1,
@@ -267,6 +280,7 @@ class SettingsMixin:
         """Show a themed string-input dialog. Returns the string or None if cancelled."""
         c       = self._themed_colors()
         _wbg    = c["window_bg"]
+        _cbg    = c.get("text_bg", "#ffffff")     # card fill
         _fg     = c["text_fg"]
         _ibg    = c["input_bg"]
         _ifg    = c["input_fg"]
@@ -284,13 +298,18 @@ class SettingsMixin:
         win.resizable(False, False)
         win.grab_set()
 
-        frm = tk.Frame(win, bg=_wbg, padx=24, pady=20)
+        # Outer padding frame (window_bg) → inner card (text_bg)
+        outer = tk.Frame(win, bg=_wbg, padx=12, pady=12)
+        outer.pack(fill="both", expand=True)
+
+        frm = tk.Frame(outer, bg=_cbg, padx=20, pady=18,
+                       highlightthickness=1, highlightbackground=_border)
         frm.pack(fill="both", expand=True)
         frm.columnconfigure(0, weight=1)
 
         tk.Label(
             frm, text=prompt,
-            bg=_wbg, fg=_fg,
+            bg=_cbg, fg=_fg,
             font=("TkDefaultFont", _sz),
             anchor="w",
         ).pack(anchor="w", pady=(0, 8))
@@ -310,7 +329,7 @@ class SettingsMixin:
         entry.focus_set()
         entry.select_range(0, "end")
 
-        btn_row = tk.Frame(frm, bg=_wbg)
+        btn_row = tk.Frame(frm, bg=_cbg)
         btn_row.pack(anchor="e")
 
         def _ok(_event=None):
@@ -325,7 +344,7 @@ class SettingsMixin:
         _RoundedChip(
             btn_row, text=self._t("settings_apply_btn"),
             chip_bg=_pbg, chip_fg=_pfg,
-            parent_bg=_wbg,
+            parent_bg=_cbg,
             font=("TkDefaultFont", _sz, "bold"),
             padx=14, pady=6,
             hover_bg=_phov,
@@ -334,8 +353,8 @@ class SettingsMixin:
 
         _RoundedChip(
             btn_row, text=self._t("cancel_btn"),
-            chip_bg=_wbg, chip_fg=_fg,
-            parent_bg=_wbg,
+            chip_bg=_cbg, chip_fg=_fg,
+            parent_bg=_cbg,
             font=("TkDefaultFont", _sz),
             padx=14, pady=6,
             outline=_border, outline_width=1,
@@ -664,14 +683,24 @@ class SettingsMixin:
 
         def _on_mousewheel(event: tk.Event) -> None:
             try:
+                lo, hi = canvas.yview()
                 delta = event.delta
                 if delta == 0:
                     return
                 if abs(delta) >= 120:
                     # Physical scroll wheel: ±1 unit per ±120-delta notch
-                    canvas.yview_scroll(int(-delta / 120), "units")
+                    units = int(-delta / 120)
+                    if units < 0 and lo <= 0.0:
+                        return
+                    if units > 0 and hi >= 1.0:
+                        return
+                    canvas.yview_scroll(units, "units")
                 else:
                     # macOS trackpad: fractional pixel-accurate scroll
+                    if delta > 0 and lo <= 0.0:
+                        return
+                    if delta < 0 and hi >= 1.0:
+                        return
                     try:
                         sr = canvas.cget("scrollregion")
                         parts = str(sr).split() if sr else []
@@ -682,7 +711,6 @@ class SettingsMixin:
                     if total_h <= 0:
                         canvas.yview_scroll(-1 if delta > 0 else 1, "units")
                         return
-                    lo, _ = canvas.yview()
                     canvas.yview_moveto(
                         max(0.0, min(1.0, lo - delta / total_h)))
             except tk.TclError:
@@ -829,7 +857,7 @@ class SettingsMixin:
             rf, textvariable=self._rate_hint_var,
             bg=_cbg, fg="#6b7280",
             font=("TkDefaultFont", max(self._font_size() - 1, 10)),
-            wraplength=460, anchor="w",
+            wraplength=460, anchor="w", justify="left",
         )
         _rate_hint_lbl.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
 

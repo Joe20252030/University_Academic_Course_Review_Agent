@@ -14,6 +14,119 @@ from uacragent.domain.types import TaskType
 from uacragent.infra.llm import LLMClient
 from uacragent.infra.settings import Settings, get_settings
 
+# ---------------------------------------------------------------------------
+# MIME type map for file attachments
+# ---------------------------------------------------------------------------
+
+_MIME_MAP: dict[str, str] = {
+    ".png":  "image/png",
+    ".jpg":  "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif":  "image/gif",
+    ".webp": "image/webp",
+    ".bmp":  "image/bmp",
+    ".pdf":  "application/pdf",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".txt":  "text/plain",
+    ".md":   "text/markdown",
+    ".py":   "text/x-python",
+    ".js":   "text/javascript",
+    ".ts":   "text/typescript",
+    ".csv":  "text/csv",
+    ".json": "application/json",
+    ".xml":  "text/xml",
+    ".html": "text/html",
+    ".htm":  "text/html",
+}
+
+_IMAGE_MIMES = {
+    "image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp",
+}
+_TEXT_MIMES = {
+    "text/plain", "text/markdown", "text/x-python", "text/javascript",
+    "text/typescript", "text/csv", "application/json", "text/xml",
+    "text/html",
+}
+
+
+def _extract_file_text(path: str, mime: str) -> str:
+    """Extract text from a file given its path and MIME type.
+
+    Uses PyPDFLoader for PDFs, Docx2txtLoader for Word documents, and
+    plain utf-8 text reading for all other supported text-based formats.
+    Returns extracted text, or an error notice string on failure.
+    """
+    try:
+        if mime == "application/pdf":
+            from langchain_community.document_loaders import PyPDFLoader
+            docs = PyPDFLoader(path).load()
+            return "\n\n".join(d.page_content for d in docs)
+        elif mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            from langchain_community.document_loaders import Docx2txtLoader
+            docs = Docx2txtLoader(path).load()
+            return "\n\n".join(d.page_content for d in docs)
+        else:
+            return Path(path).read_text(encoding="utf-8", errors="replace")
+    except Exception as exc:  # noqa: BLE001
+        return f"[Could not extract text from {Path(path).name}: {exc}]"
+
+
+def _build_human_message(
+    message_text: str,
+    attachments: list[dict],
+    provider_id: str,
+) -> "HumanMessage":
+    """Build a HumanMessage with optional multimodal content parts.
+
+    For image attachments: base64-encoded inline ``image_url`` content parts.
+    For PDFs / Word docs / text files: extracted text appended to the message.
+    When there are no attachments, returns a plain HumanMessage(content=...).
+    """
+    if not attachments:
+        return HumanMessage(content=message_text)
+
+    import base64
+
+    parts: list = []
+    extra_text_blocks: list[str] = []
+
+    for att in attachments:
+        path = att.get("path", "")
+        mime = att.get("mime", "application/octet-stream")
+        name = att.get("name", Path(path).name)
+
+        if mime in _IMAGE_MIMES:
+            # Inline base64 image — supported by Gemini and OpenAI
+            try:
+                data = Path(path).read_bytes()
+                b64  = base64.b64encode(data).decode()
+                parts.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime};base64,{b64}"},
+                })
+            except Exception as exc:  # noqa: BLE001
+                extra_text_blocks.append(
+                    f"[Could not encode image {name}: {exc}]"
+                )
+        else:
+            # Text-based or document file — extract and append as text
+            extracted = _extract_file_text(path, mime)
+            extra_text_blocks.append(
+                f"\n\n--- Attached file: {name} ---\n{extracted}\n---"
+            )
+
+    # Compose message text with any extracted text blocks
+    full_text = message_text
+    if extra_text_blocks:
+        full_text = message_text + "".join(extra_text_blocks)
+
+    if parts:
+        # Multimodal content list: text part first, then image parts
+        content: list = [{"type": "text", "text": full_text}] + parts
+        return HumanMessage(content=content)
+    else:
+        return HumanMessage(content=full_text)
+
 
 def _settings_for_session(base: Settings, session: AgentSession) -> Settings:
     """Return a Settings instance with provider/model overridden from the session.
@@ -253,6 +366,8 @@ class ConversationAgent:
         progress_cb: Callable[[str], None] | None = None,
         effort_level: str = "medium",
         language: str = "en",
+        search_enabled: bool = False,
+        attachments: list | None = None,
     ) -> ChatResponse:
         """Process one user turn and return a :class:`ChatResponse`.
 
@@ -277,18 +392,32 @@ class ConversationAgent:
         context = self._retrieve_context(message, session, effort_level)
 
         # -- 2. Build message list ---------------------------------------------
+        provider_id = (session.llm_provider or "gemini").lower()
         system_content = self._render_system_prompt(session, context, language=language)
         messages: list = [SystemMessage(content=system_content)]
         # Use snapshot() to get a consistent, lock-safe copy of history.
         # This prevents a concurrent cancel from mutating the list mid-iteration.
         messages.extend(session.chat_history.snapshot())
-        messages.append(HumanMessage(content=message))
+        messages.append(
+            _build_human_message(message, attachments or [], provider_id)
+        )
 
         # -- 3. Call LLM (use session provider/model if different from default) --
         llm = LLMClient(_settings_for_session(self.settings, session))
         try:
-            raw_response = llm.invoke(messages)
-            assistant_text: str = getattr(raw_response, "content", str(raw_response))
+            if search_enabled:
+                raw_response = llm.invoke_with_search(messages, provider_id)
+            else:
+                raw_response = llm.invoke(messages)
+            content = getattr(raw_response, "content", str(raw_response))
+            if isinstance(content, list):
+                assistant_text: str = " ".join(
+                    part.get("text", "") if isinstance(part, dict) else str(part)
+                    for part in content
+                    if isinstance(part, str) or (isinstance(part, dict) and part.get("type") == "text")
+                ).strip() or str(content)
+            else:
+                assistant_text = str(content)
         except Exception as exc:  # noqa: BLE001
             error_msg = f"LLM call failed: {exc}"
             return ChatResponse(text=error_msg, error=error_msg)

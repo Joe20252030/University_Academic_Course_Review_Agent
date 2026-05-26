@@ -43,6 +43,8 @@ class ProviderConfig:
     # Gemini Free is 15 RPM → "free".  OpenAI and DeepSeek require a paid
     # account to obtain an API key → "standard" is the realistic floor.
     default_rate_tier: str = "free"
+    supports_search: bool = False   # provider has a built-in web-search API
+    supports_files: bool = False    # provider accepts multimodal file attachments
 
 
 # ---------------------------------------------------------------------------
@@ -56,16 +58,28 @@ PROVIDERS: dict[str, ProviderConfig] = {
         settings_attr="google_api_key",
         env_var="GOOGLE_API_KEY",
         models=(
-            "gemini-2.5-flash",
-            "gemini-2.5-pro",
+            # ── Gemini 3.x ─────────────────────────────────────────────────
+            "gemini-3.5-flash",          # ★ recommended — latest fast model
+            "gemini-3.1-pro-preview",    # most capable 3.x (preview)
+            "gemini-3.1-flash-lite",     # fast & low-cost 3.x
+            "gemini-3-flash-preview",    # earlier 3.0 flash (preview)
+            # ── Gemini 2.5 ─────────────────────────────────────────────────
+            "gemini-2.5-flash",          # stable fast model, free tier
+            "gemini-2.5-pro",            # highest capability 2.5
+            "gemini-2.5-flash-lite",     # cheapest 2.5
+            # ── Gemini 2.0 ─────────────────────────────────────────────────
             "gemini-2.0-flash",
+            "gemini-2.0-flash-lite",
+            # ── Gemini 1.5 (legacy) ────────────────────────────────────────
             "gemini-1.5-pro",
             "gemini-1.5-flash",
         ),
         label_i18n_key="api_key_google",
-        # Gemini Free tier is 15 RPM (gemini-2.5-flash) / 5 RPM (gemini-2.5-pro).
+        # Gemini Free tier is available on 2.5-flash and 3.5-flash.
         # Most users start on the free tier, so "free" is the safest default.
         default_rate_tier="free",
+        supports_search=True,
+        supports_files=True,
     ),
     "openai": ProviderConfig(
         id="openai",
@@ -73,14 +87,39 @@ PROVIDERS: dict[str, ProviderConfig] = {
         settings_attr="openai_api_key",
         env_var="OPENAI_API_KEY",
         models=(
+            # ── GPT-5.5 series ─────────────────────────────────────────────
+            "gpt-5.5",                     # best overall — complex reasoning & agents
+            "gpt-5.5-pro",                 # higher-quality GPT-5.5
+            # ── GPT-5.4 series ─────────────────────────────────────────────
+            "gpt-5.4",                     # ★ recommended — lower-cost frontier
+            "gpt-5.4-pro",                 # higher-quality GPT-5.4
+            "gpt-5.4-mini",                # fast, strong coding
+            "gpt-5.4-nano",                # cheapest GPT-5.4, high-volume tasks
+            # ── GPT-5 series ───────────────────────────────────────────────
+            "gpt-5",                       # previous-gen reasoning
+            "gpt-5-mini",                  # cost-sensitive / low-latency
+            "gpt-5-nano",                  # fastest & cheapest GPT-5
+            # ── GPT-4.1 series ─────────────────────────────────────────────
+            "gpt-4.1",                     # strong non-reasoning general tasks
+            "gpt-4.1-mini",
+            "gpt-4.1-nano",
+            # ── GPT-4o series ──────────────────────────────────────────────
             "gpt-4o",
             "gpt-4o-mini",
-            "gpt-4-turbo",
-            "gpt-3.5-turbo",
+            # ── Search-capable models ───────────────────────────────────────
+            "gpt-4o-search-preview",       # built-in web search
+            "gpt-4o-mini-search-preview",  # built-in web search (cheaper)
+            # ── Reasoning (o-series) ───────────────────────────────────────
+            "o4-mini",
+            "o3",
+            "o3-mini",
+            "o1",
         ),
         label_i18n_key="api_key_openai",
         # OpenAI requires a funded account; Tier 1 baseline is ~60-100 RPM.
         default_rate_tier="standard",
+        supports_search=True,
+        supports_files=True,
     ),
     "deepseek": ProviderConfig(
         id="deepseek",
@@ -88,8 +127,12 @@ PROVIDERS: dict[str, ProviderConfig] = {
         settings_attr="deepseek_api_key",
         env_var="DEEPSEEK_API_KEY",
         models=(
-            "deepseek-chat",
-            "deepseek-reasoner",
+            # ── DeepSeek V4 (current) ──────────────────────────────────────
+            "deepseek-v4-pro",    # ★ recommended — most capable V4
+            "deepseek-v4-flash",  # faster, cost-efficient V4
+            # ── Legacy aliases (still supported by the API) ────────────────
+            "deepseek-chat",      # alias → deepseek-v4-flash (non-thinking)
+            "deepseek-reasoner",  # alias → deepseek-v4-flash (thinking mode)
         ),
         base_url="https://api.deepseek.com",
         label_i18n_key="api_key_deepseek",

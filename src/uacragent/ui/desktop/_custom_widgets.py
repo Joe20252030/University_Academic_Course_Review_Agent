@@ -1038,17 +1038,33 @@ class CustomSessionList:
             widget.bind("<Button-4>", self._on_scroll_up, add="+")
             widget.bind("<Button-5>", self._on_scroll_down, add="+")
 
+    def _bounded_scroll(self, units: int) -> None:
+        """Scroll by *units*, stopping cleanly at both ends of content.
+
+        No-op when all items fit in the viewport (lo==0, hi==1) so the
+        session list never scrolls past its own content.
+        """
+        try:
+            lo, hi = self._canvas.yview()
+            if units < 0 and lo <= 0.0:
+                return
+            if units > 0 and hi >= 1.0:
+                return
+            self._canvas.yview_scroll(units, "units")
+        except Exception:
+            pass
+
     def _on_mousewheel_mac(self, event) -> None:
-        self._canvas.yview_scroll(int(-1 * event.delta), "units")
+        self._bounded_scroll(int(-1 * event.delta))
 
     def _on_mousewheel_win(self, event) -> None:
-        self._canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        self._bounded_scroll(int(-1 * (event.delta / 120)))
 
     def _on_scroll_up(self, event) -> None:
-        self._canvas.yview_scroll(-1, "units")
+        self._bounded_scroll(-1)
 
     def _on_scroll_down(self, event) -> None:
-        self._canvas.yview_scroll(1, "units")
+        self._bounded_scroll(1)
 
     def _on_canvas_configure(self, event=None) -> None:
         w = self._canvas.winfo_width()

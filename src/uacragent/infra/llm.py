@@ -128,6 +128,65 @@ class LLMClient:
     def invoke(self, prompt: Any) -> Any:
         return self._call_with_retry(self.llm.invoke, prompt)
 
+    def invoke_with_search(self, prompt: Any, provider_id: str) -> Any:
+        """Invoke with provider-specific web-search grounding.
+
+        Gemini:  ``google_search`` built-in grounding tool.
+        OpenAI:  ``web_search_preview`` built-in tool, with an automatic
+                 fallback to a search-capable model name when the tool call
+                 is rejected (e.g. older langchain-openai that targets the
+                 Chat Completions API instead of the Responses API).
+        Others:  regular invoke (no search).
+        """
+        if provider_id == "gemini":
+            try:
+                llm_s = self.llm.bind_tools([{"google_search": {}}])
+                return self._call_with_retry(llm_s.invoke, prompt)
+            except Exception:  # noqa: BLE001
+                return self.invoke(prompt)
+
+        if provider_id == "openai":
+            # Strategy 1: web_search_preview built-in tool (Responses API path,
+            # requires langchain-openai ≥ 0.3 compiled against the Responses API).
+            try:
+                llm_s = self.llm.bind_tools([{"type": "web_search_preview"}])
+                return self._call_with_retry(llm_s.invoke, prompt)
+            except Exception:  # noqa: BLE001
+                pass
+
+            # Strategy 2: swap to the search-capable model variant directly.
+            # gpt-4o → gpt-4o-search-preview, gpt-4o-mini → gpt-4o-mini-search-preview.
+            try:
+                _SEARCH_MODEL_MAP = {
+                    "gpt-4o":      "gpt-4o-search-preview",
+                    "gpt-4o-mini": "gpt-4o-mini-search-preview",
+                }
+                current = (
+                    getattr(self.llm, "model_name", None)
+                    or getattr(self.llm, "model", "")
+                )
+                search_model = _SEARCH_MODEL_MAP.get(current)
+                if search_model:
+                    from langchain_openai import ChatOpenAI as _ChatOpenAI
+                    _kw: dict = {"model": search_model}
+                    # Carry over the API key if it's stored on the existing llm.
+                    _key = (
+                        getattr(self.llm, "openai_api_key", None)
+                        or getattr(self.llm, "api_key", None)
+                    )
+                    if _key:
+                        _kw["openai_api_key"] = _key
+                    llm_s = _ChatOpenAI(**_kw)
+                    return self._call_with_retry(llm_s.invoke, prompt)
+            except Exception:  # noqa: BLE001
+                pass
+
+            # Final fallback: regular invoke without search.
+            return self.invoke(prompt)
+
+        # All other providers — no search support.
+        return self.invoke(prompt)
+
     def generate_structured(self, output_model: type, prompt: Any) -> Any:
         structured_llm = self.llm.with_structured_output(output_model)
         return self._call_with_retry(structured_llm.invoke, prompt)

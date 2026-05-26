@@ -356,6 +356,16 @@ class AppearanceMixin:
         except Exception:
             pass
 
+        # ── Search / upload button state after theme colours are reset ────────
+        try:
+            self._refresh_search_btn()
+        except Exception:
+            pass
+        try:
+            self._update_tool_btns()
+        except Exception:
+            pass
+
         if reconfigure_tags:
             self._reconfigure_chat_tags()
 
@@ -458,6 +468,12 @@ class AppearanceMixin:
             self._cancel_btn.update_style(font=("TkDefaultFont", _ctrl_size, "bold"))
         except Exception:
             pass
+        # Search and upload icon buttons
+        try:
+            for _btn in (self._search_btn, self._upload_btn):
+                _btn.update_style(font=("TkDefaultFont", max(_ctrl_size, 12)))
+        except Exception:
+            pass
         # Re-apply tag fonts with the new size
         self._reconfigure_chat_tags()
 
@@ -520,7 +536,15 @@ class AppearanceMixin:
         _saved_font  = self._font_size_var.get()
         _saved_lang  = self._language_var.get()
 
-        frm = tk.Frame(win, bg=_wbg, padx=20, pady=18)
+        _cbg   = c.get("text_bg", "#ffffff")    # card fill
+        _brd   = c.get("input_border", "#cdd4e8")
+
+        # Outer padding frame (window_bg) → inner card (text_bg)
+        outer = tk.Frame(win, bg=_wbg, padx=12, pady=12)
+        outer.pack(fill="both", expand=True)
+
+        frm = tk.Frame(outer, bg=_cbg, padx=20, pady=18,
+                       highlightthickness=1, highlightbackground=_brd)
         frm.pack(fill="both", expand=True)
         frm.columnconfigure(1, weight=1)
         row = 0
@@ -528,7 +552,7 @@ class AppearanceMixin:
         # ── Appearance section ────────────────────────────────────────
         # Section header label
         tk.Label(frm, text=self._t("appearance_section"),
-                 bg=_wbg, fg=_fg,
+                 bg=_cbg, fg=_fg,
                  font=("TkDefaultFont", _sz, "bold"),
                  anchor="w").grid(row=row, column=0, columnspan=3,
                                   sticky="w", pady=(0, 10))
@@ -540,29 +564,29 @@ class AppearanceMixin:
 
         # Color mode
         tk.Label(frm, text=self._t("color_mode_label"),
-                 bg=_wbg, fg=_fg,
+                 bg=_cbg, fg=_fg,
                  font=("TkDefaultFont", _sz)).grid(
             row=row, column=0, sticky="w", padx=(0, 10), pady=(0, 8))
-        _cm_row = tk.Frame(frm, bg=_wbg)
+        _cm_row = tk.Frame(frm, bg=_cbg)
         _cm_row.grid(row=row, column=1, columnspan=2, sticky="w", pady=(0, 8))
         for _val, _key in [("light", "light_mode"), ("dark", "dark_mode")]:
             tk.Radiobutton(
                 _cm_row, text=self._t(_key), value=_val,
                 variable=self._color_mode_var,
                 command=self._apply_theme,
-                bg=_wbg, fg=_fg,
-                activebackground=_wbg, activeforeground=_fg,
-                selectcolor=_wbg,
+                bg=_cbg, fg=_fg,
+                activebackground=_cbg, activeforeground=_fg,
+                selectcolor=_cbg,
                 relief="flat", bd=0, highlightthickness=0,
             ).pack(side="left", padx=(0, 12))
         row += 1
 
         # Font size
         tk.Label(frm, text=self._t("font_size_label"),
-                 bg=_wbg, fg=_fg,
+                 bg=_cbg, fg=_fg,
                  font=("TkDefaultFont", _sz)).grid(
             row=row, column=0, sticky="w", padx=(0, 10), pady=(0, 8))
-        _fs_row = tk.Frame(frm, bg=_wbg)
+        _fs_row = tk.Frame(frm, bg=_cbg)
         _fs_row.grid(row=row, column=1, columnspan=2, sticky="w", pady=(0, 8))
         for _val, _key in [("small", "font_small"), ("medium", "font_medium"),
                             ("large", "font_large")]:
@@ -570,27 +594,27 @@ class AppearanceMixin:
                 _fs_row, text=self._t(_key), value=_val,
                 variable=self._font_size_var,
                 command=self._apply_font_size,
-                bg=_wbg, fg=_fg,
-                activebackground=_wbg, activeforeground=_fg,
-                selectcolor=_wbg,
+                bg=_cbg, fg=_fg,
+                activebackground=_cbg, activeforeground=_fg,
+                selectcolor=_cbg,
                 relief="flat", bd=0, highlightthickness=0,
             ).pack(side="left", padx=(0, 12))
         row += 1
 
         # Language
         tk.Label(frm, text=self._t("language_label"),
-                 bg=_wbg, fg=_fg,
+                 bg=_cbg, fg=_fg,
                  font=("TkDefaultFont", _sz)).grid(
             row=row, column=0, sticky="w", padx=(0, 10), pady=(0, 10))
-        _lang_row = tk.Frame(frm, bg=_wbg)
+        _lang_row = tk.Frame(frm, bg=_cbg)
         _lang_row.grid(row=row, column=1, columnspan=2, sticky="w", pady=(0, 10))
         for _val, _display in [("en", "English"), ("zh_CN", "中文（简体）")]:
             tk.Radiobutton(
                 _lang_row, text=_display, value=_val,
                 variable=self._language_var,
-                bg=_wbg, fg=_fg,
-                activebackground=_wbg, activeforeground=_fg,
-                selectcolor=_wbg,
+                bg=_cbg, fg=_fg,
+                activebackground=_cbg, activeforeground=_fg,
+                selectcolor=_cbg,
                 relief="flat", bd=0, highlightthickness=0,
             ).pack(side="left", padx=(0, 12))
         row += 1
@@ -602,13 +626,13 @@ class AppearanceMixin:
 
         # ── App data folder section ───────────────────────────────────
         tk.Label(frm, text=self._t("app_data_label"),
-                 bg=_wbg, fg=_fg,
+                 bg=_cbg, fg=_fg,
                  font=("TkDefaultFont", _sz, "bold"),
                  anchor="w").grid(row=row, column=0, columnspan=3,
                                   sticky="w", pady=(0, 4))
         row += 1
         tk.Label(frm, text=self._t("app_data_hint"),
-                 bg=_wbg, fg=_sfg,
+                 bg=_cbg, fg=_sfg,
                  font=("TkDefaultFont", _nsz),
                  justify="left", anchor="w",
                  ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 8))
@@ -636,8 +660,8 @@ class AppearanceMixin:
 
         _browse_chip = _RoundedChip(
             frm, text="Browse…",
-            chip_bg=_wbg, chip_fg=_fg,
-            parent_bg=_wbg,
+            chip_bg=_cbg, chip_fg=_fg,
+            parent_bg=_cbg,
             font=("TkDefaultFont", _sz),
             padx=12, pady=4,
             outline=_border, outline_width=1,
@@ -653,7 +677,7 @@ class AppearanceMixin:
         row += 1
 
         # ── Buttons ───────────────────────────────────────────────────
-        btn_row = tk.Frame(frm, bg=_wbg)
+        btn_row = tk.Frame(frm, bg=_cbg)
         btn_row.grid(row=row, column=0, columnspan=3, sticky="e")
 
         def _save() -> None:
@@ -690,7 +714,7 @@ class AppearanceMixin:
         _RoundedChip(
             btn_row, text=self._t("save"),
             chip_bg=_pbg, chip_fg=_pfg,
-            parent_bg=_wbg,
+            parent_bg=_cbg,
             font=("TkDefaultFont", _sz, "bold"),
             padx=16, pady=6,
             hover_bg=_phov,
@@ -698,8 +722,8 @@ class AppearanceMixin:
         ).pack(side="left", padx=(0, 8))
         _RoundedChip(
             btn_row, text=self._t("cancel_btn"),
-            chip_bg=_wbg, chip_fg=_fg,
-            parent_bg=_wbg,
+            chip_bg=_cbg, chip_fg=_fg,
+            parent_bg=_cbg,
             font=("TkDefaultFont", _sz),
             padx=16, pady=6,
             outline=_border, outline_width=1,
