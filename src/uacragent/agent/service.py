@@ -42,6 +42,7 @@ class AgentService:
         workspace_folder: Path | None = None,
         progress_cb: Callable[[str], None] | None = None,
         effort_level: str = "medium",
+        reasoning_mode: str = "quick",
     ) -> ReviewResult:
         """Compatibility wrapper that treats every input file as ``other``."""
         return self.run_end_to_end(
@@ -63,6 +64,7 @@ class AgentService:
             workspace_folder=workspace_folder,
             progress_cb=progress_cb,
             effort_level=effort_level,
+            reasoning_mode=reasoning_mode,
         )
 
     def run_end_to_end(
@@ -85,6 +87,7 @@ class AgentService:
         workspace_folder: Path | None = None,
         progress_cb: Callable[[str], None] | None = None,
         effort_level: str = "medium",
+        reasoning_mode: str = "quick",
     ) -> ReviewResult:
         plan, markdown, markdown_path = self.pipeline.run_end_to_end(
             classified_files=classified_files,
@@ -105,5 +108,6 @@ class AgentService:
             workspace_folder=workspace_folder,
             progress_cb=progress_cb,
             effort_level=effort_level,
+            reasoning_mode=reasoning_mode,
         )
         return ReviewResult(plan=plan, markdown=markdown, markdown_path=markdown_path)

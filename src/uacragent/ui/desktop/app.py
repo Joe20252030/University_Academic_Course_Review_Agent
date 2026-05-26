@@ -275,6 +275,11 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         else:
             self._effort_var = tk.StringVar(value="medium")
 
+        # Reasoning mode — persists across sessions (not reset on new session).
+        # Use hasattr so _on_new_session does not clobber the user's preference.
+        if not hasattr(self, "_reasoning_mode_var"):
+            self._reasoning_mode_var = tk.StringVar(value="quick")
+
         # ── Appearance vars (created once; never reset by _on_new_session) ──
         # Use hasattr so _on_new_session calling this method doesn't clobber them.
         if not hasattr(self, "_color_mode_var"):
@@ -815,6 +820,47 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         )
         self._effort_chip.pack(side="left", padx=(0, 6))
 
+        # ── Reasoning Mode chip — sits to the right of Effort ─────────────
+        # A lightweight visual separator so the two control groups read as
+        # distinct but related.  No bold or coloured divider — a 1-px gap
+        # with subtle colouring is enough.
+        self._reasoning_sep_lbl = tk.Label(
+            effort_left, text="|",
+            bg=_c0["input_bg"],
+            fg=_c0.get("input_border", "#cdd4e8"),
+            font=("TkDefaultFont", 11),
+        )
+        self._reasoning_sep_lbl.pack(side="left", padx=(0, 8))
+        self._input_block_bgs.append(self._reasoning_sep_lbl)
+        # Register in _effort_flat_widgets so _apply_font_size() scales it
+        self._effort_flat_widgets.append(self._reasoning_sep_lbl)
+
+        self._reasoning_lbl = tk.Label(
+            effort_left, text=self._t("reasoning_mode_label"),
+            bg=_c0["input_bg"], fg=_c0.get("status_fg", "#6b7280"),
+            font=("TkDefaultFont", 11),
+        )
+        self._reasoning_lbl.pack(side="left", padx=(0, 4))
+        self._input_block_bgs.append(self._reasoning_lbl)
+        # Register in _effort_flat_widgets so _apply_font_size() scales it
+        self._effort_flat_widgets.append(self._reasoning_lbl)
+        self._i18n_widgets.append((self._reasoning_lbl, "text", "reasoning_mode_label"))
+
+        self._reasoning_chip = _RoundedChip(
+            effort_left,
+            text=self._reasoning_chip_text(),
+            chip_bg=_c0.get("qa_bg", "#edf0f8"),
+            chip_fg=_c0["input_fg"],
+            parent_bg=_c0["input_bg"],
+            font=("TkDefaultFont", 11),
+            padx=9, pady=4,
+            hover_bg=_c0.get("qa_bg_hover", _c0.get("qa_bg", "#edf0f8")),
+            outline=_c0.get("input_border", "#cdd4e8"),
+            outline_width=1,
+            command=self._show_reasoning_menu,
+        )
+        self._reasoning_chip.pack(side="left", padx=(0, 6))
+
         right_ctrls = tk.Frame(controls_row, bg=_c0["input_bg"])
         right_ctrls.grid(row=0, column=2, sticky="e")
         self._input_block_bgs.append(right_ctrls)
@@ -943,6 +989,49 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         self._effort_var.set(level)
         try:
             self._effort_chip.set_text(self._effort_chip_text())
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # Reasoning mode chip helpers
+    # ------------------------------------------------------------------
+
+    def _reasoning_chip_text(self) -> str:
+        """Return the reasoning chip label — current mode display name + caret."""
+        mode = (
+            self._reasoning_mode_var.get()
+            if hasattr(self, "_reasoning_mode_var")
+            else "quick"
+        )
+        return f"{self._t(mode)} ▾"
+
+    def _show_reasoning_menu(self) -> None:
+        """Show a popup menu below the reasoning chip to switch the mode."""
+        menu = tk.Menu(self.winfo_toplevel(), tearoff=0)
+        for _mode, _desc_key in (
+            ("quick", "reasoning_quick_desc"),
+            ("deep",  "reasoning_deep_desc"),
+        ):
+            label = f"{self._t(_mode)} — {self._t(_desc_key)}"
+            menu.add_command(
+                label=label,
+                command=lambda m=_mode: self._select_reasoning_mode(m),
+            )
+        try:
+            x = self._reasoning_chip.winfo_rootx()
+            y = (
+                self._reasoning_chip.winfo_rooty()
+                + self._reasoning_chip.winfo_height()
+            )
+            menu.tk_popup(x, y)
+        finally:
+            menu.grab_release()
+
+    def _select_reasoning_mode(self, mode: str) -> None:
+        """Set the reasoning mode and refresh the chip text."""
+        self._reasoning_mode_var.set(mode)
+        try:
+            self._reasoning_chip.set_text(self._reasoning_chip_text())
         except Exception:
             pass
 

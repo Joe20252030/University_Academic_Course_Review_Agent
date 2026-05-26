@@ -45,6 +45,23 @@ class EffortLevel(str, Enum):
     high   = "high"
 
 
+class ReasoningMode(str, Enum):
+    """User-selectable reasoning depth for document generation.
+
+    This is NOT a paid vs. premium distinction.  Both modes are available
+    to all users.  The difference is purely about token consumption, API
+    usage, latency, and output depth.
+
+    Quick  — single-pass reasoning; fast, low token usage.  Suitable for
+             quick studying or a limited API budget.
+    Deep   — multi-stage pipeline: topic extraction → enhanced retrieval →
+             section writing → critic verification.  Higher quality,
+             more comprehensive, greater token usage.
+    """
+    quick = "quick"
+    deep  = "deep"
+
+
 class DocumentType(str, Enum):
     """Classification of course materials for targeted processing."""
     syllabus = "syllabus"

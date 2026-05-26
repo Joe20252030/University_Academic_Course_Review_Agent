@@ -365,6 +365,7 @@ class ConversationAgent:
         session: AgentSession,
         progress_cb: Callable[[str], None] | None = None,
         effort_level: str = "medium",
+        reasoning_mode: str = "quick",
         language: str = "en",
         search_enabled: bool = False,
         attachments: list | None = None,
@@ -374,6 +375,11 @@ class ConversationAgent:
         *effort_level* controls how much retrieved context is injected into the
         system prompt and how deeply the generation pipeline samples the corpus.
         Valid values: ``"low"``, ``"medium"`` (default), ``"high"``.
+
+        *reasoning_mode* selects the reasoning pipeline depth used when a
+        generation task is triggered.  ``"quick"`` (default) uses a single-pass
+        approach for faster, lower-cost output; ``"deep"`` enables structured
+        topic extraction and a critic refinement pass for higher quality.
 
         *language* steers the LLM's response language via the system prompt
         and is used to localise any agent-generated error or status text
@@ -437,7 +443,8 @@ class ConversationAgent:
             else:
                 try:
                     output_path = self._run_task(
-                        task_type, session, progress_cb, effort_level, language
+                        task_type, session, progress_cb,
+                        effort_level, reasoning_mode, language,
                     )
                 except Exception as exc:  # noqa: BLE001
                     generation_error = _ls(language, _CHAT_STRINGS, "gen_failed", exc=exc)
@@ -568,6 +575,7 @@ class ConversationAgent:
         session: AgentSession,
         progress_cb: Callable[[str], None] | None = None,
         effort_level: str = "medium",
+        reasoning_mode: str = "quick",
         language: str = "en",
     ) -> str:
         """Run the generation pipeline and return the output markdown path."""
@@ -598,6 +606,7 @@ class ConversationAgent:
             workspace_folder=session.workspace_folder,
             progress_cb=progress_cb,
             effort_level=effort_level,
+            reasoning_mode=reasoning_mode,
             language=language,
         )
         return md_path

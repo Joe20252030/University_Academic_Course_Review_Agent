@@ -684,13 +684,18 @@ class ChatMixin:
         self._append_chat("user", message)
         self._set_busy(True, self._t("thinking"))
 
-        # Capture export format, effort level, language, session, and agent NOW
-        # — before the background thread runs — so that UI changes mid-flight
-        # cannot affect which format/effort/language/settings are used (TOCTOU fix).
+        # Capture export format, effort level, reasoning mode, language, session,
+        # and agent NOW — before the background thread runs — so that UI changes
+        # mid-flight cannot affect which settings are used (TOCTOU fix).
         # Capturing the agent here (main thread) avoids calling get_settings()
         # from the background thread while the main thread may be writing os.environ.
-        export_fmt      = self._export_format_var.get()
-        effort_level    = self._effort_var.get()
+        export_fmt       = self._export_format_var.get()
+        effort_level     = self._effort_var.get()
+        reasoning_mode   = (
+            self._reasoning_mode_var.get()
+            if hasattr(self, "_reasoning_mode_var")
+            else "quick"
+        )
         captured_lang   = self._language_var.get()
         captured_session = self._session
         captured_agent   = self._get_agent()
@@ -714,6 +719,7 @@ class ChatMixin:
                     message, captured_session,
                     progress_cb=_progress,
                     effort_level=effort_level,
+                    reasoning_mode=reasoning_mode,
                     language=captured_lang,
                     search_enabled=captured_search,
                     attachments=captured_attachments,

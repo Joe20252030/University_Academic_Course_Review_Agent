@@ -17,6 +17,12 @@ from uacragent.export.markdown import save_markdown
 from uacragent.domain.models import ReviewPlan, SectionSpec
 from uacragent.domain.errors import IngestError, LLMError, ParseError
 from uacragent.domain.types import DocumentType, TaskType
+from uacragent.agent.reasoning import (
+    get_reasoning_config,
+    extract_topics,
+    build_topic_context,
+    apply_critic_pass,
+)
 from uacragent.infra.llm import LLMClient
 from uacragent.infra.loaders import DocumentLoader
 from uacragent.infra.settings import Settings
@@ -194,8 +200,20 @@ def generate_plan(
     llm_client: LLMClient,
     max_docs: int = 20,
     chars_per_doc: int = 800,
+    _outline_override: str | None = None,
 ) -> ReviewPlan:
-    outline_text = build_outline(docs, max_docs=max_docs, chars_per_doc=chars_per_doc)
+    """Generate a :class:`ReviewPlan` from document chunks.
+
+    *_outline_override* allows the caller to supply a pre-built (and
+    optionally augmented) outline string instead of building it from scratch.
+    Used by the Deep Analysis path to inject topic-priority context into the
+    planner prompt without rebuilding the outline a second time.
+    """
+    outline_text = (
+        _outline_override
+        if _outline_override is not None
+        else build_outline(docs, max_docs=max_docs, chars_per_doc=chars_per_doc)
+    )
 
     task_type = TaskType(user_prefs.get("task_type", "review_summary"))
     planner_file, _ = _get_prompt_files(task_type)
@@ -273,6 +291,7 @@ def write_sections_sequential(
     user_prefs: dict | None = None,
     request_delay: float = 6.0,
     progress_cb: Callable[[str], None] | None = None,
+    enable_critic: bool = False,
 ) -> list[str]:
     """Write sections one at a time with a delay between each LLM call.
 
@@ -282,13 +301,35 @@ def write_sections_sequential(
     previous call took. In normal app usage this value comes from
     ``Settings.llm_request_delay``, which is usually controlled through the
     selected ``RATE_TIER``.
+
+    When *enable_critic* is ``True`` (Deep Analysis mode), each section is
+    passed through a refinement LLM call after the initial write.  A separate
+    inter-call delay is inserted after the critic call as well to respect rate
+    limits.  The critic pass counts as an additional LLM call per section.
     """
     results: list[str] = []
     n = len(sections)
     for i, section in enumerate(sections):
         if progress_cb:
             progress_cb(f"Writing section {i + 1}/{n}: {section.title}…")
-        results.append(write_section(section, retriever, llm_client, user_prefs))
+        text = write_section(section, retriever, llm_client, user_prefs)
+
+        # Deep Analysis: run a refinement / critic pass on each section.
+        if enable_critic:
+            if progress_cb:
+                progress_cb(
+                    f"Reviewing section {i + 1}/{n}: {section.title}…"
+                )
+            time.sleep(request_delay)      # rate-limit before the critic call
+            text = apply_critic_pass(
+                section_text=text,
+                section_title=section.title,
+                key_topics=list(section.key_topics),
+                llm_client=llm_client,
+            )
+
+        results.append(text)
+
         if i < n - 1:                      # no delay after the last section
             time.sleep(request_delay)
     return results
@@ -478,12 +519,18 @@ class AgentPipeline:
         workspace_folder: "Path | None" = None,
         progress_cb: Callable[[str], None] | None = None,
         effort_level: str = "medium",
+        reasoning_mode: str = "quick",
         language: str = "en",
     ) -> tuple[ReviewPlan, str, str]:
         """Run the full RAG pipeline with classified documents.
 
         *workspace_folder*, if supplied, is used as the workspace root
         directly instead of the auto-computed path under the app data dir.
+
+        *reasoning_mode* selects the depth of the generation pipeline:
+
+        - ``"quick"``  — single-pass, lower token usage, faster response.
+        - ``"deep"``   — topic extraction + critic refinement, higher quality.
 
         Returns:
             Tuple of (ReviewPlan, markdown content, markdown file path)
@@ -512,14 +559,26 @@ class AgentPipeline:
         vectorstore = get_or_create_vectorstore(chunks, self.settings, ws,
                                                 classified_files=classified_files)
 
-        # Build a task-type-aware retriever whose k is scaled to effort level.
-        # WeightedDocTypeRetriever allocates more k slots to higher-priority
-        # doc types (e.g. past_exam gets 3× weight for exam_prediction tasks).
+        # ── Apply reasoning mode scales on top of effort config ──────────────
+        # Both axes (effort level and reasoning mode) are independent sliders:
+        # effort controls absolute retrieval size; reasoning mode scales it
+        # further to reflect quick vs. deep pipeline requirements.
         effort = get_effort_config(effort_level)
+        reasoning_cfg = get_reasoning_config(reasoning_mode)
+
+        scaled_k = max(1, int(effort.retriever_k * reasoning_cfg.retriever_k_scale))
+        scaled_chars = max(200, int(effort.outline_chars * reasoning_cfg.outline_chars_scale))
+        scaled_max_docs = max(5, int(
+            effort.outline_max_docs * reasoning_cfg.outline_max_docs_scale
+        ))
+
+        # Build a task-type-aware retriever whose k is scaled to effort level
+        # and reasoning mode.  WeightedDocTypeRetriever allocates more k slots
+        # to higher-priority doc types (e.g. past_exam for exam_prediction).
         tt = TaskType(task_type)
         retriever = build_weighted_retriever(
             vectorstore,
-            k=effort.retriever_k,
+            k=scaled_k,
             task_type=tt,
             classified_files=classified_files,
         )
@@ -542,15 +601,42 @@ class AgentPipeline:
             "exam_info": exam_info,
         }
 
+        # ── Deep Analysis: structured topic extraction ────────────────────────
+        # Before building the plan outline, extract a ranked list of
+        # exam-relevant topics from the documents.  The topic priority block
+        # is appended to the outline text so the planner can weight its
+        # section selection toward high-importance topics.
+        outline_text = build_outline(chunks, max_docs=scaled_max_docs,
+                                     chars_per_doc=scaled_chars)
+        if reasoning_cfg.enable_topic_extraction:
+            _progress("Deep Analysis: extracting topic priorities…")
+            topic_list = extract_topics(outline_text, user_prefs, self.llm_client)
+            topic_block = build_topic_context(topic_list)
+            if topic_block:
+                outline_text = outline_text + topic_block
+                _progress(
+                    f"Deep Analysis: {len(topic_list.topics)} topics identified."
+                    if topic_list else "Deep Analysis: topic extraction skipped."
+                )
+
         _progress("Generating study plan…")
         plan = generate_plan(
             chunks, user_prefs, self.llm_client,
-            max_docs=effort.outline_max_docs,
-            chars_per_doc=effort.outline_chars,
+            max_docs=scaled_max_docs,
+            chars_per_doc=scaled_chars,
+            _outline_override=outline_text,
         )
 
         if not plan.sections:
             raise LLMError("Generated an empty plan (no sections). Try again or adjust the prompt.")
+
+        # ── Apply section cap (Quick mode limits to N sections) ───────────────
+        if reasoning_cfg.max_sections and len(plan.sections) > reasoning_cfg.max_sections:
+            # Preserve the most important sections ranked by planner importance.
+            top_sections = sorted(
+                plan.sections, key=lambda s: s.importance, reverse=True
+            )[: reasoning_cfg.max_sections]
+            plan = plan.model_copy(update={"sections": top_sections})
 
         section_texts = write_sections_sequential(
             plan.sections,
@@ -559,6 +645,7 @@ class AgentPipeline:
             user_prefs,
             request_delay=self.settings.llm_request_delay,
             progress_cb=progress_cb,
+            enable_critic=reasoning_cfg.enable_critic_pass,
         )
 
         # For exam_prediction, generate the full predicted exam paper (Part B)

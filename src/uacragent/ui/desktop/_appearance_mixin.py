@@ -370,8 +370,32 @@ class AppearanceMixin:
             self._reconfigure_chat_tags()
 
     def _reconfigure_chat_tags(self) -> None:
-        """No-op: chat now uses widget-based rounded bubbles (no tk.Text tags)."""
-        pass
+        """Re-render existing chat bubbles at the current font size.
+
+        Chat messages are ``tk.Label`` widgets created at message-append time
+        with the font size that was active then.  When the user changes the
+        font size those already-created labels are not automatically updated by
+        tkinter's named-font mechanism (they carry explicit tuple fonts, not
+        named-font references).
+
+        The cleanest fix is to destroy all bubble widgets and re-append every
+        message from the session's chat history, which calls ``_append_chat``
+        fresh and picks up the new ``_font_size()`` value.  This is exactly
+        what ``_replay_chat_history`` does.
+
+        Only runs when a session with loaded history is active; otherwise it
+        is a fast no-op.
+        """
+        try:
+            if not getattr(self, "_session", None):
+                return
+            if not self._session.chat_history:
+                return
+            # Clear existing bubble widgets and re-render from stored history.
+            self._clear_chat()
+            self._replay_chat_history()
+        except Exception:
+            pass
 
     def _font_size(self) -> int:
         """Return the current font size as an integer."""
@@ -453,6 +477,11 @@ class AppearanceMixin:
             self._effort_chip.update_style(font=("TkDefaultFont", _ctrl_size))
         except Exception:
             pass
+        # Reasoning mode chip (same control size as effort chip)
+        try:
+            self._reasoning_chip.update_style(font=("TkDefaultFont", _ctrl_size))
+        except Exception:
+            pass
         # Session Settings (_RoundedChip)
         try:
             self._sess_settings_btn.update_style(font=("TkDefaultFont", _ctrl_size))
@@ -487,6 +516,11 @@ class AppearanceMixin:
         # Effort chip text is dynamic (current level name changes with language)
         try:
             self._effort_chip.set_text(self._effort_chip_text())
+        except Exception:
+            pass
+        # Reasoning chip text also uses localised mode names
+        try:
+            self._reasoning_chip.set_text(self._reasoning_chip_text())
         except Exception:
             pass
         # Update the ⋯ popup menu labels in the session list
