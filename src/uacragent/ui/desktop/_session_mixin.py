@@ -22,8 +22,38 @@ class SessionMixin:
     """Mixin: session-list panel — refresh, select, new, delete, rename, load."""
     def _refresh_session_list(self) -> None:
         self._session_records = list_sessions()
+        # Apply search filter so the list stays consistent with the query.
+        query = getattr(self, "_search_var", None)
+        query = query.get().strip().lower() if query else ""
+        if query:
+            visible = [r for r in self._session_records
+                       if query in (r.get("course_name") or "").lower()]
+        else:
+            visible = self._session_records
+        # Track which records are currently shown so _on_session_select,
+        # _on_rename_session, and _on_delete_session index into the right list.
+        self._visible_records = visible
         active_ws = self._session.workspace_folder if self._workspace_committed else None
-        self._session_list.refresh(self._session_records, active_ws)
+        self._session_list.refresh(visible, active_ws)
+
+    def _on_search_changed(self) -> None:
+        """Re-filter the visible session list whenever the search query changes.
+
+        Filters the in-memory ``_session_records`` list without hitting disk
+        again — fast enough for real-time keystroke filtering.
+        """
+        if not hasattr(self, "_session_records") or not hasattr(self, "_session_list"):
+            return
+        query = getattr(self, "_search_var", None)
+        query = query.get().strip().lower() if query else ""
+        if query:
+            visible = [r for r in self._session_records
+                       if query in (r.get("course_name") or "").lower()]
+        else:
+            visible = self._session_records
+        self._visible_records = visible
+        active_ws = self._session.workspace_folder if self._workspace_committed else None
+        self._session_list.refresh(visible, active_ws)
 
     def _on_session_select(self, idx: int = None) -> None:
         if idx is None:
@@ -31,9 +61,16 @@ class SessionMixin:
             if not sel:
                 return
             idx = sel[0]
-        if idx >= len(self._session_records):
+        visible = getattr(self, "_visible_records", self._session_records)
+        if idx >= len(visible):
             return
-        ws = Path(self._session_records[idx]["workspace"])
+        ws = Path(visible[idx]["workspace"])
+        # Return keyboard focus to the main window so the search entry
+        # stops capturing keystrokes after a session is selected.
+        try:
+            self.focus_set()
+        except Exception:
+            pass
         self._set_chat_active(True)
         # Load metadata + replay history immediately, then attach retriever.
         self._load_session_from_workspace(ws)
@@ -52,9 +89,11 @@ class SessionMixin:
         self._sync_vars_from_session()     # pushes inherited provider/model into vars
         self._set_chat_active(True)
         self._header_course_var.set(self._t("new_session_header"))
-        self._session_status_var.set(self._t("new_session_hint"))
+        self._session_status_var.set("")
         self._clear_chat()
         self._show_welcome()
+        # Hint shown as a system message in chat so the title row stays clean.
+        self._append_chat("system", self._t("new_session_hint"))
         self._open_settings()
 
     def _on_delete_session(self, idx: int = None) -> None:
@@ -65,9 +104,10 @@ class SessionMixin:
                 self._t("mb_delete_session_title"),
                 self._t("mb_delete_session_select"))
             return
-        if idx >= len(self._session_records):
+        visible = getattr(self, "_visible_records", self._session_records)
+        if idx >= len(visible):
             return
-        rec = self._session_records[idx]
+        rec = visible[idx]
         name = rec.get("course_name") or Path(rec["workspace"]).name
         if not self._show_confirm_dialog(
             self._t("mb_delete_session_title"),
@@ -109,9 +149,10 @@ class SessionMixin:
                 self._t("mb_rename_session_title"),
                 self._t("mb_rename_session_select"))
             return
-        if idx >= len(self._session_records):
+        visible = getattr(self, "_visible_records", self._session_records)
+        if idx >= len(visible):
             return
-        rec = self._session_records[idx]
+        rec = visible[idx]
         current_name = (rec.get("display_name")
                         or rec.get("course_name")
                         or Path(rec["workspace"]).name)

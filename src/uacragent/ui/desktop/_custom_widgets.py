@@ -38,6 +38,104 @@ import tkinter as tk
 # Drawing helper
 # ---------------------------------------------------------------------------
 
+def draw_left_rounded_rect(
+    canvas: tk.Canvas,
+    x1: float, y1: float,
+    x2: float, y2: float,
+    r: float,
+    n: int = 14,
+    **kw,
+) -> int:
+    """Draw a rectangle that is rounded only on the left side.
+
+    The right edge (x2) stays perfectly straight.  The top-left and
+    bottom-left corners are drawn as smooth arcs with radius *r*.
+    Uses explicit arc points (``smooth=False``) for pixel-exact corners.
+
+    Polygon winds clockwise:
+      top-right → bottom-right → bottom-left arc → left edge up →
+      top-left arc → top edge back to start.
+    """
+    import math
+    r = max(0.0, min(r, (x2 - x1) / 2, (y2 - y1) / 2))
+    pts: list[float] = []
+
+    # Top-right corner — square
+    pts += [x2, y1]
+
+    # Bottom-right corner — square
+    pts += [x2, y2]
+
+    # Bottom-left arc: sweep from 90° → 180°
+    #   start  (90°):  (x1+r, y2)      — bottom edge just before corner
+    #   end   (180°):  (x1,   y2-r)    — left edge just below corner
+    cx, cy = x1 + r, y2 - r
+    for i in range(n + 1):
+        a = math.radians(90 + 90 * i / n)
+        pts += [cx + r * math.cos(a), cy + r * math.sin(a)]
+
+    # Top-left arc: sweep from 180° → 270°
+    #   start (180°):  (x1,   y1+r)    — left edge just above corner
+    #   end   (270°):  (x1+r, y1)      — top edge just after corner
+    cx, cy = x1 + r, y1 + r
+    for i in range(n + 1):
+        a = math.radians(180 + 90 * i / n)
+        pts += [cx + r * math.cos(a), cy + r * math.sin(a)]
+
+    # Polygon auto-closes (x1+r, y1) → (x2, y1) along the top edge.
+    return canvas.create_polygon(pts, smooth=False, **kw)
+
+
+def draw_right_rounded_rect(
+    canvas: tk.Canvas,
+    x1: float, y1: float,
+    x2: float, y2: float,
+    r: float,
+    n: int = 14,
+    **kw,
+) -> int:
+    """Draw a rectangle that is rounded only on the right side.
+
+    The left edge (x1) stays perfectly straight.  The top-right and
+    bottom-right corners are drawn as smooth arcs with radius *r*.
+    Uses explicit arc points (``smooth=False``) so the left corners are
+    pixel-perfect squares and no B-spline bleed-over occurs.
+
+    Parameters
+    ----------
+    canvas:  Target canvas widget.
+    x1, y1: Top-left corner (inclusive).
+    x2, y2: Bottom-right corner (inclusive).
+    r:       Corner radius for the right-side corners.
+    n:       Number of arc segments (higher = smoother, default 14).
+    **kw:    Any ``canvas.create_polygon`` keyword args
+             (e.g. ``fill``, ``outline``, ``width``, ``tags``).
+    """
+    import math
+    r = max(0.0, min(r, (x2 - x1) / 2, (y2 - y1) / 2))
+    pts: list[float] = []
+
+    # Top-left corner — straight (square)
+    pts += [x1, y1]
+
+    # Top-right arc: sweep from 270° (top of arc) to 360°/0° (right of arc)
+    cx, cy = x2 - r, y1 + r
+    for i in range(n + 1):
+        a = math.radians(270 + 90 * i / n)
+        pts += [cx + r * math.cos(a), cy + r * math.sin(a)]
+
+    # Bottom-right arc: sweep from 0° to 90°
+    cx, cy = x2 - r, y2 - r
+    for i in range(n + 1):
+        a = math.radians(90 * i / n)
+        pts += [cx + r * math.cos(a), cy + r * math.sin(a)]
+
+    # Bottom-left corner — straight (square); polygon auto-closes along left edge
+    pts += [x1, y2]
+
+    return canvas.create_polygon(pts, smooth=False, **kw)
+
+
 def draw_rounded_rect(
     canvas: tk.Canvas,
     x1: float, y1: float,
@@ -284,6 +382,7 @@ class _RoundedChip(tk.Canvas):
         outline_width: int = 0,
         disabled_bg: str = "#c8c8c8",
         disabled_fg: str = "#888888",
+        text_anchor: str = "center",
     ) -> None:
         self._text          = text
         self._chip_bg       = chip_bg
@@ -299,6 +398,7 @@ class _RoundedChip(tk.Canvas):
         self._disabled_fg   = disabled_fg
         self._hovered       = False
         self._enabled       = True
+        self._text_anchor   = text_anchor
 
         # Measure required canvas size via a throw-away Label
         _tmp = tk.Label(parent, text=text, font=font)
@@ -365,13 +465,23 @@ class _RoundedChip(tk.Canvas):
             width=self._outline_width,
             tags="chip",
         )
-        self.create_text(
-            w // 2, h // 2,
-            text=self._text,
-            fill=text_fg,
-            font=self._font,
-            tags="chip",
-        )
+        if self._text_anchor == "w":
+            self.create_text(
+                self._padx, h // 2,
+                text=self._text,
+                fill=text_fg,
+                font=self._font,
+                anchor="w",
+                tags="chip",
+            )
+        else:
+            self.create_text(
+                w // 2, h // 2,
+                text=self._text,
+                fill=text_fg,
+                font=self._font,
+                tags="chip",
+            )
 
     # ------------------------------------------------------------------
     # Public API
@@ -405,6 +515,7 @@ class _RoundedChip(tk.Canvas):
         outline: str | None     = None,
         outline_width: int | None = None,
         font=None,
+        text_anchor: str | None = None,
     ) -> None:
         """Re-apply theme colours / font — call after every theme switch."""
         if text         is not None: self._text          = text
@@ -414,6 +525,7 @@ class _RoundedChip(tk.Canvas):
         if outline      is not None: self._outline       = outline
         if outline_width is not None: self._outline_width = outline_width
         if font         is not None: self._font          = font
+        if text_anchor  is not None: self._text_anchor   = text_anchor
         if parent_bg    is not None:
             tk.Canvas.configure(self, bg=parent_bg)
         self._redraw()

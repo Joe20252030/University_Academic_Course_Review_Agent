@@ -62,8 +62,9 @@ from ._ui_constants import (  # noqa: F401 (re-exports)
     _strip_markdown, _fmt_dt,
 )
 from ._custom_widgets import (
-    AutoHideScrollbar, draw_rounded_rect, CustomSessionList,
-    _RoundedChip, _SidebarIcon,
+    AutoHideScrollbar, draw_rounded_rect,
+    draw_left_rounded_rect, draw_right_rounded_rect,
+    CustomSessionList, _RoundedChip, _SidebarIcon,
 )
 from ._appearance_mixin import AppearanceMixin
 from ._settings_mixin import SettingsMixin
@@ -297,9 +298,13 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
         _mode0 = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
 
         # ── Content paned window ───────────────────────────────────────
+        _wbg0 = _THEME_COLORS.get(_mode0, _THEME_COLORS["light"])["window_bg"]
+        # sashwidth=8 gives a comfortable drag target; background=window_bg
+        # makes it invisible — the chat card's curved left edge is the only
+        # visible indicator of the resizable boundary.
         paned = tk.PanedWindow(self, orient="horizontal",
-                               sashwidth=4, sashrelief="flat",
-                               background="#c8d0e0")
+                               sashwidth=8, sashrelief="flat",
+                               background=_wbg0)
         paned.grid(row=0, column=0, sticky="nsew")
         self._paned = paned
 
@@ -309,44 +314,100 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
     # ── Session list pane ─────────────────────────────────────────────
 
     def _build_session_list_pane(self) -> None:
-        frame = ttk.Frame(self._paned, width=_SESSION_LIST_WIDTH,
-                          style="Sidebar.TFrame")
+        _mode0 = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
+        _c0    = _THEME_COLORS.get(_mode0, _THEME_COLORS["light"])
+        _wbg   = _c0["window_bg"]
+        _sbg   = _c0["sidebar_bg"]
+        _fg    = _c0.get("lb_fg", "#1a2744")
+        _st_fg = _c0.get("status_fg", "#9aa5be")
+        _brd   = _c0.get("input_border", "#cdd4e8")
+        _sz    = self._font_size() if hasattr(self, "_font_size_var") else 13
+
+        # Sidebar sits directly on the window background — no card, no border.
+        # The chat card's curved left edge is what visually separates the two.
+        frame = tk.Frame(self._paned, bg=_wbg, width=_SESSION_LIST_WIDTH)
         frame.grid_propagate(False)
-        # row 0: New Session button (fixed)
-        # row 1: session list (expands)
-        # row 2: thin separator (fixed)
-        # row 3: App Settings button (fixed)
-        frame.rowconfigure(1, weight=1)
+        # row 0: New Session chip    (fixed)
+        # row 1: Search bar          (fixed)
+        # row 2: "Sessions" label    (fixed)
+        # row 3: session list        (expands)
+        # row 4: thin separator      (fixed)
+        # row 5: App Settings chip   (fixed)
+        frame.rowconfigure(3, weight=1)
         frame.columnconfigure(0, weight=1)
         self._paned.add(frame, minsize=160, stretch="never")
-        self._sidebar_frame = frame   # kept for direct bg update in _apply_theme
+        self._sidebar_frame = frame   # kept for _toggle_sidebar / _apply_theme
 
-        # ── Resolve colours ───────────────────────────────────────────────────
-        _mode0 = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
-        _c0 = _THEME_COLORS.get(_mode0, _THEME_COLORS["light"])
-
-        # ── row 0: New Session button (full-width, top of sidebar) ───────────
-        _btn_new = ttk.Button(frame, text=self._t("new_session"),
-                              style="NewSession.TButton",
-                              takefocus=0,
-                              command=self._on_new_session)
-        _btn_new.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 4))
-        self._i18n_widgets.append((_btn_new, "text", "new_session"))
-
-        # ── row 1: Rounded-corner session list ───────────────────────────────
-        # A Canvas paints a filled rounded-rectangle in the list background
-        # colour; the canvas bg matches the sidebar background so the curved
-        # corners look transparent.  CustomSessionList lives inside the inner
-        # Frame positioned over the rounded rect.
-        self._list_canvas = tk.Canvas(
-            frame,
-            bg=_c0["sidebar_bg"],
-            highlightthickness=0, bd=0,
+        # ── row 0: New Session chip (full-width, primary colour) ─────────────
+        # _RoundedChip placed with sticky="ew" stretches to fill the column
+        # because its <Configure> binding redraws the rounded rect at the new
+        # canvas width — the creation-time width= is just a layout hint.
+        self._new_session_btn = _RoundedChip(
+            frame, text=self._t("new_session"),
+            chip_bg=_wbg,
+            chip_fg=_fg,
+            parent_bg=_wbg,
+            font=("TkDefaultFont", _sz, "bold"),
+            padx=12, pady=7,
+            hover_bg=_c0.get("lb_hover_bg", "#dfe4f0"),
+            command=self._on_new_session,
+            text_anchor="w",
         )
-        self._list_canvas.grid(row=1, column=0, sticky="nsew", padx=6, pady=2)
+        self._new_session_btn.grid(row=0, column=0, sticky="ew",
+                                   padx=8, pady=(8, 4))
+        self._i18n_widgets.append((self._new_session_btn, "text", "new_session"))
 
-        # Inner frame: same background as the rounded-rect fill so its
-        # rectangular shape is invisible against the polygon fill.
+        # ── row 1: Search bar (rounded canvas + Entry) ───────────────────────
+        self._search_var = tk.StringVar()
+        self._search_outer = tk.Frame(frame, bg=_wbg)
+        self._search_outer.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 4))
+        self._search_outer.columnconfigure(0, weight=1)
+
+        # Canvas paints the rounded border; the Entry lives inside via
+        # create_window.  _redraw_search_cv() is called on <Configure> and
+        # after every theme/font change to keep colours and sizes in sync.
+        self._search_cv = tk.Canvas(
+            self._search_outer, bg=_wbg,
+            highlightthickness=0, bd=0, height=30,
+        )
+        self._search_cv.grid(row=0, column=0, sticky="ew")
+
+        self._search_entry = tk.Entry(
+            self._search_cv,
+            textvariable=self._search_var,
+            bg=_c0.get("input_bg", _c0.get("lb_bg", "#e8ecf5")),
+            fg=_fg,
+            insertbackground=_fg,
+            relief="flat", bd=0,
+            font=("TkDefaultFont", max(_sz - 1, 10)),
+            highlightthickness=0,
+        )
+        self._search_cv_win = self._search_cv.create_window(
+            28, 4, anchor="nw", window=self._search_entry,
+        )
+        self._search_cv.bind("<Configure>", lambda _e: self._redraw_search_cv())
+        self._search_var.trace_add("write", lambda *_: self._on_search_changed())
+        # Clicking the search canvas (outside the Entry) moves focus away from
+        # the Entry so stray keystrokes don't accumulate in the search box.
+        self._search_cv.bind("<Button-1>", lambda _e: self.focus_set(), add="+")
+
+        # ── row 2: "Sessions" section label ──────────────────────────────────
+        self._sessions_label = tk.Label(
+            frame, text=self._t("sessions"),
+            bg=_wbg, fg=_st_fg,
+            font=("TkDefaultFont", max(_sz - 2, 9)),
+            anchor="w",
+        )
+        self._sessions_label.grid(row=2, column=0, sticky="ew",
+                                   padx=12, pady=(0, 2))
+        self._i18n_widgets.append((self._sessions_label, "text", "sessions"))
+
+        # ── row 3: Rounded-corner session list (expands) ─────────────────────
+        self._list_canvas = tk.Canvas(
+            frame, bg=_wbg, highlightthickness=0, bd=0,
+        )
+        self._list_canvas.grid(row=3, column=0, sticky="nsew", padx=6, pady=2)
+
         self._list_inner = tk.Frame(self._list_canvas, bg=_c0["lb_bg"])
         self._list_inner.rowconfigure(0, weight=1)
         self._list_inner.columnconfigure(0, weight=1)
@@ -357,7 +418,6 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
             "<Configure>", lambda _e: self._redraw_list_canvas()
         )
 
-        # CustomSessionList replaces the old tk.Listbox + AutoHideScrollbar
         self._session_list = CustomSessionList(
             self._list_inner,
             on_select=self._on_session_select,
@@ -369,28 +429,42 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
         )
         self._session_list.grid(row=0, column=0, sticky="nsew")
 
-        # ── row 2: thin 1-px separator ────────────────────────────────────────
-        self._sidebar_sep = tk.Frame(frame, height=1, bg=_c0["paned_bg"])
-        self._sidebar_sep.grid(row=2, column=0, sticky="ew", padx=6)
+        # ── row 4: thin 1-px separator ───────────────────────────────────────
+        self._sidebar_sep = tk.Frame(frame, height=1, bg=_c0.get("input_border", "#cdd4e8"))
+        self._sidebar_sep.grid(row=4, column=0, sticky="ew", padx=6)
 
-        # ── row 3: App Settings button (bottom of sidebar) ───────────────────
-        self._gear_btn = ttk.Button(frame, text=self._t("app_settings"),
-                                    style="SidebarBottom.TButton",
-                                    takefocus=0,
-                                    command=self._open_app_settings)
-        self._gear_btn.grid(row=3, column=0, sticky="ew", padx=8, pady=(4, 8))
+        # ── row 5: App Settings — ghost chip (text always readable, bg blends
+        # into sidebar; hover highlights the pill) ────────────────────────────
+        # chip_bg == parent_bg → canvas is transparent, no pill visible until
+        # hover.  The chip_fg text remains readable against the sidebar bg.
+        self._gear_btn = _RoundedChip(
+            frame, text=self._t("app_settings"),
+            chip_bg=_wbg,
+            chip_fg=_fg,
+            parent_bg=_wbg,
+            font=("TkDefaultFont", _sz),
+            padx=10, pady=6,
+            hover_bg=_c0.get("lb_hover_bg", "#dfe4f0"),
+            command=self._open_app_settings,
+            text_anchor="w",
+        )
+        self._gear_btn.grid(row=5, column=0, sticky="ew", padx=8, pady=(4, 8))
         self._i18n_widgets.append((self._gear_btn, "text", "app_settings"))
 
-        # Keep the workspace list in sync with what we display
-        self._session_records: list[dict] = []   # parallel to list items
+        # Keep the workspace list in sync with what we display.
+        # _visible_records is the filtered subset shown in the list widget;
+        # when no search is active it equals _session_records.
+        self._session_records: list[dict] = []
+        self._visible_records: list[dict] = []
 
     # ── Chat pane ─────────────────────────────────────────────────────
 
     def _build_chat_pane(self) -> None:
-        right = ttk.Frame(self._paned, padding=_PAD)
+        # Use tk.Frame so bg=window_bg is reliable on macOS (ttk ignores bg).
+        _mode0 = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
+        _wbg0  = _THEME_COLORS.get(_mode0, _THEME_COLORS["light"])["window_bg"]
+        right = tk.Frame(self._paned, bg=_wbg0)
         # Single expanding row/column — _hist_canvas fills the entire pane.
-        # The ttk.Frame padding (_PAD px on each side) gives the light-blue
-        # margin (window_bg) visible around the ONE unified rounded rectangle.
         right.rowconfigure(0, weight=1)
         right.columnconfigure(0, weight=1)
         self._paned.add(right, minsize=500, stretch="always")
@@ -399,10 +473,11 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
         _mode0 = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
         _c0 = _THEME_COLORS.get(_mode0, _THEME_COLORS["light"])
 
-        # ── ONE unified rounded card — spans the entire right pane ────────
-        # A single Canvas draws ONE rounded rectangle.  Everything — sidebar
-        # toggle, session title/status, chat history, input block — lives inside
-        # _hist_inner so there is one continuous white card.
+        # ── Rounded chat card ─────────────────────────────────────────────
+        # _hist_canvas draws a rounded rectangle on the window background.
+        # Margins (set in _redraw_hist_canvas) let the window_bg show around
+        # the card on all sides except the left, where the sidebar content
+        # sits.  _hist_inner holds all chat content inside the card.
         self._hist_canvas = tk.Canvas(
             right, bg=_c0["window_bg"],
             highlightthickness=0, bd=0,
@@ -411,20 +486,17 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
 
         # _hist_inner distributes height between all content rows:
         #   row 0 — top bar (toggle + title)     weight=0
-        #   row 1 — separator line               weight=0
-        #   row 2 — chat history                 weight=1
-        #   row 3 — chat/input divider           weight=0
-        #   row 4 — input block                  weight=0
+        #   row 1 — chat history                 weight=1
+        #   row 2 — input block                  weight=0
+        # Separators are removed to give a clean, division-free card.
         _card_bg = _c0["text_bg"]
         self._hist_inner = tk.Frame(self._hist_canvas, bg=_card_bg)
         self._hist_inner.rowconfigure(0, weight=0)
-        self._hist_inner.rowconfigure(1, weight=0)
-        self._hist_inner.rowconfigure(2, weight=1)
-        self._hist_inner.rowconfigure(3, weight=0)
-        self._hist_inner.rowconfigure(4, weight=0)
+        self._hist_inner.rowconfigure(1, weight=1)
+        self._hist_inner.rowconfigure(2, weight=0)
         self._hist_inner.columnconfigure(0, weight=1)
         self._hist_canvas_win = self._hist_canvas.create_window(
-            8, 8, anchor="nw", window=self._hist_inner,
+            0, 0, anchor="nw", window=self._hist_inner,
         )
         self._hist_canvas.bind("<Configure>", lambda _: self._redraw_hist_canvas())
         self._hist_inner.bind("<Configure>",  lambda _: self._redraw_hist_canvas())
@@ -432,49 +504,56 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
         # ── row 0 of _hist_inner: Top bar (sidebar toggle + title) ────────
         self._chat_top_bar = top_bar = tk.Frame(self._hist_inner, bg=_card_bg)
         top_bar.grid(row=0, column=0, sticky="ew", pady=(4, 0), padx=4)
-        # col 0: toggle icon (fixed), col 1: session info area (expands)
-        top_bar.rowconfigure(0, weight=1)
-        top_bar.rowconfigure(1, weight=1)
+        # top_bar grid: 2 rows, 2 cols.
+        #   row 0 (weight=0) — toggle icon + session title, same row so they
+        #                       share the same cell height and are centred together.
+        #                       IMPORTANT: toggle must NOT use rowspan so its
+        #                       canvas stays exactly as tall as the title row.
+        #   row 1 (weight=0) — status label (busy / error), indented under title.
+        top_bar.rowconfigure(0, weight=0)
+        top_bar.rowconfigure(1, weight=0)
         top_bar.columnconfigure(1, weight=1)
 
         # Sidebar toggle — canvas-drawn icon; parent_bg=text_bg so the canvas
         # blends seamlessly into the white card with no artefact border.
+        # Row 0 only (no rowspan) so the canvas height == row-0 height ==
+        # title height, making the icon and title share the same vertical centre.
         self._toggle_sidebar_btn = _SidebarIcon(
             top_bar, command=self._toggle_sidebar, colors=_c0, parent_bg=_card_bg,
         )
-        self._toggle_sidebar_btn.grid(row=0, column=0, rowspan=2,
-                                       padx=(0, 8), sticky="nsew")
+        self._toggle_sidebar_btn.grid(row=0, column=0, padx=(0, 8), sticky="ns")
 
-        # Session info area (col 1) — title + status labels
-        self._top_bar_info_area = _info_area = tk.Frame(top_bar, bg=_card_bg)
-        _info_area.grid(row=0, column=1, rowspan=2, sticky="nsew",
-                        padx=(0, 4), pady=4)
-
+        # Title — same row as toggle, sticky="w" (no n/s) so the grid manager
+        # centres it vertically inside the shared row → aligned with the icon.
         self._header_course_var = tk.StringVar(value=self._t("no_session_loaded"))
-        tk.Label(
-            _info_area, textvariable=self._header_course_var,
+        self._header_course_lbl = tk.Label(
+            top_bar, textvariable=self._header_course_var,
             bg=_card_bg, fg=_c0["text_fg"],
             font=("TkDefaultFont", 14, "bold"),
-        ).pack(side="top", anchor="w")
+            anchor="w",
+        )
+        self._header_course_lbl.grid(row=0, column=1, sticky="w",
+                                     padx=(0, 4), pady=4)
 
+        # Status label — row 1, below the title; used for busy / error states.
+        # The new-session hint is shown in the chat area instead (see
+        # _session_mixin._on_new_session).
         self._session_status_var = tk.StringVar(value="")
         self._session_status_lbl = tk.Label(
-            _info_area, textvariable=self._session_status_var,
+            top_bar, textvariable=self._session_status_var,
             bg=_card_bg, fg=_c0.get("status_fg", "#6b7280"),
             font=("TkDefaultFont", 10),
+            anchor="w",
         )
-        self._session_status_lbl.pack(side="top", anchor="w")
+        self._session_status_lbl.grid(row=1, column=1, sticky="w",
+                                      padx=(0, 4), pady=(0, 4))
 
-        # ── row 1 of _hist_inner: thin separator ──────────────────────────
-        self._chat_separator = tk.Frame(
-            self._hist_inner, height=1, bg=_c0["paned_bg"],
-        )
-        self._chat_separator.grid(row=1, column=0, sticky="ew",
-                                   padx=4, pady=(4, 0))
+        # Alias kept so _appearance_mixin theme loops still resolve.
+        self._top_bar_info_area = top_bar
 
-        # ── row 2 of _hist_inner: Scrollable rounded-bubble message list ────
+        # ── row 1 of _hist_inner: Scrollable rounded-bubble message list ────
         self._hist_frame = hist_frame = tk.Frame(self._hist_inner, bg=_card_bg)
-        hist_frame.grid(row=2, column=0, sticky="nsew")
+        hist_frame.grid(row=1, column=0, sticky="nsew")
         hist_frame.rowconfigure(0, weight=1)
         hist_frame.columnconfigure(0, weight=1)
 
@@ -522,40 +601,43 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
                 "<Button-5>",
                 lambda _e: self._msg_canvas.yview_scroll(1, "units"))
 
+        # Clicking the message area returns focus to the main window so the
+        # search entry doesn't keep capturing keystrokes.
+        self._msg_canvas.bind("<Button-1>", lambda _e: self.focus_set(), add="+")
+        self._msg_frame.bind( "<Button-1>", lambda _e: self.focus_set(), add="+")
+
         # Refs used by _append_chat / _append_output_link / _show_thinking
         self._last_assistant_content: tk.Widget | None = None
         self._thinking_lbl: tk.Widget | None = None
 
-        # ── row 3 of _hist_inner: thin divider between chat and input ─────
-        self._card_sep = tk.Frame(
-            self._hist_inner, height=1,
-            bg=_c0.get("input_border", "#cdd4e8"),
-        )
-        self._card_sep.grid(row=3, column=0, sticky="ew")
-
-        # ── row 4 of _hist_inner: Input block ────────────────────────────
+        # ── row 2 of _hist_inner: Input block ────────────────────────────
         # Parented directly to _hist_inner — no separate outer canvas.
-        # The big rounded rect drawn by _hist_canvas covers this area too,
-        # so everything looks like one unified card.
+        # The chat area is flat (no bounding box); input block sits flush
+        # at the bottom of the canvas.
         #
         # Internal layout:
-        #   row 0 — quick-action chips
-        #   row 1 — input text field (with all-4-edge visible border)
-        #   row 2 — controls (effort | spacer | settings + send)
+        #   row 0 — quick-action chips  (always visible)
+        #   row 1 — input text field    (always visible)
+        #   row 2 — controls row        (Effort | spacer | [Sess Settings] | Send)
         self._input_max_lines = 5
         self._qa_chips: list          = []
         self._input_block_seps: list  = []   # unused; kept for compat
         self._input_block_bgs: list[tk.Widget] = []
         self._effort_flat_widgets: list[tk.Widget] = []
 
+        # Session Settings hover state
+        self._sess_settings_visible = False   # starts hidden
+        self._input_hover_check_id: object = None
+
         self._input_block = tk.Frame(self._hist_inner, bg=_c0["input_bg"])
-        self._input_block.grid(row=4, column=0, sticky="ew")
+        self._input_block.grid(row=2, column=0, sticky="ew")
         self._input_block.columnconfigure(0, weight=1)
 
-        # ── row 0: quick-action chips ─────────────────────────────────
+        # ── row 0: quick-action chips (always visible) ────────────────
         chips_row = tk.Frame(self._input_block, bg=_c0["input_bg"])
         chips_row.grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 6))
         self._input_block_bgs.append(chips_row)
+        self._qa_chips_row = chips_row   # kept for theme updates
 
         _qa_label = tk.Label(chips_row, text=self._t("quick_actions"),
                               bg=_c0["input_bg"],
@@ -716,6 +798,9 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
         self._i18n_widgets.append((self._cancel_btn, "text", "cancel"))
         # Send is visible by default; Cancel swaps in when busy (pack_forget / pack)
 
+        # Session Settings button is always visible inside the input block.
+        self._show_sess_settings()
+
         # ── Placeholder (shown when no session is active) ─────────────────
         # Grids at row=0 (the only row in `right`) so it fills the full pane.
         self._placeholder_frame = ttk.Frame(right)
@@ -825,7 +910,7 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
         _mode = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
         c = _THEME_COLORS.get(_mode, _THEME_COLORS["light"])
         fill  = c["lb_bg"]
-        bg    = c["sidebar_bg"]
+        bg    = c["window_bg"]   # sidebar sits on window background
 
         self._list_canvas.configure(bg=bg)
         self._list_inner.configure(bg=fill)
@@ -967,11 +1052,13 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
     # ------------------------------------------------------------------
 
     def _redraw_hist_canvas(self) -> None:
-        """Repaint the rounded-rectangle card around the chat history area.
+        """Repaint the chat card and size _hist_inner to fit inside it.
 
-        Called on every ``<Configure>`` of ``_hist_canvas`` / ``_hist_inner``
-        and after each theme change.  Uses the same Canvas-polygon technique
-        as the session list and input block.
+        The card is flush with the right, top, and bottom window edges.
+        Only its LEFT side is inset, with rounded top-left and bottom-left
+        corners — these curves are the only visual divider between the
+        sidebar and the chat area.  The PanedWindow sash (invisible but
+        present) sits at this left boundary and remains draggable.
         """
         if not hasattr(self, "_hist_canvas"):
             return
@@ -981,34 +1068,37 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
             return
         _mode = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
         c = _THEME_COLORS.get(_mode, _THEME_COLORS["light"])
+        card_bg = c["text_bg"]
+        wbg     = c["window_bg"]
 
-        self._hist_canvas.configure(bg=c["window_bg"])
+        # Card geometry: left edge at x=0 (flush with canvas/sash boundary),
+        # right/top/bottom flush with canvas edges (no margin on those sides).
+        r = 18   # corner radius for the left-side curves
+
+        self._hist_canvas.configure(bg=wbg)
         self._hist_canvas.delete("hc")
-        pad = 3
-        r   = 12
-        draw_rounded_rect(
+        draw_left_rounded_rect(
             self._hist_canvas,
-            pad, pad, w - pad, h - pad,
+            0, 0, w, h,
             r=r,
-            fill=c["text_bg"],
-            outline=c.get("input_border", "#cdd4e8"),
-            width=1,
+            fill=card_bg,
+            outline="",
             tags="hc",
         )
-        # inner_pad must keep the _hist_inner frame's corners INSIDE the
-        # rounded polygon so the frame's rectangular bg colour doesn't bleed
-        # into the corner areas and make the card look square.
-        # For r=12, pad=3: corner centre at (pad+r, pad+r) = (15, 15).
-        # A point (p, p) is inside the arc iff sqrt(2)*(15-p) ≤ r=12
-        # → p ≥ 15 - 12/sqrt(2) ≈ 6.5 → use inner_pad = 8 for a safe margin.
-        inner_pad = 8
-        inner_w = max(1, w - 2 * inner_pad)
-        inner_h = max(1, h - 2 * inner_pad)
+
+        # _hist_inner must not reach the rounded-corner area on the left.
+        # The deepest the left arc intrudes rightward is at its midpoint
+        # (y = r), where x_boundary = r*(1 - cos(45°)) ≈ 0.293*r.
+        # Using inner_x = r + 4 keeps the inner frame safely inside.
+        inner_x = r + 4
+        inner_y = 4
+        inner_w = max(1, w - inner_x - 4)
+        inner_h = max(1, h - inner_y - 4)
         self._hist_canvas.itemconfigure(
             self._hist_canvas_win, width=inner_w, height=inner_h,
         )
-        self._hist_canvas.coords(self._hist_canvas_win, inner_pad, inner_pad)
-        self._hist_inner.configure(bg=c["text_bg"])
+        self._hist_canvas.coords(self._hist_canvas_win, inner_x, inner_y)
+        self._hist_inner.configure(bg=card_bg)
         self._hist_canvas.tag_raise(self._hist_canvas_win)
 
         # Update message bubble canvas and inner frame backgrounds
@@ -1227,6 +1317,90 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, t
         try:
             self._msg_canvas.update_idletasks()
             self._msg_canvas.yview_moveto(1.0)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # Search bar canvas
+    # ------------------------------------------------------------------
+
+    def _redraw_search_cv(self) -> None:
+        """Repaint the rounded border around the sidebar search entry.
+
+        Called on every ``<Configure>`` of ``_search_cv`` and after each
+        theme/font change.  Draws a filled rounded rect (r=8) with an
+        ``input_border`` outline, places a 🔍 icon as a canvas text item,
+        and resizes the embedded Entry to fill the right portion.
+        """
+        if not hasattr(self, "_search_cv"):
+            return
+        cv = self._search_cv
+        w  = cv.winfo_width()
+        h  = cv.winfo_height()
+        if w <= 1 or h <= 1:
+            return
+        _mode = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
+        c    = _THEME_COLORS.get(_mode, _THEME_COLORS["light"])
+        _sbg = c["sidebar_bg"]
+        _ibg = c.get("input_bg", c.get("lb_bg", "#e8ecf5"))
+        _brd = c.get("input_border", "#cdd4e8")
+        _fg  = c.get("lb_fg", "#1a2744")
+
+        cv.configure(bg=_sbg)
+        cv.delete("sc")
+        cv.delete("sc_icon")
+        draw_rounded_rect(cv, 1, 1, w - 1, h - 1, r=8,
+                          fill=_ibg, outline=_brd, width=1, tags="sc")
+        cv.create_text(14, h // 2, text="🔍",
+                       font=("TkDefaultFont", 10),
+                       fill=_fg, anchor="center", tags="sc_icon")
+        cv.itemconfigure(self._search_cv_win,
+                         width=max(1, w - 32), height=max(1, h - 8))
+        cv.coords(self._search_cv_win, 28, 4)
+        cv.tag_raise(self._search_cv_win)
+        try:
+            self._search_entry.configure(bg=_ibg, fg=_fg, insertbackground=_fg)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # Input-block hover — Session Settings reveal
+    # ------------------------------------------------------------------
+
+    # (hover-reveal removed — Session Settings is always visible)
+
+    def _show_sess_settings(self) -> None:
+        """Restore Session Settings chip to its proper visible colours."""
+        self._sess_settings_visible = True
+        _mode = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
+        c     = _THEME_COLORS.get(_mode, _THEME_COLORS["light"])
+        try:
+            self._sess_settings_btn.update_style(
+                chip_bg=c["input_bg"],
+                chip_fg=c["input_fg"],
+                hover_bg=c.get("qa_bg", c["input_bg"]),
+                parent_bg=c["input_bg"],
+                outline=c.get("input_border", "#cdd4e8"),
+                outline_width=1,
+            )
+        except Exception:
+            pass
+
+    def _hide_sess_settings(self) -> None:
+        """Make Session Settings chip transparent (invisible against input bg)."""
+        self._sess_settings_visible = False
+        _mode = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
+        c     = _THEME_COLORS.get(_mode, _THEME_COLORS["light"])
+        _ibg  = c["input_bg"]
+        try:
+            self._sess_settings_btn.update_style(
+                chip_bg=_ibg,
+                chip_fg=_ibg,
+                hover_bg=_ibg,
+                parent_bg=_ibg,
+                outline=_ibg,
+                outline_width=0,
+            )
         except Exception:
             pass
 

@@ -489,20 +489,18 @@ class ChatMixin:
                 self._append_chat("assistant", msg.content)
 
     def _append_chat(self, role: str, text: str) -> None:
-        """Append a rounded-bubble message widget to the chat scroll area."""
+        """Append a flat message widget to the chat scroll area."""
         if not hasattr(self, "_msg_frame"):
             return
 
         from ._ui_constants import _THEME_COLORS
-        from ._custom_widgets import draw_rounded_rect
 
         _mode = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
         c = _THEME_COLORS.get(_mode, _THEME_COLORS["light"])
         card_bg = c.get("text_bg", "#ffffff")
         sz = self._font_size() if hasattr(self, "_font_size") else 13
-        _OFFSET = 4   # px gap between canvas edge and shell (shows rounded corner)
-        _H_PAD  = 12  # horizontal padding inside the bubble
-        _V_PAD  = 7   # vertical padding inside the bubble
+        _H_PAD  = 12  # horizontal padding inside message area
+        _V_PAD  = 7   # vertical padding inside message area
 
         # ── System messages: no bubble, just italic dimmed label ──────────
         if role == "system":
@@ -526,97 +524,117 @@ class ChatMixin:
             self._scroll_chat_to_bottom()
             return
 
-        # ── Pick bubble colours ───────────────────────────────────────────
+        # ── User message: rounded box; Assistant: flat text, no box ─────────
         if role == "user":
-            label_text = self._t("chat_you")
-            bubble_bg  = c.get("user_bubble_bg",     "#e8f0fe")
-            label_fg   = c.get("user_fg",             "#1b3167")
-            body_fg    = c.get("user_fg",             "#1b3167")
-            border_col = c.get("user_bubble_border",  "#c5d5f0")
-        else:  # assistant
-            label_text = self._t("chat_assistant")
-            text = _strip_markdown(text)
-            bubble_bg  = c.get("asst_bubble_bg",     "#fdf6ee")
-            label_fg   = c.get("assist_fg",           "#b06000")
-            body_fg    = c.get("assist_body",          "#2d3748")
-            border_col = c.get("asst_bubble_border",  "#f0dfc8")
+            self._append_chat_user(c, card_bg, sz, text, _H_PAD, _V_PAD)
+        else:
+            self._append_chat_assistant(c, card_bg, sz, text, _H_PAD, _V_PAD)
+        self._scroll_chat_to_bottom()
 
-        # ── Outer canvas: transparent (bg=card_bg) so rounded corners show ─
+    def _append_chat_user(self, c, card_bg, sz, text, _H_PAD, _V_PAD) -> None:
+        """Render a user message inside a rounded box."""
+        from ._custom_widgets import draw_rounded_rect
+
+        label_text = self._t("chat_you")
+        bubble_bg  = c.get("user_bubble_bg",    "#e8f0fe")
+        label_fg   = c.get("user_fg",           "#1b3167")
+        body_fg    = c.get("user_fg",           "#1b3167")
+        border_col = c.get("user_bubble_border", "#c5d5f0")
+        _OFF = 4   # gap between canvas edge and inner frame (shows corner radius)
+        r    = 10  # corner radius
+
         cv = tk.Canvas(self._msg_frame, bg=card_bg, highlightthickness=0, bd=0)
-        cv.pack(fill="x", padx=16, pady=(6, 2))
+        cv.pack(fill="x", padx=_H_PAD, pady=(6, 2))
 
-        # Shell frame (the bubble interior)
         shell = tk.Frame(cv, bg=bubble_bg)
-        win_id = cv.create_window(_OFFSET, _OFFSET, window=shell, anchor="nw")
+        win_id = cv.create_window(_OFF, _OFF, window=shell, anchor="nw")
 
-        # Role label
         role_lbl = tk.Label(
             shell, text=label_text,
             bg=bubble_bg, fg=label_fg,
             font=("TkDefaultFont", max(sz - 1, 10), "bold"),
-            anchor="w", padx=_H_PAD, pady=(_V_PAD, 2),
+            anchor="w", padx=_H_PAD, pady=_V_PAD,
         )
         role_lbl.pack(fill="x")
 
-        # Body text label
         body_lbl = tk.Label(
             shell, text=text,
             bg=bubble_bg, fg=body_fg,
             font=("TkDefaultFont", sz),
-            anchor="w", padx=_H_PAD, pady=(0, _V_PAD),
-            justify="left",
-            wraplength=300,  # updated dynamically on canvas resize
+            anchor="w", padx=_H_PAD, pady=_V_PAD,
+            justify="left", wraplength=300,
         )
         body_lbl.pack(fill="x")
 
-        # Store assistant bubble reference for _append_output_link
-        if role == "assistant":
-            self._last_assistant_content   = shell
-            self._last_assistant_bubble_bg = bubble_bg
-            self._last_assistant_body_fg   = body_fg
-            self._last_assistant_card_bg   = card_bg
-
-        # ── Sizing callbacks ───────────────────────────────────────────────
-        r = 10  # corner radius
-
         def _draw(_r=r, _bg=bubble_bg, _bd=border_col):
-            cv.delete("bb_fill")
-            cv.delete("bb_border")
+            cv.delete("bb")
             w, h = cv.winfo_width(), cv.winfo_height()
             if w > 1 and h > 1:
                 draw_rounded_rect(cv, 0, 0, w, h, r=_r,
-                    fill=_bg, outline="", tags="bb_fill")
+                                  fill=_bg, outline="", tags="bb")
                 draw_rounded_rect(cv, 1, 1, w - 1, h - 1, r=_r,
-                    fill="", outline=_bd, width=1, tags="bb_border")
-                cv.tag_lower("bb_fill")
-                try:
-                    cv.tag_lower("bb_border", win_id)
-                except Exception:
-                    pass
+                                  fill="", outline=_bd, width=1, tags="bb")
+                cv.tag_lower("bb")
 
-        def _sync_shell_width(e, _wid=win_id, _off=_OFFSET, _hpad=_H_PAD):
+        def _sync_width(e, _wid=win_id, _off=_OFF, _hp=_H_PAD):
             new_w = max(1, e.width - 2 * _off)
             cv.itemconfigure(_wid, width=new_w)
             try:
-                body_lbl.configure(wraplength=max(60, new_w - 2 * _hpad - 4))
+                body_lbl.configure(wraplength=max(60, new_w - 2 * _hp - 4))
             except Exception:
                 pass
 
-        def _sync_canvas_height(e, _off=_OFFSET):
+        def _sync_height(_e, _off=_OFF):
             req = shell.winfo_reqheight()
             new_h = req + 2 * _off
             if cv.winfo_height() != new_h:
                 cv.configure(height=new_h)
             _draw()
 
-        cv.bind("<Configure>", lambda e: (_sync_shell_width(e), _draw()))
-        shell.bind("<Configure>", _sync_canvas_height)
+        cv.bind("<Configure>",    lambda e: (_sync_width(e), _draw()))
+        shell.bind("<Configure>", _sync_height)
 
-        # Propagate mousewheel on every bubble child widget
         for w in (cv, shell, role_lbl, body_lbl):
             self._bind_chat_scroll(w)
 
-        self._scroll_chat_to_bottom()
+    def _append_chat_assistant(self, c, card_bg, sz, text, _H_PAD, _V_PAD) -> None:
+        """Render an assistant message as plain text — no bounding box."""
+        text = _strip_markdown(text)
+        label_text = self._t("chat_assistant")
+        label_fg   = c.get("assist_fg",  "#b06000")
+        body_fg    = c.get("assist_body", "#2d3748")
+
+        shell = tk.Frame(self._msg_frame, bg=card_bg)
+        shell.pack(fill="x", padx=_H_PAD, pady=(6, 2))
+
+        role_lbl = tk.Label(
+            shell, text=label_text,
+            bg=card_bg, fg=label_fg,
+            font=("TkDefaultFont", max(sz - 1, 10), "bold"),
+            anchor="w", pady=_V_PAD,
+        )
+        role_lbl.pack(fill="x")
+
+        body_lbl = tk.Label(
+            shell, text=text,
+            bg=card_bg, fg=body_fg,
+            font=("TkDefaultFont", sz),
+            anchor="w", pady=_V_PAD,
+            justify="left", wraplength=300,
+        )
+        body_lbl.pack(fill="x")
+        body_lbl.bind(
+            "<Configure>",
+            lambda e, w=body_lbl: w.configure(wraplength=max(60, e.width - 4)),
+        )
+
+        self._last_assistant_content   = shell
+        self._last_assistant_bubble_bg = card_bg
+        self._last_assistant_body_fg   = body_fg
+        self._last_assistant_card_bg   = card_bg
+
+        for w in (shell, role_lbl, body_lbl):
+            self._bind_chat_scroll(w)
 
     def _append_output_link(
         self,
@@ -686,7 +704,7 @@ class ChatMixin:
                 text=f"⏳ Exporting {export_fmt.upper()}…",
                 bg=bubble_bg, fg=c.get("status_fg", "#6b7280"),
                 font=("TkDefaultFont", max(sz - 1, 10), "italic"),
-                anchor="w", padx=12, pady=(0, 4),
+                anchor="w", padx=12, pady=4,
             )
             placeholder_lbl.pack(fill="x")
             self._bind_chat_scroll(placeholder_lbl)

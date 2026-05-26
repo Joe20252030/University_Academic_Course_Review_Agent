@@ -49,6 +49,25 @@ class SettingsMixin:
         v: k for k, v in _FREE_EMB_MODELS.items()
     }
 
+    def _make_toplevel(self) -> tk.Toplevel:
+        """Create a Toplevel that is invisible from the very first frame.
+
+        On macOS the window server can paint a Toplevel at the OS-default
+        position before Python's next line executes.  Setting ``alpha=0``
+        as the *very first* operation (even before ``withdraw``) eliminates
+        that one-frame flash on every platform where the attribute is
+        supported.  ``_center_on_main`` restores ``alpha=1`` after positioning.
+        """
+        import sys as _sys_mt
+        win = tk.Toplevel(self)
+        if _sys_mt.platform == "darwin":
+            try:
+                win.wm_attributes("-alpha", 0.0)
+            except tk.TclError:
+                pass
+        win.withdraw()
+        return win
+
     def _center_on_main(self, win: tk.Toplevel) -> None:
         """Position *win* at the centre of the main application window.
 
@@ -131,8 +150,7 @@ class SettingsMixin:
         _phov = c.get("btn_primary_hover", _pbg)
         _sz   = self._font_size() if hasattr(self, "_font_size") else 13
 
-        win = tk.Toplevel(self)
-        win.withdraw()              # hide before any widget — prevents flash
+        win = self._make_toplevel()
         win.title(title)
         win.configure(bg=_wbg)
         win.resizable(False, False)
@@ -190,8 +208,7 @@ class SettingsMixin:
 
         result: list[bool] = [False]
 
-        win = tk.Toplevel(self)
-        win.withdraw()              # hide before any widget — prevents flash
+        win = self._make_toplevel()
         win.title(title)
         win.configure(bg=_wbg)
         win.resizable(False, False)
@@ -261,8 +278,7 @@ class SettingsMixin:
 
         result: list[str | None] = [None]
 
-        win = tk.Toplevel(self)
-        win.withdraw()              # hide before any widget — prevents flash
+        win = self._make_toplevel()
         win.title(title)
         win.configure(bg=_wbg)
         win.resizable(False, False)
@@ -561,8 +577,7 @@ class SettingsMixin:
         _pfg   = c["btn_primary_fg"]
         _phov  = c.get("btn_primary_hover", _pbg)
 
-        win = tk.Toplevel(self)
-        win.withdraw()              # hide before any widget — prevents flash
+        win = self._make_toplevel()
         win.configure(bg=_wbg)
         win.title(self._t("settings_dialog_title"))
         win.minsize(560, 600)

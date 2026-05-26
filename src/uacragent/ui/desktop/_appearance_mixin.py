@@ -67,40 +67,8 @@ class AppearanceMixin:
             foreground=[("active", c["qa_fg"])],
         )
 
-        # ── NewSession.TButton — full-width top-of-sidebar "+" button ─────
-        _ns_bg = c.get("new_session_bg", c["btn_primary_bg"])
-        _ns_fg = c.get("new_session_fg", c["btn_primary_fg"])
-        # Use the current font-size preference so a theme switch doesn't reset
-        # the button back to the creation-time size.
-        _ns_font_size = self._font_size() if hasattr(self, "_font_size_var") else 13
-        style.configure("NewSession.TButton",
-            background=_ns_bg,
-            foreground=_ns_fg,
-            relief="flat", borderwidth=0,
-            padding=(10, 7),
-            font=("TkDefaultFont", _ns_font_size, "bold"),
-        )
-        style.map("NewSession.TButton",
-            background=[("active",  c.get("new_session_bg_hover", "#e8961a")),
-                        ("pressed", c.get("new_session_bg_hover", "#d4880f"))],
-            foreground=[("active", _ns_fg)],
-        )
-
-        # ── SidebarBottom.TButton — App Settings at bottom of sidebar ─────
-        _sb_bottom_bg = c.get("sidebar_btn_bg", c["sidebar_bg"])
-        _sb_bottom_fg = c.get("sidebar_btn_fg", c.get("lb_fg", "#1a2744"))
-        style.configure("SidebarBottom.TButton",
-            background=_sb_bottom_bg,
-            foreground=_sb_bottom_fg,
-            relief="flat", borderwidth=0,
-            padding=(10, 7),
-            font=("TkDefaultFont", _ns_font_size),
-        )
-        style.map("SidebarBottom.TButton",
-            background=[("active",  c.get("lb_hover_bg", "#dfe4f0")),
-                        ("pressed", c.get("lb_hover_bg", "#dfe4f0"))],
-            foreground=[("active", _sb_bottom_fg)],
-        )
+        # (NewSession.TButton and SidebarBottom.TButton removed — sidebar
+        # buttons are now canvas-drawn _RoundedChip widgets updated below)
 
         if mode == "dark":
             style.theme_use("clam")
@@ -181,7 +149,7 @@ class AppearanceMixin:
                 background=c["window_bg"], foreground=c["text_fg"])
 
             self.configure(background=c["window_bg"])
-            self._paned.configure(background=c["paned_bg"])
+            self._paned.configure(background=c["window_bg"])
 
         else:
             # Restore the platform's native theme for light mode
@@ -210,7 +178,7 @@ class AppearanceMixin:
                 self.configure(background=c["window_bg"])
             except Exception:
                 pass
-            self._paned.configure(background=c["paned_bg"])
+            self._paned.configure(background=c["window_bg"])
 
         # ── Non-ttk widgets need direct configuration ─────────────────
         # Message bubble canvas and frame backgrounds (individual bubble
@@ -226,27 +194,34 @@ class AppearanceMixin:
             self._session_list.update_colors(c)
         except Exception:
             pass
-        # Sidebar frame direct background (covers macOS native theme)
+        # Sidebar sits on the window background — no card, just plain bg.
+        _wbg = c["window_bg"]
         try:
-            self._sidebar_frame.configure(background=c["sidebar_bg"])
+            self._sidebar_frame.configure(bg=_wbg)
         except Exception:
             pass
-        # Chat top bar and info area live inside _hist_inner (the white card),
-        # so they all use text_bg as their background.
-        _card_bg = c["text_bg"]
-        for _tb_widget in ("_chat_top_bar", "_top_bar_info_area"):
-            try:
-                getattr(self, _tb_widget).configure(bg=_card_bg)
-            except Exception:
-                pass
-        # Title / status labels inside the info area
+        # Chat pane outer frame also uses window_bg so the card margin shows.
         try:
-            for _lbl in self._top_bar_info_area.winfo_children():
-                _lbl.configure(bg=_card_bg)
-                if _lbl is self._session_status_lbl:
-                    _lbl.configure(fg=c.get("status_fg", "#6b7280"))
-                else:
-                    _lbl.configure(fg=c.get("text_fg", "#1a2744"))
+            self._chat_frame.configure(bg=_wbg)
+            self._hist_canvas.configure(bg=_wbg)
+        except Exception:
+            pass
+        # Chat top bar lives inside _hist_inner (the white card).
+        # _top_bar_info_area is aliased to _chat_top_bar, so one call covers both.
+        _card_bg = c["text_bg"]
+        try:
+            self._chat_top_bar.configure(bg=_card_bg)
+        except Exception:
+            pass
+        # Title and status labels are direct children of top_bar (stored refs).
+        try:
+            self._header_course_lbl.configure(
+                bg=_card_bg, fg=c.get("text_fg", "#1a2744"))
+        except Exception:
+            pass
+        try:
+            self._session_status_lbl.configure(
+                bg=_card_bg, fg=c.get("status_fg", "#6b7280"))
         except Exception:
             pass
         # Sidebar toggle icon — parent_bg=text_bg since it lives inside the card
@@ -254,9 +229,53 @@ class AppearanceMixin:
             self._toggle_sidebar_btn.update_colors(c, parent_bg=_card_bg)
         except Exception:
             pass
-        # Sidebar bottom separator
+        # Sidebar bottom separator (inside the rounded sidebar card)
         try:
-            self._sidebar_sep.configure(bg=c["paned_bg"])
+            self._sidebar_sep.configure(bg=c.get("input_border", "#cdd4e8"))
+        except Exception:
+            pass
+        # Sidebar widgets sit on window_bg — ghost buttons blend into it.
+        _wbg = c["window_bg"]
+        _fg  = c.get("lb_fg", "#1a2744")
+        # New Session chip
+        try:
+            self._new_session_btn.update_style(
+                chip_bg=_wbg,
+                chip_fg=_fg,
+                hover_bg=c.get("lb_hover_bg", "#dfe4f0"),
+                parent_bg=_wbg,
+            )
+        except Exception:
+            pass
+        # App Settings chip
+        try:
+            self._gear_btn.update_style(
+                chip_bg=_wbg,
+                chip_fg=_fg,
+                hover_bg=c.get("lb_hover_bg", "#dfe4f0"),
+                parent_bg=_wbg,
+            )
+        except Exception:
+            pass
+        # "Sessions" label and search bar
+        try:
+            self._sessions_label.configure(
+                bg=_wbg, fg=c.get("status_fg", "#9aa5be"))
+            self._search_outer.configure(bg=_wbg)
+            self._redraw_search_cv()
+        except Exception:
+            pass
+        # Re-apply Session Settings visibility after theme colours are reset
+        try:
+            if self._sess_settings_visible:
+                self._show_sess_settings()
+            else:
+                self._hide_sess_settings()
+        except Exception:
+            pass
+        # Flat chat canvas — re-sync size and bg
+        try:
+            self._redraw_hist_canvas()
         except Exception:
             pass
 
@@ -323,7 +342,7 @@ class AppearanceMixin:
             pass
 
         # ── Rounded canvases ───────────────────────────────────────────
-        # _redraw_hist_canvas() also updates _chat_separator and _card_sep.
+        # _redraw_hist_canvas() repaints the unified card rounded rect.
         try:
             self._redraw_list_canvas()
         except Exception:
@@ -357,22 +376,28 @@ class AppearanceMixin:
         except Exception:
             pass
 
-        # ── Scale sidebar button and chrome element fonts ─────────────────
-        # These were not previously in the scaling path so they appeared stuck
-        # at their creation-time size on platforms where the global TkDefaultFont
-        # change does not auto-propagate to ttk style fonts (Windows / Linux).
-        # Explicitly setting them here ensures consistent scaling on all platforms.
+        # ── Scale sidebar chip fonts ──────────────────────────────────────
         try:
-            _s = ttk.Style(self)
-            _s.configure("NewSession.TButton",    font=("TkDefaultFont", size, "bold"))
-            _s.configure("SidebarBottom.TButton", font=("TkDefaultFont", size))
+            self._new_session_btn.update_style(font=("TkDefaultFont", size, "bold"))
+        except Exception:
+            pass
+        try:
+            self._gear_btn.update_style(font=("TkDefaultFont", size))
+        except Exception:
+            pass
+        try:
+            self._sessions_label.configure(font=("TkDefaultFont", max(size - 2, 9)))
+        except Exception:
+            pass
+        try:
+            self._search_entry.configure(font=("TkDefaultFont", max(size - 1, 10)))
+            self._redraw_search_cv()   # resize the entry window inside the canvas
         except Exception:
             pass
         try:
             # Session title: 1 pt larger than body for visual hierarchy
-            for _lbl in self._top_bar_info_area.winfo_children():
-                if _lbl is not self._session_status_lbl:
-                    _lbl.configure(font=("TkDefaultFont", size + 1, "bold"))
+            self._header_course_lbl.configure(
+                font=("TkDefaultFont", size + 1, "bold"))
         except Exception:
             pass
         try:
@@ -385,12 +410,7 @@ class AppearanceMixin:
         except Exception:
             pass
 
-        # Gear button: use a dedicated style so it appears noticeably larger
-        # than the surrounding text buttons (size + 4 gives a prominent icon).
-        try:
-            ttk.Style(self).configure("Gear.TButton", font=("TkDefaultFont", size + 4))
-        except Exception:
-            pass
+        # (Gear.TButton removed — App Settings is now a _RoundedChip updated above)
         # Widgets with explicit font tuples must be updated individually
         # (message bubbles use named-font references; new bubbles pick up size
         # automatically via _font_size() — existing bubbles retain creation size)
@@ -488,8 +508,7 @@ class AppearanceMixin:
         _sz    = self._font_size()
         _nsz   = max(_sz - 1, 10)
 
-        win = tk.Toplevel(self)
-        win.withdraw()              # hide before any widget — prevents flash
+        win = self._make_toplevel()
         self._app_settings_win = win
         win.title(self._t("app_settings_title"))
         win.configure(bg=_wbg)
