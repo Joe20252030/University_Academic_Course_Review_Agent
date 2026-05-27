@@ -213,16 +213,29 @@ class SessionMixin:
         # fall back to whatever EMBEDDING_PROVIDER was set previously (or default
         # "gemini"), ignoring the saved value.
         #
+        # Allowlist guard: only write to os.environ when the value is a known,
+        # safe provider string.  This prevents a tampered session.json from
+        # injecting arbitrary strings into the process environment.
+        #
         # Threading note: os.environ writes here happen on the main thread, while
         # background threads started by _attach_session_async() may read the same
         # env vars via Settings().  This write happens before the background thread
         # is started (it is called from _load_session_from_workspace, which runs
         # before _attach_session_async), so there is no concurrent read at the
         # time of this write.  Do NOT move this write inside a background thread.
+        _KNOWN_EMB_PROVIDERS = frozenset({"gemini", "openai", "local"})
         if not self._is_busy:
-            os.environ["EMBEDDING_PROVIDER"] = emb_provider
-            if emb_provider == "local":
-                os.environ["LOCAL_EMBEDDING_MODEL"] = local_model
+            if emb_provider in _KNOWN_EMB_PROVIDERS:
+                os.environ["EMBEDDING_PROVIDER"] = emb_provider
+                if emb_provider == "local":
+                    os.environ["LOCAL_EMBEDDING_MODEL"] = local_model
+            else:
+                import logging as _logging
+                _logging.getLogger(__name__).warning(
+                    "Ignoring unknown embedding provider %r from session file; "
+                    "will fall back to previously set provider.",
+                    emb_provider,
+                )
         else:
             # If somehow busy (e.g. rapid session switching), defer the write.
             # The background thread will use whatever was last committed.

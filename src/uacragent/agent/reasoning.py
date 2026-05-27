@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from langchain_core.prompts import ChatPromptTemplate
@@ -35,7 +34,7 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-_PROMPTS_DIR = Path(__file__).parent / "prompts"
+from uacragent.agent.prompts._prompts import PROMPTS_DIR as _PROMPTS_DIR  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

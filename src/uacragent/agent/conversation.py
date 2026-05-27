@@ -28,6 +28,10 @@ _KEEP_FIRST_TURNS:  int = 1        # oldest N turns always kept (context-setting
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
+from uacragent.agent.prompts._prompts import (
+    PROMPTS_DIR as _PROMPTS_DIR,
+    get_language_instruction as _get_language_instruction,
+)
 from uacragent.agent.session import AgentSession
 from uacragent.domain.errors import LLMError
 from uacragent.domain.providers import get_provider
@@ -234,7 +238,7 @@ def _settings_for_session(base: Settings, session: AgentSession) -> Settings:
         return base.model_copy(update=updates)
     return base
 
-_PROMPTS_DIR = Path(__file__).parent / "prompts"
+# _PROMPTS_DIR and _get_language_instruction are imported at the top of this module.
 
 # ---------------------------------------------------------------------------
 # Localised strings used inside agent responses
@@ -312,31 +316,9 @@ _CHAT_STRINGS: dict[str, dict[str, str]] = {
     },
 }
 
-# Language instructions injected into the system prompt.
-# "auto" (the default) lets the LLM detect and match the user's language.
-_LANGUAGE_INSTRUCTIONS: dict[str, str] = {
-    "auto": (
-        "## Language\n\n"
-        "Detect the language of the user's most recent message and reply in "
-        "that same language. If the user writes in Chinese, respond in Chinese; "
-        "if in English, respond in English; and so on for any other language. "
-        "Maintain that language consistently throughout the reply. "
-        "Use English only for technical terms that have no established "
-        "translation in the user's language."
-    ),
-    "en": (
-        "## Language\n\n"
-        "Always respond in English, regardless of the language the user writes in."
-    ),
-    "zh_CN": (
-        "## Language\n\n"
-        "You MUST respond entirely in Simplified Chinese (简体中文). "
-        "All replies, explanations, section headings, and any generated "
-        "document content must be written in Chinese. "
-        "Do not mix in English unless quoting technical terms that have no "
-        "standard Chinese translation."
-    ),
-}
+# Language instructions are defined centrally in agent/prompts/_prompts.py
+# and imported above as _get_language_instruction().  The local definition
+# has been removed to eliminate the duplicate.
 
 
 def _ls(lang: str, table: dict[str, dict[str, str]], key: str, **fmt: object) -> str:
@@ -427,7 +409,7 @@ class ConversationAgent:
             # When the user removed every file and clicked Apply, the pipeline
             # is never entered — wipe uploads, chroma_db, and the manifest here.
             if force_reindex:
-                from uacragent.agent.pipeline import (
+                from uacragent.agent.workspace_manager import (
                     wipe_session_uploads, wipe_session_vectorstore)
                 wipe_session_uploads(session)
                 wipe_session_vectorstore(session)
@@ -721,7 +703,7 @@ class ConversationAgent:
             else "None"
         )
 
-        response_language = _LANGUAGE_INSTRUCTIONS.get(language, "")
+        response_language = _get_language_instruction(language)
 
         rendered = template.format(
             course_name=prefs.get("course_name") or "this course",

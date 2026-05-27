@@ -94,8 +94,21 @@ class _ReviewPDF(FPDF):
         self.set_font(self._body_font, size=11)
 
     def _bullet(self, text: str) -> None:
-        self.set_x(15)
-        self.cell(6, 6, "-")
+        """Render a bullet item with hanging indent for wrapped lines.
+
+        ``cell()`` places the dash glyph, then ``multi_cell()`` wraps the text
+        within the remaining width.  FPDF2 ≥ 2.7 advances the cursor to the
+        start of the next line after ``multi_cell()``, so no explicit ``ln()``
+        is needed here.
+        """
+        indent = 21          # mm from left margin where body text starts
+        dash_x = 15          # mm from left margin for the dash glyph
+        self.set_x(dash_x)
+        self.cell(indent - dash_x, 6, "-")
+        # Set x to the indent position so that multi_cell wraps within the
+        # correct column; without this FPDF2 measures from the current x
+        # position (right of the dash cell) and mis-calculates available width.
+        self.set_x(indent)
         self.multi_cell(0, 6, self._prep(text))
 
     def _numbered(self, text: str, number: str) -> None:

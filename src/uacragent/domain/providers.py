@@ -35,6 +35,11 @@ class ProviderConfig:
     settings_attr: str
     env_var: str
     models: tuple[str, ...]
+    # Confirmed Generally-Available default model for this provider.
+    # ``default_model_for()`` returns this value rather than ``models[0]``
+    # so that experimentally-listed future models at the top of the list do
+    # not accidentally become the shipped default.
+    default_model: str = ""
     base_url: str | None = None
     label_i18n_key: str = ""
     # Recommended rate tier for a typical user of this provider.
@@ -74,6 +79,7 @@ PROVIDERS: dict[str, ProviderConfig] = {
             "gemini-1.5-pro",
             "gemini-1.5-flash",
         ),
+        default_model="gemini-2.5-flash",
         label_i18n_key="api_key_google",
         # Gemini Free: 10 RPM (2.5-flash), 5 RPM (2.5-pro, billing required since Apr 2026).
         # Most developers start on the free tier → "free" is the safest initial suggestion.
@@ -117,6 +123,7 @@ PROVIDERS: dict[str, ProviderConfig] = {
             "o3-mini",
             "o1",
         ),
+        default_model="gpt-4o",
         label_i18n_key="api_key_openai",
         # OpenAI Tier 1 (first paid tier): 500 RPM for GPT-4o / GPT-4.1 / GPT-5.
         # "standard" (0.5 s delay, ~120 RPM effective) gives 4× headroom at Tier 1.
@@ -142,6 +149,7 @@ PROVIDERS: dict[str, ProviderConfig] = {
             "deepseek-chat",      # alias → deepseek-v4-flash (non-thinking)
             "deepseek-reasoner",  # alias → deepseek-v4-flash (thinking mode)
         ),
+        default_model="deepseek-chat",
         base_url="https://api.deepseek.com",
         label_i18n_key="api_key_deepseek",
         # DeepSeek uses dynamic concurrency-based limiting (no fixed RPM table).
@@ -180,5 +188,11 @@ def models_for(provider_id: str) -> list[str]:
 
 
 def default_model_for(provider_id: str) -> str:
-    """Return the recommended default model name for *provider_id*."""
-    return get_provider(provider_id).models[0]
+    """Return the recommended default model name for *provider_id*.
+
+    Returns the ``default_model`` attribute when non-empty, falling back to
+    the first entry in ``models`` so the function is always correct even for
+    providers added before the ``default_model`` field was introduced.
+    """
+    cfg = get_provider(provider_id)
+    return cfg.default_model or cfg.models[0]

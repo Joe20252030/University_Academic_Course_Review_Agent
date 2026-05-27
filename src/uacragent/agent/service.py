@@ -44,7 +44,14 @@ class AgentService:
         effort_level: str = "medium",
         reasoning_mode: str = "quick",
     ) -> ReviewResult:
-        """Compatibility wrapper that treats every input file as ``other``."""
+        """Unclassified wrapper — treats every input file as ``DocumentType.other``.
+
+        .. deprecated::
+            Prefer :meth:`run_end_to_end` with an explicit ``classified_files``
+            mapping so that doc-type-aware retrieval and per-type chunking
+            strategies are applied correctly.  This method is kept for backward
+            compatibility with simple scripts that do not classify their files.
+        """
         return self.run_end_to_end(
             classified_files={DocumentType.other: list(file_paths)},
             exam_format=exam_format,

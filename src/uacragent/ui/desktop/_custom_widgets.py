@@ -1031,6 +1031,15 @@ class _SessionItemFrame(tk.Frame):
         was_selected = self._selected
         self.set_selected(was_selected)
 
+    def update_labels(self, rename: str, delete: str) -> None:
+        """Update the Rename / Delete menu-item labels displayed in the ⋯ popup.
+
+        Prefer this method over direct attribute access (``item._rename_label``)
+        so the interface remains stable if the internal representation changes.
+        """
+        self._rename_label = rename
+        self._delete_label = delete
+
 
 # ---------------------------------------------------------------------------
 # CustomSessionList
@@ -1165,8 +1174,7 @@ class CustomSessionList:
         self._rename_label = rename
         self._delete_label = delete
         for item in self._items:
-            item._rename_label = rename
-            item._delete_label = delete
+            item.update_labels(rename, delete)
 
     def refresh(self, records: list[dict], active_workspace: "str | None") -> None:
         """Rebuild all list items from *records*; re-select the active session."""

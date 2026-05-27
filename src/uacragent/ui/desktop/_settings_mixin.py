@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog
@@ -58,9 +59,8 @@ class SettingsMixin:
         that one-frame flash on every platform where the attribute is
         supported.  ``_center_on_main`` restores ``alpha=1`` after positioning.
         """
-        import sys as _sys_mt
         win = tk.Toplevel(self)
-        if _sys_mt.platform == "darwin":
+        if sys.platform == "darwin":
             try:
                 win.wm_attributes("-alpha", 0.0)
             except tk.TclError:
@@ -93,9 +93,8 @@ class SettingsMixin:
         # the OS can briefly expose the window at the wrong position while
         # that computation happens.  Being transparent from the start
         # eliminates that one-frame flash entirely.
-        import sys as _sys
         _alpha_set = False
-        if _sys.platform == "darwin":
+        if sys.platform == "darwin":
             try:
                 win.wm_attributes("-alpha", 0.0)
                 _alpha_set = True

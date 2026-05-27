@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import shutil
 import threading
 import time
 from collections.abc import Callable
@@ -14,6 +13,10 @@ from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.retrievers import BaseRetriever
 
+from uacragent.agent.prompts._prompts import (
+    PROMPTS_DIR as _PROMPTS_DIR,
+    get_language_instruction as _get_language_instruction_impl,
+)
 from uacragent.export.markdown import save_markdown
 from uacragent.domain.models import ReviewPlan, SectionSpec
 from uacragent.domain.errors import IngestError, LLMError, ParseError
@@ -69,8 +72,16 @@ def get_effort_config(effort_level: str) -> EffortConfig:
 # ---------------------------------------------------------------------------
 # Prompt helpers
 # ---------------------------------------------------------------------------
+# _PROMPTS_DIR and _get_language_instruction_impl are imported at module top.
 
-_PROMPTS_DIR = Path(__file__).parent / "prompts"
+def _get_language_instruction(language: str) -> str:
+    """Return the pipeline-variant language-steering instruction for *language*.
+
+    Delegates to the central ``_prompts._get_language_instruction`` with
+    ``pipeline=True`` so the shorter, generation-focused variant is used
+    in planner and writer prompts.
+    """
+    return _get_language_instruction_impl(language, pipeline=True)
 
 # Maps TaskType -> (planner prompt filename, writer prompt filename)
 _PROMPT_FILES: dict[TaskType, tuple[str, str]] = {
@@ -108,27 +119,8 @@ def _task_title(task_type: TaskType, language: str = "en") -> str:
     return titles.get(task_type) or _TASK_TITLES_L10N["en"].get(task_type, "Review")
 
 
-_LANGUAGE_INSTRUCTIONS: dict[str, str] = {
-    "auto": (
-        "Detect the language of the student context (course name, university, etc.) "
-        "and produce all output in that language. Default to English when uncertain."
-    ),
-    "en": "Produce all output in English.",
-    "zh_CN": (
-        "You MUST produce all output entirely in Simplified Chinese (简体中文). "
-        "All section headings, explanations, questions, and answers must be written "
-        "in Chinese. Use English only for established technical terms that lack a "
-        "standard Chinese translation."
-    ),
-}
-
-
-def _get_language_instruction(language: str) -> str:
-    """Return the language steering instruction for *language*.
-
-    Falls back to the English instruction for any unrecognised locale.
-    """
-    return _LANGUAGE_INSTRUCTIONS.get(language, _LANGUAGE_INSTRUCTIONS["en"])
+# Language instructions are centralised in agent/prompts/_prompts.py.
+# _get_language_instruction() is defined above next to the import.
 
 
 def load_prompt(name: str) -> str:
@@ -494,60 +486,16 @@ def assemble_markdown(
 
 
 # ---------------------------------------------------------------------------
-# Upload-cleanup helper
+# Upload-cleanup helpers (re-exported from workspace_manager for compatibility)
 # ---------------------------------------------------------------------------
+# These functions have moved to agent/workspace_manager.py.
+# The re-export here preserves backward compatibility for any callers that
+# import them from pipeline (e.g. existing tests or external scripts).
 
-def wipe_session_uploads(session: "AgentSession") -> None:  # type: ignore[name-defined]
-    """Delete all typed upload subfolders for *session*'s workspace.
-
-    Called on every full re-index (Apply) so that workspace copies of files
-    the user removed via the GUI are actually deleted from disk before the
-    current file set is re-copied.  Also called directly when the user removes
-    every file and clicks Apply — in that case the main pipeline is never
-    entered, so the cleanup must happen at a higher level.
-
-    Safe to call on a freshly-created session that has never been indexed.
-    """
-    if not session.workspace_id and not session.workspace_folder:
-        return
-    try:
-        ws = workspace_paths(
-            workspace_id=session.workspace_id,
-            workspace_folder=session.workspace_folder,
-        )
-        for folder in ws.doc_folders.values():
-            if folder.exists():
-                shutil.rmtree(folder)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Could not wipe session uploads: %s", exc)
-
-
-def wipe_session_vectorstore(session: "AgentSession") -> None:  # type: ignore[name-defined]
-    """Delete the Chroma vector store and reset the indexed-files manifest.
-
-    Called when the user removes **all** files and clicks Apply.  Without this,
-    the old chroma_db and its manifest linger on disk even though no documents
-    are associated with the session, wasting disk space and causing the
-    manifest to misreport a stale file set on the next indexing run.
-
-    Safe to call when the chroma_db or manifest do not exist yet.
-    """
-    if not session.workspace_id and not session.workspace_folder:
-        return
-    try:
-        ws = workspace_paths(
-            workspace_id=session.workspace_id,
-            workspace_folder=session.workspace_folder,
-        )
-        # Wipe the Chroma directory
-        chroma_dir = Path(ws.chroma)
-        if chroma_dir.exists():
-            shutil.rmtree(chroma_dir)
-        # Reset the manifest to an empty file set so the next indexing run
-        # starts from a clean slate rather than comparing against stale paths.
-        reset_manifest(ws)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Could not wipe session vectorstore: %s", exc)
+from uacragent.agent.workspace_manager import (  # noqa: E402
+    wipe_session_uploads,
+    wipe_session_vectorstore,
+)
 
 
 # ---------------------------------------------------------------------------

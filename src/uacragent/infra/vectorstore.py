@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import shutil
 from collections.abc import Callable
@@ -22,8 +23,7 @@ from uacragent.infra.workspace import WorkspacePaths
 
 _DEFAULT_LOCAL_MODEL = "all-MiniLM-L6-v2"
 
-import logging as _logging
-_vs_logger = _logging.getLogger(__name__)
+_vs_logger = logging.getLogger(__name__)
 
 
 def _build_embeddings(
@@ -85,84 +85,57 @@ def _build_local_embeddings(
     The model is downloaded from HuggingFace Hub on first use and cached
     locally in the app-managed HuggingFace cache directory.
 
-    If ``sentence-transformers`` or ``langchain-huggingface`` are absent they
-    are auto-installed via ``pip`` before the first attempt.  *progress_cb* is
-    called with status messages so the caller can surface them in the UI.
+    *progress_cb* is called with status messages so the caller can surface
+    them in the UI.
+
+    Raises
+    ------
+    ConfigurationError
+        When ``sentence-transformers`` or ``langchain-huggingface`` are not
+        installed.  The error message includes the exact ``pip install``
+        command the user should run.
     """
     _PACKAGES = ["sentence-transformers", "langchain-huggingface"]
 
-    def _try_load() -> Any:
-        """Attempt import + instantiation; raises ImportError on any missing dep.
+    import warnings
 
-        Always prefers ``langchain_huggingface`` (no deprecation warning).
-        Falls back to the ``langchain_community`` shim only when the preferred
-        package is absent, suppressing the LangChainDeprecationWarning that the
-        shim emits so it never reaches the user's terminal.
-        """
-        import warnings
-
-        try:
-            from langchain_huggingface import HuggingFaceEmbeddings  # preferred
-        except ImportError:
-            # langchain-huggingface not installed; fall back to community shim.
-            # Suppress the LangChainDeprecationWarning that the shim emits on
-            # import and instantiation — the user cannot act on it and it is
-            # noise in the terminal.  The auto-install path below will install
-            # langchain-huggingface so subsequent runs use the preferred class.
-            try:
-                with warnings.catch_warnings():
-                    warnings.filterwarnings("ignore", category=DeprecationWarning)
-                    warnings.filterwarnings("ignore", message=".*langchain.huggingface.*")
-                    from langchain_community.embeddings import HuggingFaceEmbeddings  # type: ignore[no-redef]
-            except ImportError as exc:
-                raise ImportError("langchain_community missing") from exc
-
+    try:
+        from langchain_huggingface import HuggingFaceEmbeddings  # preferred
+    except ImportError:
+        # langchain-huggingface not installed; fall back to community shim.
+        # Suppress the LangChainDeprecationWarning that the shim emits on
+        # import and instantiation — the user cannot act on it and it is
+        # noise in the terminal.
         try:
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", category=DeprecationWarning)
-                return HuggingFaceEmbeddings(model_name=model_name)
-        except Exception as exc:
-            # Catches ModuleNotFoundError("No module named 'sentence_transformers'")
-            # raised during instantiation when the package is not yet installed.
-            if "sentence_transformers" in str(exc) or isinstance(exc, ImportError):
-                raise ImportError(str(exc)) from exc
-            raise
-
-    try:
-        return _try_load()
-    except ImportError:
-        # ── Auto-install the missing packages and retry ───────────────────────
-        _info = (
-            "📦 Installing required packages for local embedding model "
-            f"({', '.join(_PACKAGES)}) — this may take a minute…"
-        )
-        _vs_logger.info("%s", _info)
-        if progress_cb:
-            progress_cb(_info)
-
-        import importlib
-        import subprocess
-        import sys
-
-        try:
-            subprocess.check_call(
-                [sys.executable, "-m", "pip", "install", "--quiet"] + _PACKAGES,
-            )
-        except subprocess.CalledProcessError as pip_exc:
+                warnings.filterwarnings("ignore", message=".*langchain.huggingface.*")
+                from langchain_community.embeddings import HuggingFaceEmbeddings  # type: ignore[no-redef]
+        except ImportError:
             from uacragent.domain.errors import ConfigurationError
             raise ConfigurationError(
-                f"Auto-install of {', '.join(_PACKAGES)} failed.\n"
-                f"Please run manually:  pip install {' '.join(_PACKAGES)}"
-            ) from pip_exc
+                "Local embedding model requires additional packages that are not "
+                "installed.  Please run:\n\n"
+                f"    pip install {' '.join(_PACKAGES)}\n\n"
+                "Then restart the application."
+            )
 
-        # Force Python's import finder to rescan sys.path so the packages just
-        # installed by pip are visible to the current process without a restart.
-        importlib.invalidate_caches()
-
-        if progress_cb:
-            progress_cb("✅ Packages installed — loading embedding model…")
-
-        return _try_load()
+    try:
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=DeprecationWarning)
+            return HuggingFaceEmbeddings(model_name=model_name)
+    except Exception as exc:
+        # Catches ModuleNotFoundError("No module named 'sentence_transformers'")
+        # raised during instantiation when the package is not yet installed.
+        if "sentence_transformers" in str(exc) or isinstance(exc, ImportError):
+            from uacragent.domain.errors import ConfigurationError
+            raise ConfigurationError(
+                "Local embedding model requires additional packages that are not "
+                "installed.  Please run:\n\n"
+                f"    pip install {' '.join(_PACKAGES)}\n\n"
+                "Then restart the application."
+            ) from exc
+        raise
 
 
 
@@ -258,8 +231,7 @@ def _save_manifest(
         # Non-fatal but important: a failed manifest write means the next session
         # open cannot detect which files are already indexed, so it will trigger a
         # full re-embedding run (burning API quota) instead of the fast path.
-        import logging as _logging
-        _logging.getLogger(__name__).warning(
+        _vs_logger.warning(
             "Failed to write indexing manifest to %s — next session open will "
             "rebuild the vector store from scratch: %s",
             mp, exc,
@@ -346,10 +318,17 @@ def get_or_create_vectorstore(
     )
 
     # ── Add only new chunks (content-hash dedup) ──────────────────────
+    # Chroma's SQLite backend can time out on very large id lists sent in a
+    # single get() call.  Batching keeps each call within a safe range and
+    # avoids hitting SQLite's variable-count limit.
+    _GET_BATCH_SIZE = 500
     if chunks:
         ids = [_chunk_id(c) for c in chunks]
-        existing = db.get(ids=ids)
-        existing_ids = set(existing.get("ids") or [])
+        existing_ids: set[str] = set()
+        for start in range(0, len(ids), _GET_BATCH_SIZE):
+            batch = ids[start : start + _GET_BATCH_SIZE]
+            result = db.get(ids=batch)
+            existing_ids.update(result.get("ids") or [])
         new_chunks = [c for c, cid in zip(chunks, ids) if cid not in existing_ids]
         new_ids = [cid for cid in ids if cid not in existing_ids]
         if new_chunks:
@@ -439,8 +418,12 @@ class WeightedDocTypeRetriever(BaseRetriever):
                     k=k_i,
                     filter={"doc_type": dt_val},
                 )
-            except Exception:  # noqa: BLE001
-                # Filtering not supported or no matching docs — skip silently
+            except Exception as exc:  # noqa: BLE001
+                # Filtering not supported or no matching docs for this type.
+                _vs_logger.debug(
+                    "Per-type similarity search failed for doc_type=%r: %s",
+                    dt_val, exc,
+                )
                 docs = []
 
             for doc in docs:

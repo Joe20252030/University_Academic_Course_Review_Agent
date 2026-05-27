@@ -145,7 +145,7 @@ _KNOWN_ALIASES: frozenset[str] = frozenset({
 # Only examine env vars whose names suggest they could be uacragent settings.
 _SUSPECT_PREFIXES: tuple[str, ...] = (
     "LLM_", "GOOGLE_", "OPENAI_", "DEEPSEEK_",
-    "EMBEDDING_", "LOCAL_EMBEDDING", "RETRIEVER_", "RATE_",
+    "EMBEDDING_", "LOCAL_EMBEDDING_", "RETRIEVER_", "RATE_",
 )
 
 

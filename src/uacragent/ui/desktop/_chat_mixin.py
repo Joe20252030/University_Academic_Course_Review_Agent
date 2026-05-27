@@ -27,11 +27,9 @@ class ChatMixin:
     # ------------------------------------------------------------------
 
     def _provider_supports_search(self) -> bool:
-        from uacragent.domain.providers import get_provider
         return get_provider(self._session.llm_provider or "gemini").supports_search
 
     def _provider_supports_files(self) -> bool:
-        from uacragent.domain.providers import get_provider
         return get_provider(self._session.llm_provider or "gemini").supports_files
 
     def _update_tool_btns(self) -> None:

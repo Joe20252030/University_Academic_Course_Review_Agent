@@ -20,6 +20,7 @@ from uacragent.api.schemas import ReviewRequest, ReviewResponse
 
 router = APIRouter()
 
+
 # ---------------------------------------------------------------------------
 # Path-traversal guard
 # ---------------------------------------------------------------------------
@@ -28,11 +29,15 @@ router = APIRouter()
 # attacks.  When unset, the API still requires absolute existing regular files
 # but does not restrict requests to a single root directory — do NOT expose
 # this API publicly without setting UACRAGENT_ALLOWED_BASE_DIR.
-_ALLOWED_BASE_DIR: Path | None = (
-    Path(os.environ["UACRAGENT_ALLOWED_BASE_DIR"]).resolve()
-    if "UACRAGENT_ALLOWED_BASE_DIR" in os.environ
-    else None
-)
+#
+# The env var is read per-request (not at import time) so that:
+# - Integration tests that set the variable after module import are respected.
+# - Hot-reload scenarios where the variable changes between requests work.
+
+def _get_allowed_base_dir() -> "Path | None":
+    """Return the resolved allowed base directory, or None if unset."""
+    raw = os.environ.get("UACRAGENT_ALLOWED_BASE_DIR", "").strip()
+    return Path(raw).resolve() if raw else None
 
 
 def _validate_file_paths(classified_files_dict: dict) -> None:
@@ -50,6 +55,8 @@ def _validate_file_paths(classified_files_dict: dict) -> None:
     HTTPException(400)
         With a descriptive message for the first failing path found.
     """
+    allowed_base_dir = _get_allowed_base_dir()
+
     for paths in classified_files_dict.values():
         for raw_path in paths:
             try:
@@ -66,9 +73,9 @@ def _validate_file_paths(classified_files_dict: dict) -> None:
                     detail=f"File path must be absolute: '{raw_path}'",
                 )
 
-            if _ALLOWED_BASE_DIR is not None:
+            if allowed_base_dir is not None:
                 try:
-                    p.relative_to(_ALLOWED_BASE_DIR)
+                    p.relative_to(allowed_base_dir)
                 except ValueError:
                     raise HTTPException(
                         status_code=400,

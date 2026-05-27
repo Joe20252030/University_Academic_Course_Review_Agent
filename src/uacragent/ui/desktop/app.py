@@ -44,14 +44,10 @@ from uacragent.agent.conversation import ConversationAgent, ChatResponse
 from uacragent.agent.session import AgentSession
 from uacragent.domain.errors import UACRAgentError
 from uacragent.domain.types import DocumentType, ExamFormat, ExamType, ExportFormat
-from uacragent.export.docx import save_docx
-from uacragent.export.pdf import save_pdf
-from uacragent.infra.persistence import (
-    delete_session, dict_to_session, get_app_appearance, get_app_data_dir,
-    get_missing_session_files, list_sessions, load_session, rename_session,
-    save_session, set_app_appearance, set_app_data_dir,
-)
-from uacragent.infra.workspace import workspace_paths, ensure_workspace_dirs
+# Only names used directly in this file are imported here.
+# Each mixin module (SessionMixin, AppearanceMixin, ChatMixin, etc.) imports
+# the persistence, export, and provider functions it needs independently.
+from uacragent.infra.persistence import get_app_data_dir
 
 # Re-export module-level constants and helpers so existing callers that
 # ``from uacragent.ui.desktop.app import _strip_markdown`` still work.

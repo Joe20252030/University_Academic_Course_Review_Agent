@@ -94,18 +94,13 @@ def _add_markdown_to_docx(doc: DocxDocument, md_text: str) -> None:
             doc.add_paragraph("")
             continue
 
-        is_heading = False
-
         # Headings — let the built-in heading style control the font size
         if stripped.startswith("### "):
             doc.add_heading(stripped[4:], level=3)
-            is_heading = True
         elif stripped.startswith("## "):
             doc.add_heading(stripped[3:], level=2)
-            is_heading = True
         elif stripped.startswith("# "):
             doc.add_heading(stripped[2:], level=1)
-            is_heading = True
         # Bullet lists
         elif re.match(r"^[-*]\s", stripped):
             p = doc.add_paragraph(style="List Bullet")
@@ -118,9 +113,6 @@ def _add_markdown_to_docx(doc: DocxDocument, md_text: str) -> None:
         else:
             p = doc.add_paragraph()
             _add_inline_runs(p, stripped)
-
-        # Headings inherit size from their style; no per-run override needed.
-        _ = is_heading  # referenced to suppress linter "assigned but unused"
 
 
 def save_docx(md_text: str, workspace_paths: WorkspacePaths) -> str:

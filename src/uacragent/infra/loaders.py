@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 import shutil
 from pathlib import Path
@@ -16,6 +17,13 @@ from uacragent.domain.errors import IngestError
 from uacragent.domain.types import DocumentType
 from uacragent.infra.settings import Settings
 from uacragent.infra.workspace import WorkspacePaths
+
+logger = logging.getLogger(__name__)
+
+# Maximum iterations for filename collision resolution.  At 1 000 a collision
+# that cannot be resolved is practically impossible with human-uploaded files;
+# anything beyond suggests a filesystem problem rather than a collision.
+_MAX_COLLISION_COUNTER = 1_000
 
 
 # ---------------------------------------------------------------------------
@@ -333,13 +341,21 @@ class DocumentLoader:
         dest_folder.mkdir(parents=True, exist_ok=True)
         dest_path = dest_folder / src.name
 
-        # Avoid overwriting — add suffix if file exists
+        # Avoid overwriting — add numeric suffix if destination already exists.
+        # Cap at _MAX_COLLISION_COUNTER to prevent an infinite loop if the
+        # filesystem is in an unexpected state.
         counter = 1
-        while dest_path.exists():
+        while dest_path.exists() and counter <= _MAX_COLLISION_COUNTER:
             stem = src.stem
             suffix = src.suffix
             dest_path = dest_folder / f"{stem}_{counter}{suffix}"
             counter += 1
+        if counter > _MAX_COLLISION_COUNTER:
+            raise IngestError(
+                f"Could not find a unique filename for {src.name} in {dest_folder} "
+                f"after {_MAX_COLLISION_COUNTER} attempts. "
+                "The destination folder may contain an unexpected number of files."
+            )
 
         shutil.copy2(str(src), str(dest_path))
         return str(dest_path)
@@ -376,8 +392,7 @@ class DocumentLoader:
             # same file twice and inflating the vector store with duplicate chunks.
             unique_paths = list(dict.fromkeys(paths))
             if len(unique_paths) < len(paths):
-                import logging as _logging
-                _logging.getLogger(__name__).warning(
+                logger.warning(
                     "Duplicate file paths found for %s; deduplicating (%d → %d).",
                     doc_type, len(paths), len(unique_paths),
                 )

@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from uacragent.api.routes import router
-from uacragent.domain.errors import UACRAgentError
+from uacragent.domain.errors import LLMError, UACRAgentError
 
 
 @asynccontextmanager
@@ -37,8 +37,25 @@ def create_app() -> FastAPI:
     app = FastAPI(title="UACRAgent", lifespan=_lifespan)
     app.include_router(router)
 
+    @app.exception_handler(LLMError)
+    async def llm_error_handler(_, exc: LLMError) -> JSONResponse:
+        """Map LLM errors to semantically correct HTTP status codes.
+
+        Rate-limit / quota exhaustion → 429 Too Many Requests.
+        Service unavailable / overload → 503 Service Unavailable.
+        All other LLM errors          → 400 Bad Request.
+        """
+        msg = str(exc).lower()
+        if any(m in msg for m in ("429", "rate limit", "quota", "resource exhausted")):
+            status_code = 429
+        elif any(m in msg for m in ("503", "service unavailable", "overloaded")):
+            status_code = 503
+        else:
+            status_code = 400
+        return JSONResponse(status_code=status_code, content={"detail": str(exc)})
+
     @app.exception_handler(UACRAgentError)
-    async def uacragent_error_handler(_, exc: UACRAgentError):
+    async def uacragent_error_handler(_, exc: UACRAgentError) -> JSONResponse:
         return JSONResponse(status_code=400, content={"detail": str(exc)})
 
     return app
