@@ -192,6 +192,28 @@ _STRINGS: dict[str, dict[str, str]] = {
         # Rate-tier suggestion labels (shown when current ≠ provider's default)
         "rate_suggest_mismatch": "💡 Suggested for {provider}: {tier}",
         "rate_suggest_match":    "✓  Matches the suggested tier for {provider}",
+        # Privacy notice
+        "privacy_notice_title": "Privacy Notice",
+        "privacy_notice_body": (
+            "Before continuing:\n\n"
+            "UACRAgent sends your prompts and uploaded content to the AI "
+            "provider you select (Gemini, OpenAI, DeepSeek, etc.) for processing.\n\n"
+            "Do not upload confidential or sensitive information unless you "
+            "understand the provider's privacy policies."
+        ),
+        "privacy_accept":          "Accept",
+        "privacy_reject":          "Reject",
+        "privacy_rejected_title":  "Privacy Notice Required",
+        "privacy_rejected_body": (
+            "You need to accept the Privacy Notice to use UACRAgent.\n\n"
+            "You can go back and accept, or quit the application."
+        ),
+        "privacy_go_back":         "Go Back",
+        "privacy_quit":            "Quit",
+        "privacy_section":         "Privacy",
+        "privacy_view_btn":        "View Privacy Notice",
+        "privacy_reminder":        "Your prompts and uploaded content are sent to {provider} for processing.",
+        "privacy_policy_btn":      "View {provider} Privacy Policy",
         # API key labels / hints
         "api_key_google":   "Google API Key:",
         "api_key_openai":   "OpenAI API Key:",
@@ -475,6 +497,27 @@ _STRINGS: dict[str, dict[str, str]] = {
         # Rate-tier suggestion labels
         "rate_suggest_mismatch": "💡 {provider} 建议等级：{tier}",
         "rate_suggest_match":    "✓  当前等级与 {provider} 的建议匹配",
+        # Privacy notice
+        "privacy_notice_title": "隐私声明",
+        "privacy_notice_body": (
+            "继续使用前，请注意：\n\n"
+            "UACRAgent 会将您的提示词和上传内容发送给您选择的 AI 服务商"
+            "（Gemini、OpenAI、DeepSeek 等）进行处理。\n\n"
+            "请勿上传机密或敏感信息，除非您了解相关服务商的隐私政策。"
+        ),
+        "privacy_accept":          "接受",
+        "privacy_reject":          "拒绝",
+        "privacy_rejected_title":  "需要接受隐私声明",
+        "privacy_rejected_body": (
+            "您需要接受隐私声明才能使用 UACRAgent。\n\n"
+            "您可以返回并接受，或退出应用程序。"
+        ),
+        "privacy_go_back":         "返回",
+        "privacy_quit":            "退出",
+        "privacy_section":         "隐私",
+        "privacy_view_btn":        "查看隐私声明",
+        "privacy_reminder":        "您的提示词和上传内容将发送给 {provider} 进行处理。",
+        "privacy_policy_btn":      "查看 {provider} 隐私政策",
         # API key labels / hints
         "api_key_google":   "Google API 密钥:",
         "api_key_openai":   "OpenAI API 密钥:",

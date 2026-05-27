@@ -25,6 +25,14 @@ _DEFAULT_LOCAL_MODEL = "all-MiniLM-L6-v2"
 
 _vs_logger = logging.getLogger(__name__)
 
+# Module-level cache for local HuggingFace embedding model instances.
+# Loading a sentence-transformers model from disk into RAM is expensive
+# (~1–3 s and produces the "Loading weights" progress bar).  Caching the
+# live instance here means the cost is paid only once per process, even
+# when multiple sessions use the same model.
+# Key: model_name string.  Value: HuggingFaceEmbeddings instance.
+_local_embeddings_cache: dict[str, Any] = {}
+
 
 def _build_embeddings(
     settings: Settings,
@@ -120,10 +128,40 @@ def _build_local_embeddings(
                 "Then restart the application."
             )
 
+    # Return the cached instance if this model was already loaded this session.
+    # This avoids the ~1–3 s reload cost on every session open within one run.
+    if model_name in _local_embeddings_cache:
+        _vs_logger.debug("Local embedding model '%s' served from in-memory cache.", model_name)
+        return _local_embeddings_cache[model_name]
+
     try:
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=DeprecationWarning)
-            return HuggingFaceEmbeddings(model_name=model_name)
+        import os as _os
+        # Suppress the "Loading weights" tqdm bar and the unauthenticated-HF-Hub
+        # warning.  The model is already cached locally so no download occurs;
+        # the bar is pure noise.  We restore the env vars after instantiation so
+        # other code in the process is not affected.
+        _prev_bars    = _os.environ.get("HF_HUB_DISABLE_PROGRESS_BARS")
+        _prev_hf_warn = _os.environ.get("HF_HUB_DISABLE_IMPLICIT_TOKEN")
+        _os.environ["HF_HUB_DISABLE_PROGRESS_BARS"]    = "1"
+        _os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"]   = "1"
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=DeprecationWarning)
+                warnings.filterwarnings("ignore", message=".*huggingface.*")
+                warnings.filterwarnings("ignore", message=".*HF Hub.*")
+                instance = HuggingFaceEmbeddings(model_name=model_name)
+        finally:
+            # Restore previous values (or remove the keys if they were absent).
+            if _prev_bars is None:
+                _os.environ.pop("HF_HUB_DISABLE_PROGRESS_BARS", None)
+            else:
+                _os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = _prev_bars
+            if _prev_hf_warn is None:
+                _os.environ.pop("HF_HUB_DISABLE_IMPLICIT_TOKEN", None)
+            else:
+                _os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = _prev_hf_warn
+        _local_embeddings_cache[model_name] = instance
+        return instance
     except Exception as exc:
         # Catches ModuleNotFoundError("No module named 'sentence_transformers'")
         # raised during instantiation when the package is not yet installed.

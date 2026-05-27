@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 from uacragent.infra.persistence import (
     get_app_appearance, set_app_appearance,
     get_app_data_dir, set_app_data_dir,
+    get_privacy_accepted, set_privacy_accepted,
 )
 
 from ._custom_widgets import _RoundedChip
@@ -737,9 +738,31 @@ class AppearanceMixin:
         _browse_chip.grid(row=row, column=1, padx=(0, 4), pady=2)
         row += 1
 
-        # Separator before buttons
+        # ── Privacy section ──────────────────────────────────────────
         tk.Frame(frm, bg=_border, height=1).grid(
             row=row, column=0, columnspan=3, sticky="ew", pady=(14, 12))
+        row += 1
+
+        tk.Label(frm, text=self._t("privacy_section"),
+                 bg=_cbg, fg=_fg,
+                 font=("TkDefaultFont", _sz, "bold"),
+                 anchor="w").grid(row=row, column=0, columnspan=3,
+                                  sticky="w", pady=(0, 6))
+        row += 1
+
+        _privacy_link = tk.Label(
+            frm, text=self._t("privacy_view_btn"),
+            bg=_cbg, fg=c.get("link_fg", "#1b3167"),
+            font=("TkDefaultFont", _sz, "underline"),
+            cursor="hand2", anchor="w",
+        )
+        _privacy_link.grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 4))
+        _privacy_link.bind("<Button-1>", lambda _e: self._show_privacy_dialog())
+        row += 1
+
+        # Separator before buttons
+        tk.Frame(frm, bg=_border, height=1).grid(
+            row=row, column=0, columnspan=3, sticky="ew", pady=(8, 12))
         row += 1
 
         # ── Buttons ───────────────────────────────────────────────────
@@ -798,6 +821,232 @@ class AppearanceMixin:
         ).pack(side="left")
 
         self._center_on_main(win)
+
+    # ------------------------------------------------------------------
+    # Privacy notice dialogs
+    # ------------------------------------------------------------------
+
+    def _show_modal(
+        self,
+        win: tk.Toplevel,
+        *,
+        on_close: "callable | None" = None,
+        wait: bool = True,
+    ) -> None:
+        """Position *win* centred on the main window, make it modal, then wait.
+
+        Unlike ``_center_on_main`` (which defers positioning via ``after_idle``),
+        this helper centres synchronously so that ``grab_set()`` is always called
+        **after** ``deiconify()`` — the only reliable order on all platforms,
+        including macOS where a grab on a withdrawn/invisible window silently
+        does nothing.
+
+        Parameters
+        ----------
+        win:
+            A ``tk.Toplevel`` that has already been populated with widgets.
+            It must have been withdrawn before this call (``_make_toplevel``
+            does this automatically).
+        on_close:
+            Optional callable wired to ``WM_DELETE_WINDOW``.  When omitted
+            the protocol is left at the default (destroy the window).
+        wait:
+            When ``True`` (default) block until the window is destroyed.
+        """
+        # Flush layout so winfo_req* returns the real dimensions.
+        win.update_idletasks()
+        dw = win.winfo_reqwidth()  or 440
+        dh = win.winfo_reqheight() or 300
+        mw = self.winfo_width()
+        mh = self.winfo_height()
+        mx = self.winfo_rootx()
+        my = self.winfo_rooty()
+        x  = mx + (mw - dw) // 2
+        y  = my + (mh - dh) // 2
+        win.geometry(f"+{x}+{y}")
+
+        if on_close is not None:
+            win.protocol("WM_DELETE_WINDOW", on_close)
+
+        win.deiconify()          # make viewable FIRST …
+        win.lift()
+        win.focus_force()
+        win.grab_set()           # … then grab so it actually takes effect
+
+        # _make_toplevel() sets alpha=0 on macOS to suppress the OS-default
+        # placement flash.  Restore it now that the window is positioned.
+        import sys as _sys
+        if _sys.platform == "darwin":
+            try:
+                win.wm_attributes("-alpha", 1.0)
+            except tk.TclError:
+                pass
+
+        if wait:
+            win.wait_window()
+
+    def _show_privacy_dialog(self) -> None:
+        """Show the privacy notice dialog (always a blocking modal).
+
+        Behaviour is identical whether triggered on first launch or from the
+        App Settings "View Privacy Notice" link:
+
+        * [Accept] — persists ``privacy_notice_accepted = true`` and closes.
+        * [Reject] — clears any previous acceptance (sets ``false``), then
+          opens the secondary rejection dialog where the user must either go
+          back and accept or quit the application.
+        * Window-close (×) — treated the same as Reject.
+        """
+        c      = self._themed_colors()
+        _wbg   = c["window_bg"]
+        _cbg   = c.get("text_bg", "#ffffff")
+        _fg    = c["text_fg"]
+        _pbg   = c["btn_primary_bg"]
+        _pfg   = c["btn_primary_fg"]
+        _phov  = c.get("btn_primary_hover", _pbg)
+        _brd   = c.get("input_border", "#cdd4e8")
+        _sz    = self._font_size() if hasattr(self, "_font_size") else 13
+
+        win = self._make_toplevel()
+        win.title(self._t("privacy_notice_title"))
+        win.configure(bg=_wbg)
+        win.resizable(False, False)
+
+        # Outer padding → inner card
+        outer = tk.Frame(win, bg=_wbg, padx=12, pady=12)
+        outer.pack(fill="both", expand=True)
+
+        frm = tk.Frame(outer, bg=_cbg, padx=20, pady=18,
+                       highlightthickness=1, highlightbackground=_brd)
+        frm.pack(fill="both", expand=True)
+
+        tk.Label(
+            frm, text=self._t("privacy_notice_body"),
+            bg=_cbg, fg=_fg,
+            font=("TkDefaultFont", _sz),
+            justify="left", anchor="w", wraplength=400,
+        ).pack(anchor="w", pady=(0, 20))
+
+        btn_row = tk.Frame(frm, bg=_cbg)
+        btn_row.pack(anchor="e")
+
+        from ._custom_widgets import _RoundedChip
+
+        def _on_accept() -> None:
+            set_privacy_accepted(True)
+            win.destroy()
+
+        def _on_reject() -> None:
+            # Clear any previously stored acceptance so the app cannot be used
+            # without going back and accepting or quitting.
+            set_privacy_accepted(False)
+            win.destroy()
+            self._show_privacy_rejected_dialog()
+
+        _RoundedChip(
+            btn_row, text=self._t("privacy_accept"),
+            chip_bg=_pbg, chip_fg=_pfg,
+            parent_bg=_cbg,
+            font=("TkDefaultFont", _sz, "bold"),
+            padx=14, pady=6,
+            hover_bg=_phov,
+            command=_on_accept,
+        ).pack(side="left", padx=(0, 8))
+
+        _reject_bg  = c.get("btn_cancel_bg",    "#e53e3e")
+        _reject_fg  = c.get("btn_cancel_fg",    "#ffffff")
+        _reject_hov = c.get("btn_cancel_hover", "#c53030")
+        _RoundedChip(
+            btn_row, text=self._t("privacy_reject"),
+            chip_bg=_reject_bg, chip_fg=_reject_fg,
+            parent_bg=_cbg,
+            font=("TkDefaultFont", _sz),
+            padx=14, pady=6,
+            hover_bg=_reject_hov,
+            command=_on_reject,
+        ).pack(side="left")
+
+        # Always a blocking modal — grab_set after deiconify (reliable on all platforms).
+        self._show_modal(win, on_close=_on_reject, wait=True)
+
+    def _show_privacy_rejected_dialog(self) -> None:
+        """Secondary dialog shown when the user rejects the privacy notice.
+
+        [Go Back]  → close this dialog and re-open the privacy notice.
+        [Quit]     → destroy the main application window.
+        """
+        c      = self._themed_colors()
+        _wbg   = c["window_bg"]
+        _cbg   = c.get("text_bg", "#ffffff")
+        _fg    = c["text_fg"]
+        _pbg   = c["btn_primary_bg"]
+        _pfg   = c["btn_primary_fg"]
+        _phov  = c.get("btn_primary_hover", _pbg)
+        _brd   = c.get("input_border", "#cdd4e8")
+        _sz    = self._font_size() if hasattr(self, "_font_size") else 13
+
+        win = self._make_toplevel()
+        win.title(self._t("privacy_rejected_title"))
+        win.configure(bg=_wbg)
+        win.resizable(False, False)
+
+        outer = tk.Frame(win, bg=_wbg, padx=12, pady=12)
+        outer.pack(fill="both", expand=True)
+
+        frm = tk.Frame(outer, bg=_cbg, padx=20, pady=18,
+                       highlightthickness=1, highlightbackground=_brd)
+        frm.pack(fill="both", expand=True)
+
+        tk.Label(
+            frm, text=self._t("privacy_rejected_body"),
+            bg=_cbg, fg=_fg,
+            font=("TkDefaultFont", _sz),
+            justify="left", anchor="w", wraplength=380,
+        ).pack(anchor="w", pady=(0, 20))
+
+        btn_row = tk.Frame(frm, bg=_cbg)
+        btn_row.pack(anchor="e")
+
+        from ._custom_widgets import _RoundedChip
+
+        def _go_back() -> None:
+            win.destroy()
+            self._show_privacy_dialog()
+
+        def _quit() -> None:
+            win.destroy()
+            self.destroy()
+
+        _RoundedChip(
+            btn_row, text=self._t("privacy_go_back"),
+            chip_bg=_pbg, chip_fg=_pfg,
+            parent_bg=_cbg,
+            font=("TkDefaultFont", _sz, "bold"),
+            padx=14, pady=6,
+            hover_bg=_phov,
+            command=_go_back,
+        ).pack(side="left", padx=(0, 8))
+
+        _quit_bg  = c.get("btn_cancel_bg",    "#e53e3e")
+        _quit_fg  = c.get("btn_cancel_fg",    "#ffffff")
+        _quit_hov = c.get("btn_cancel_hover", "#c53030")
+        _RoundedChip(
+            btn_row, text=self._t("privacy_quit"),
+            chip_bg=_quit_bg, chip_fg=_quit_fg,
+            parent_bg=_cbg,
+            font=("TkDefaultFont", _sz),
+            padx=14, pady=6,
+            hover_bg=_quit_hov,
+            command=_quit,
+        ).pack(side="left")
+
+        # Closing the window (× button) is the same as quitting.
+        self._show_modal(win, on_close=_quit, wait=True)
+
+    def _check_privacy_consent(self) -> None:
+        """Show the privacy notice on first launch if not yet accepted."""
+        if not get_privacy_accepted():
+            self._show_privacy_dialog()
 
     # ------------------------------------------------------------------
     # Settings field helpers

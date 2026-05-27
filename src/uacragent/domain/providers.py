@@ -50,6 +50,7 @@ class ProviderConfig:
     default_rate_tier: str = "free"
     supports_search: bool = False   # provider has a built-in web-search API
     supports_files: bool = False    # provider accepts multimodal file attachments
+    privacy_policy_url: str = ""    # link shown in the per-provider privacy reminder
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +89,7 @@ PROVIDERS: dict[str, ProviderConfig] = {
         default_rate_tier="free",
         supports_search=True,
         supports_files=True,
+        privacy_policy_url="https://policies.google.com/privacy",
     ),
     "openai": ProviderConfig(
         id="openai",
@@ -135,6 +137,7 @@ PROVIDERS: dict[str, ProviderConfig] = {
         # accept file/vision inputs — the upload button should be disabled when
         # one of those models is selected, regardless of this flag.
         supports_files=True,
+        privacy_policy_url="https://openai.com/policies/privacy-policy",
     ),
     "deepseek": ProviderConfig(
         id="deepseek",
@@ -152,6 +155,7 @@ PROVIDERS: dict[str, ProviderConfig] = {
         default_model="deepseek-chat",
         base_url="https://api.deepseek.com",
         label_i18n_key="api_key_deepseek",
+        privacy_policy_url="https://www.deepseek.com/privacy_policy",
         # DeepSeek uses dynamic concurrency-based limiting (no fixed RPM table).
         # Practical ceiling is ~300 RPM for standard accounts; heavy paid usage can
         # reach 1 500+ RPM.  "standard" (0.5 s delay) is a safe conservative default.

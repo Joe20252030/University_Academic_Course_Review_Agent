@@ -226,6 +226,10 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
+        # Show privacy notice on first launch (deferred so the main window
+        # is fully visible and positioned before the modal dialog appears).
+        self.after(200, self._check_privacy_consent)
+
     # ------------------------------------------------------------------
     # StringVar initialisation (settings fields)
     # ------------------------------------------------------------------

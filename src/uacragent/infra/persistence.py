@@ -140,6 +140,18 @@ def set_app_appearance(color_mode: str, font_size: str, language: str) -> None:
     _save_config(cfg)
 
 
+def get_privacy_accepted() -> bool:
+    """Return True if the user has accepted the privacy notice."""
+    return bool(_load_config().get("privacy_notice_accepted", False))
+
+
+def set_privacy_accepted(accepted: bool) -> None:
+    """Persist the user's privacy notice acceptance to ``~/.uacragent/config.json``."""
+    cfg = _load_config()
+    cfg["privacy_notice_accepted"] = bool(accepted)
+    _save_config(cfg)
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------

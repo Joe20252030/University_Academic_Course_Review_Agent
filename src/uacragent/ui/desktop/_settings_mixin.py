@@ -18,7 +18,7 @@ from uacragent.infra.workspace import workspace_paths
 from ._custom_widgets import AutoHideScrollbar, _RoundedChip, draw_rounded_rect
 from ._ui_constants import (
     _PAD, _SUPPORTED_FILETYPES, _STRINGS, _THEME_COLORS, _FONT_SIZE_VALUES,
-    _open_file_in_os, _open_folder_in_os,
+    _open_in_os, _open_file_in_os, _open_folder_in_os,
 )
 
 
@@ -847,6 +847,26 @@ class SettingsMixin:
         )
         self._model_chip.grid(row=1, column=0, sticky="ew", pady=(6, 0))
         self._update_model_list()   # populate for current provider
+
+        # ── Per-provider privacy reminder ─────────────────────────────
+        _note_sz = max(self._font_size() - 1, 10)
+        self._privacy_reminder_var = tk.StringVar()
+        tk.Label(
+            mf, textvariable=self._privacy_reminder_var,
+            bg=_cbg, fg=c.get("status_fg", "#6b7280"),
+            font=("TkDefaultFont", _note_sz),
+            wraplength=400, anchor="w", justify="left",
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(10, 0))
+
+        self._privacy_policy_lbl = tk.Label(
+            mf, text="",
+            bg=_cbg, fg=c.get("link_fg", "#1b3167"),
+            font=("TkDefaultFont", _note_sz, "underline"),
+            cursor="hand2", anchor="w",
+        )
+        self._privacy_policy_lbl.grid(row=3, column=0, columnspan=2, sticky="w",
+                                      pady=(2, 0))
+        self._update_privacy_reminder()   # populate immediately for current provider
 
         # ── Request Frequency ─────────────────────────────────────────
         rf = self._make_section_card(inner, row, self._t("settings_rate_section"), c)
@@ -1720,10 +1740,50 @@ class SettingsMixin:
         except Exception:  # noqa: BLE001
             pass  # StringVar destroyed between check and set — harmless
 
+    def _update_privacy_reminder(self) -> None:
+        """Refresh the per-provider privacy reminder inside Session Settings.
+
+        Updates both the reminder text label (via StringVar) and the clickable
+        privacy-policy link whenever the selected provider changes.  Safe to
+        call when the dialog is closed — exits immediately via the ``hasattr``
+        guard.
+        """
+        if not hasattr(self, "_privacy_reminder_var"):
+            return  # dialog not yet built — nothing to update
+
+        from uacragent.domain.providers import get_provider
+        provider_id  = self._llm_provider_var.get() or "gemini"
+        provider_cfg = get_provider(provider_id)
+        reminder     = self._t("privacy_reminder").format(
+            provider=provider_cfg.display_name)
+        try:
+            self._privacy_reminder_var.set(reminder)
+        except Exception:  # noqa: BLE001
+            return
+
+        if not hasattr(self, "_privacy_policy_lbl"):
+            return
+        try:
+            policy_url = provider_cfg.privacy_policy_url
+            if policy_url:
+                btn_text = self._t("privacy_policy_btn").format(
+                    provider=provider_cfg.display_name)
+                self._privacy_policy_lbl.configure(text=btn_text)
+                self._privacy_policy_lbl.bind(
+                    "<Button-1>",
+                    lambda _e, url=policy_url: _open_in_os(url),
+                )
+            else:
+                self._privacy_policy_lbl.configure(text="")
+                self._privacy_policy_lbl.unbind("<Button-1>")
+        except tk.TclError:
+            pass  # widget already destroyed — harmless
+
     def _on_provider_changed(self, _event: object = None) -> None:
         self._update_model_list()
         self._update_api_key_row()
         self._update_rate_suggestion()
+        self._update_privacy_reminder()
 
     def _toggle_key_entry(self, entry: tk.Widget, btn: tk.Widget | None = None) -> None:
         if entry.cget("show") == "*":
