@@ -101,6 +101,28 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         # Look for the icon relative to this file so it works whether the app
         # is run from source or installed as a package.
         import sys as _sys
+
+        def _load_macos_padded_icon(path: Path):
+            """Return a PhotoImage whose artwork matches normal macOS Dock padding.
+
+            The raw logo artwork fills almost the entire 512 px canvas. That
+            looks fine as a standalone PNG, but compared with native macOS app
+            icons it appears visually oversized in the Dock. We therefore place
+            the artwork on a transparent canvas with about 9% padding on each
+            side before handing it to Tk / AppKit.
+            """
+            from PIL import Image as _PILImage
+            from PIL.ImageTk import PhotoImage as _PILPhotoImage
+
+            _pil_src = _PILImage.open(str(path)).convert("RGBA")
+            _sz = 512
+            _pad = int(_sz * 0.09)
+            _art = _sz - 2 * _pad
+            _canvas = _PILImage.new("RGBA", (_sz, _sz), (0, 0, 0, 0))
+            _art_img = _pil_src.resize((_art, _art), _PILImage.LANCZOS)
+            _canvas.paste(_art_img, (_pad, _pad), _art_img)
+            return _PILPhotoImage(_canvas), _canvas
+
         # Resolve assets relative to the package root so the path is correct
         # both when running from source and when installed via pip/PyInstaller.
         # __file__ = .../uacragent/ui/desktop/app.py → 3 parents → uacragent/
@@ -123,39 +145,48 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
                     _icon_path = _assets / "logo_256.png"
 
             if _icon_path.exists():
-                _icon_img = _PILPhotoImage(file=str(_icon_path))
+                _icon_canvas = None
+                if _sys.platform == "darwin":
+                    _icon_img, _icon_canvas = _load_macos_padded_icon(_icon_path)
+                else:
+                    _icon_img = _PILPhotoImage(file=str(_icon_path))
                 self.iconphoto(True, _icon_img)
-                self._app_icon = _icon_img  # keep ref — prevents GC
+                self._app_icon = _icon_img      # keep ref — prevents GC
+                self._app_icon_canvas = _icon_canvas
 
             # macOS: set the Dock icon via AppKit when pyobjc is available.
             #
             # When running from a PyInstaller .app bundle (sys.frozen = True),
             # macOS already loads the correct ICNS from the bundle's Resources
-            # directory — we must NOT call setApplicationIconImage_() here,
-            # because the NSImage pixel-size (512×512) is interpreted as point-
-            # size and macOS would display the icon slightly larger than other
-            # Dock icons.
+            # directory and handles sizing correctly — skip the programmatic
+            # override entirely so macOS stays in control.
             #
-            # When running from source we do set the image, but we explicitly
-            # cap the NSImage size to 128×128 pt so macOS scales it consistently
-            # with how it would handle a properly-packaged app icon.
+            # When running from source: the logo PNG artwork fills 100% of its
+            # canvas, but Apple's HIG expects artwork to occupy ~82% of the icon
+            # canvas (9% transparent padding on each side).  Without padding the
+            # icon appears visually larger than every other Dock icon.  We use
+            # PIL (already a project dependency) to compose a correctly-padded
+            # image in memory and pass the raw PNG bytes to NSImage so no
+            # temporary file is needed.
             if _sys.platform == "darwin" and not getattr(_sys, "frozen", False):
                 try:
-                    from AppKit import NSApplication, NSImage  # type: ignore
-                    from Foundation import NSSize               # type: ignore
+                    import io as _io
+                    from AppKit import NSApplication, NSImage    # type: ignore
+                    from Foundation import NSData                # type: ignore
                     _dock_path = _assets / "logo_512.png"
                     if not _dock_path.exists():
                         _dock_path = _assets / "logo_256.png"
                     if _dock_path.exists():
-                        _ns_img = NSImage.alloc().initByReferencingFile_(
-                            str(_dock_path)
+                        # Reuse the same padded artwork as the Tk icon path so
+                        # the Dock icon size stays consistent even when AppKit
+                        # is available on some machines and not others.
+                        _, _canvas = _load_macos_padded_icon(_dock_path)
+                        _buf = _io.BytesIO()
+                        _canvas.save(_buf, format="PNG")
+                        _ns_data = NSData.dataWithBytes_length_(
+                            _buf.getvalue(), len(_buf.getvalue())
                         )
-                        # NSImage loaded from a PNG defaults its size to the
-                        # pixel dimensions (512×512 pt), which makes the Dock
-                        # icon appear slightly larger than other apps.
-                        # 128 pt is the effective display size macOS targets for
-                        # standard Dock icons and produces consistent sizing.
-                        _ns_img.setSize_(NSSize(128, 128))
+                        _ns_img = NSImage.alloc().initWithData_(_ns_data)
                         NSApplication.sharedApplication().setApplicationIconImage_(
                             _ns_img
                         )
