@@ -40,12 +40,16 @@ for pkg in [
     "sentence_transformers",
     "tokenizers",
     "huggingface_hub",
-    # sentence_transformers depends on torch and transformers at import time.
-    # Without these the frozen app raises ImportError when trying to load any
-    # local embedding model.  pyinstaller-hooks-contrib (installed alongside
-    # PyInstaller) provides the torch hook that handles native .so discovery.
-    "torch",
-    "transformers",
+    # Local embedding in the frozen .app uses chromadb's built-in ONNX path
+    # (DefaultEmbeddingFunction) instead of sentence_transformers + PyTorch,
+    # because PyTorch's native C extensions frequently fail to load inside a
+    # PyInstaller bundle on macOS.  We still bundle torch/transformers so that
+    # source-mode users who run from the repo can use HuggingFaceEmbeddings
+    # normally — the frozen app's _build_local_embeddings() takes the ONNX
+    # fast-path before those imports are even attempted.
+    "onnxruntime",    # primary local-embedding runtime in frozen .app
+    "torch",          # kept for source-mode / future support
+    "transformers",   # kept for source-mode / future support
 ]:
     try:
         d, b, h = collect_all(pkg)

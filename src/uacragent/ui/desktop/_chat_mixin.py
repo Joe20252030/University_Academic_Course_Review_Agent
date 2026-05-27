@@ -713,7 +713,16 @@ class ChatMixin:
         # Only add a chat notice when actual (re-)indexing was performed.
         # On the fast path the session is silently ready — no noise in chat.
         if not was_cached:
-            self._append_chat("system", self._t("docs_indexed").format(status=status))
+            # retriever is None for two cases returned by initialize_session:
+            #   • "no_docs"    — no files loaded yet (status = informational msg)
+            #   • "init_failed" — exception caught (status = error string)
+            # Both should be shown as-is; neither gets the "✓ Documents indexed."
+            # wrapper which would be misleading in either case.
+            _no_retriever = getattr(session, "retriever", None) is None
+            if _no_retriever:
+                self._append_chat("system", status)
+            else:
+                self._append_chat("system", self._t("docs_indexed").format(status=status))
         # Skip saving when the fast path was used: the session was loaded from
         # disk unchanged, so re-writing it would only bump last_modified pointlessly.
         if not was_cached:
@@ -743,7 +752,16 @@ class ChatMixin:
         if was_cached:
             self._append_chat("system", self._t("settings_saved_cached"))
         else:
-            self._append_chat("system", self._t("docs_indexed").format(status=status))
+            # retriever is None for two cases returned by initialize_session:
+            #   • "no_docs"    — no files loaded yet (status = informational msg)
+            #   • "init_failed" — exception caught (status = error string)
+            # Both should be shown as-is; neither gets the "✓ Documents indexed."
+            # wrapper which would be misleading in either case.
+            _no_retriever = getattr(session, "retriever", None) is None
+            if _no_retriever:
+                self._append_chat("system", status)
+            else:
+                self._append_chat("system", self._t("docs_indexed").format(status=status))
         self._save_current_session()
         self._refresh_session_list()
 

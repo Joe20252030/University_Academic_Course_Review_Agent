@@ -84,6 +84,32 @@ def _build_embeddings(
         raise
 
 
+def _build_chromadb_onnx_embeddings() -> Any:
+    """Wrap chromadb's built-in ONNX embedding as a LangChain Embeddings object.
+
+    ChromaDB ships ``all-MiniLM-L6-v2`` in ONNX format and bundles the
+    ``onnxruntime`` and ``tokenizers`` runtimes as direct dependencies.
+    No PyTorch is needed, making this the reliable path for the frozen .app.
+
+    The ONNX model file (~23 MB) is downloaded on first use and cached in
+    ``~/.cache/chroma/onnx_models/`` — the same pattern as HuggingFace Hub
+    caching, but without requiring the full torch stack.
+    """
+    from langchain_core.embeddings import Embeddings
+    from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
+
+    _ef = DefaultEmbeddingFunction()
+
+    class _OnnxWrapper(Embeddings):
+        def embed_documents(self, texts: list[str]) -> list[list[float]]:
+            return [list(v) for v in _ef(texts)]
+
+        def embed_query(self, text: str) -> list[float]:
+            return list(_ef([text])[0])
+
+    return _OnnxWrapper()
+
+
 def _build_local_embeddings(
     model_name: str,
     progress_cb: Callable[[str], None] | None = None,
@@ -96,17 +122,40 @@ def _build_local_embeddings(
     *progress_cb* is called with status messages so the caller can surface
     them in the UI.
 
+    In the frozen ``.app`` build the sentence-transformers / PyTorch stack is
+    replaced by chromadb's built-in ONNX embedding function (same
+    ``all-MiniLM-L6-v2`` model, no PyTorch dependency).
+
     Raises
     ------
     ConfigurationError
-        When ``sentence-transformers`` or ``langchain-huggingface`` are not
-        installed.  The error message includes the exact ``pip install``
-        command the user should run.
+        When no local embedding backend can be loaded.
     """
     _PACKAGES = ["sentence-transformers", "langchain-huggingface"]
 
     import sys as _sys
     import warnings
+
+    # ── Frozen .app fast-path: use chromadb's bundled ONNX embedding ──────────
+    # PyTorch's native C extensions often fail to load inside a PyInstaller
+    # bundle on macOS even when collect_all("torch") is used, because the
+    # dylib dependency chain is not fully resolved at freeze time.
+    # ChromaDB's DefaultEmbeddingFunction ships onnxruntime + tokenizers as
+    # direct dependencies — both are far more PyInstaller-friendly than torch.
+    if getattr(_sys, "frozen", False):
+        if progress_cb:
+            progress_cb(f"Loading local embedding model ({model_name})…")
+        try:
+            return _build_chromadb_onnx_embeddings()
+        except Exception as _onnx_exc:
+            from uacragent.domain.errors import ConfigurationError
+            raise ConfigurationError(
+                "Local embedding is not available in this build.\n\n"
+                "Please switch to a cloud embedding provider:\n"
+                "  • Open Session Settings  →  Embedding Provider\n"
+                "  • Choose  Gemini  or  OpenAI  instead of  Local\n\n"
+                "Cloud embedding requires an API key but no extra installation."
+            ) from _onnx_exc
 
     def _missing_local_deps_error(from_exc: Exception | None = None) -> "ConfigurationError":
         """Return the appropriate ConfigurationError for missing local-embedding deps.
@@ -236,13 +285,26 @@ def _embedding_fingerprint(settings: Any) -> str:
 
     Examples::
 
-        "local::all-MiniLM-L6-v2"        # free, no API key
+        "local::all-MiniLM-L6-v2"        # source-mode — HuggingFace / PyTorch
+        "local_onnx::all-MiniLM-L6-v2"   # frozen .app — chromadb ONNX runtime
         "gemini::models/text-embedding-004"
         "openai::"
+
+    The ``local`` and ``local_onnx`` variants use the same model weights but
+    different runtimes (PyTorch vs ONNX).  Although the outputs are expected to
+    be numerically close, they are not guaranteed bit-identical, so a distinct
+    fingerprint is used to force a safe re-index when switching between source
+    mode and the frozen .app.
     """
+    import sys as _sys
     provider = getattr(settings, "embedding_provider", "gemini")
     if provider == "local":
         model = getattr(settings, "local_embedding_model", _DEFAULT_LOCAL_MODEL)
+        # In the frozen .app the ONNX runtime is used instead of PyTorch.
+        # Distinguish the two backends so a session indexed in source mode is
+        # safely re-indexed on first open in the frozen app (and vice-versa).
+        if getattr(_sys, "frozen", False):
+            provider = "local_onnx"
     else:
         # Cloud providers expose their model via embedding_model (Gemini) or
         # use a fixed default (OpenAI).  Store it so a model-name change also
