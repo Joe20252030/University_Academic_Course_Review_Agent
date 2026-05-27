@@ -120,7 +120,8 @@ def get_app_appearance() -> dict:
     """Return persisted appearance settings with safe defaults.
 
     Keys: ``color_mode`` ("light" | "dark"), ``font_size`` ("small" | "medium" | "large"),
-    ``language`` ("auto" | "en" | "zh_CN").
+    ``language`` ("auto" | "en" | "zh_CN").  When no preference has been saved
+    yet, the fallback is English (``"en"``).
     """
     cfg = _load_config()
     return {

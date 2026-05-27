@@ -378,6 +378,7 @@ The CLI is an interactive terminal assistant, not a one-shot generator.
 1. Install the package with `pip install -e .`.
 2. Set your provider key(s) in `.env` or your shell environment.
 3. Start the CLI with one or more course files and a course name.
+   Supported inputs include PDF, DOCX, CSV, and common text/code formats.
 4. Wait for startup indexing to finish.
 5. Ask questions or request generated study documents in natural language.
 6. Exit with `exit`, `quit`, `Ctrl-C`, or `Ctrl-D`.
@@ -413,6 +414,7 @@ The FastAPI layer is the programmatic one-shot generation interface.
    - `task_type`
    - optional `effort_level`
    - optional `reasoning_mode`
+   - absolute file paths for every source document
 3. Send a `POST /review` request.
 4. Read the returned plan plus the saved markdown path.
 

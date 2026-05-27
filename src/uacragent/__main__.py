@@ -28,6 +28,9 @@ LLM provider, model, and API keys are read from environment variables or a
     LLM_MODEL          e.g. gemini-2.5-flash
     GOOGLE_API_KEY     / OPENAI_API_KEY / DEEPSEEK_API_KEY
     EMBEDDING_PROVIDER gemini | openai | local      (default: gemini)
+
+Supported input formats include PDF, DOCX, CSV, and common text/code files
+such as TXT, Markdown, JSON, HTML, XML, Python, JavaScript, and TypeScript.
 """
 from __future__ import annotations
 
