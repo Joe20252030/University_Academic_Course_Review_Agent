@@ -22,8 +22,9 @@ Ask any question, or request a study document:
 
 Type  exit  or press Ctrl-C / Ctrl-D to quit.
 
-LLM provider, model, and API keys are read from environment variables or a
-.env file in the working directory (same as the desktop mode):
+LLM provider, model, and API keys are read from environment variables plus
+``.env`` files. The CLI checks ``<app_data_dir>/.env`` first and then falls
+back to ``cwd/.env``:
     LLM_PROVIDER       gemini | openai | deepseek  (default: gemini)
     LLM_MODEL          e.g. gemini-2.5-flash
     GOOGLE_API_KEY     / OPENAI_API_KEY / DEEPSEEK_API_KEY

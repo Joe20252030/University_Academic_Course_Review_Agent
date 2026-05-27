@@ -12,9 +12,10 @@ from uacragent.domain.errors import LLMError, UACRAgentError
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     """Run startup tasks before the server begins accepting requests."""
-    # Load .env so API keys / provider settings are available via os.environ,
-    # mirroring the desktop mode.  dotenv is a soft dependency — skip silently
-    # if not installed.
+    # Load cwd/.env so API keys / provider settings are available via
+    # os.environ. Unlike the desktop GUI and CLI, the API currently does not
+    # preload <app_data_dir>/.env. dotenv is a soft dependency — skip
+    # silently if not installed.
     try:
         from dotenv import load_dotenv
         load_dotenv()

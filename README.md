@@ -262,6 +262,17 @@ GOOGLE_API_KEY=your-google-api-key-here
 # DEEPSEEK_API_KEY=your-deepseek-api-key-here
 ```
 
+`.env` lookup behavior by interface:
+
+- Desktop GUI: reads `<app_data_dir>/.env` first, then falls back to the
+  current working directory `.env`.
+- CLI: reads `<app_data_dir>/.env` first, then falls back to the current
+  working directory `.env`.
+- API server: currently reads the current working directory `.env`.
+
+For the default app data directory, `<app_data_dir>` is `~/.uacragent/` unless
+you changed it in the desktop app settings.
+
 Official API platform / key-management pages:
 
 - OpenAI: [platform.openai.com](https://platform.openai.com/)
