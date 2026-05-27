@@ -216,7 +216,7 @@ app = BUNDLE(
         "CFBundleShortVersionString": _APP_VERSION,
         "CFBundleVersion":            _APP_VERSION,
         "NSHighResolutionCapable":    True,
-        "NSHumanReadableCopyright":   "MIT License",
+        "NSHumanReadableCopyright":   "Copyright © 2026 Lizhuo Xu. MIT License.",
         "LSMinimumSystemVersion":     "12.0",
         "LSUIElement":                False,
     },
