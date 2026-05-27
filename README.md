@@ -65,6 +65,10 @@ Provider and deployment notes:
   current app.
 - Local embeddings download a model on first use from the HuggingFace
   ecosystem, then reuse the local cache afterward.
+- On first launch, the desktop GUI shows a privacy notice that must be accepted
+  before use. You can reopen the notice later from App Settings, and the
+  session settings dialog also shows a provider-specific privacy reminder and
+  privacy-policy link.
 - The FastAPI interface accepts absolute file paths. Without
   `UACRAGENT_ALLOWED_BASE_DIR`, a local or deployed API server can read any
   absolute existing file path supplied in a request. For any non-local
@@ -134,6 +138,11 @@ The project supports multiple LLM providers for chat, planning, and writing:
 | Gemini   | Chat, planning, writing, embeddings | Web search + file attachments        | `GOOGLE_API_KEY`   |
 | OpenAI   | Chat, planning, writing, embeddings | Web search + file attachments        | `OPENAI_API_KEY`   |
 | DeepSeek | Chat, planning, writing             | Standard chat only                   | `DEEPSEEK_API_KEY` |
+
+Model note:
+- Desktop chat attachment controls are gated by the active provider and model.
+  For example, OpenAI `*-search-preview` models support built-in web search but
+  disable the upload button because they do not accept file/vision inputs.
 
 ## Embedding Providers
 
@@ -363,6 +372,7 @@ The GUI lets you:
 - Cancel an in-flight indexing or chat request from the main panel
 - Open global app settings to change color mode, font size, language (`Auto`, `en`, or `zh_CN`), and the shared app data directory
 - Use the selected desktop language to steer assistant replies and generated document headings in English or Simplified Chinese
+- Review the first-launch privacy notice and reopen it later from App Settings when needed
 
 Works on macOS, Windows, and Linux.
 
@@ -389,29 +399,31 @@ without adding a new "documents indexed" notice to the chat transcript.
 For most users, the desktop GUI is the easiest way to use the project.
 
 1. Launch the app with `python -m uacragent --gui` or simply `python -m uacragent`.
-2. Create a new session from the left sidebar.
-3. Open **Settings**.
-4. Enter a **Course Name**. This is the only required course field.
-5. Choose your LLM provider and model.
-6. Add the matching API key in the settings dialog if it is not already loaded from `.env`.
-7. Choose an embedding provider:
+2. Read and accept the privacy notice shown on first launch.
+3. Create a new session from the left sidebar.
+4. Open **Settings**.
+5. Enter a **Course Name**. This is the only required course field.
+6. Choose your LLM provider and model.
+7. Add the matching API key in the settings dialog if it is not already loaded from `.env`.
+8. Review the provider privacy reminder in Settings if you are working with sensitive course material.
+9. Choose an embedding provider:
    - `gemini` or `openai` if you want cloud embeddings
    - `local` if you want free on-device embeddings
-8. Add course files into the appropriate document buckets:
+10. Add course files into the appropriate document buckets:
    - syllabus
    - lecture notes
    - textbook
    - assignment
    - past exam
    - other
-9. Optionally fill in:
+11. Optionally fill in:
    - university / major / course code / professor / semester
    - exam type / exam format / exam duration
    - extra instructions
    - exam information sheet file
    - export format
-10. Optionally choose a custom workspace folder before the first **Apply**.
-11. Click **Apply**.
+12. Optionally choose a custom workspace folder before the first **Apply**.
+13. Click **Apply**.
 
 What **Apply** does:
 
@@ -437,7 +449,7 @@ Useful desktop controls:
 - `Effort level` changes retrieval/context depth for each turn.
 - `Reasoning mode` changes the generation pipeline depth for study-document tasks.
 - `Web search` is only available for providers that support it.
-- `File attachments` in chat are only available for providers that support them.
+- `File attachments` are available only when the active provider/model supports file inputs. Unsupported image/file uploads are disabled in the UI.
 - `Cancel` stops an in-flight indexing or chat task.
 - `Language` in App Settings supports `Auto`, English, and Simplified Chinese.
 
@@ -708,7 +720,10 @@ src/uacragent/
     conversation.py      Conversational agent for session-based chat + task triggering
     session.py           Session state container for chat, files, and preferences
     pipeline.py          RAG pipeline with task-type dispatch
+    reasoning.py         Reasoning-mode configuration, topic extraction, and critic/refinement passes
+    workspace_manager.py Workspace cleanup helpers for Apply / re-index flows
     prompts/
+      _prompts.py                    Shared prompt-directory path + language-steering helpers
       conversation_system.md         System prompt for desktop chat sessions
       review_summary_planner.md      Review summary planner
       review_summary_writer.md       Review summary writer
@@ -719,6 +734,8 @@ src/uacragent/
       exam_prediction_planner.md     Exam prediction planner
       exam_prediction_writer.md      Exam prediction analysis writer (Part A)
       exam_prediction_paper_writer.md Predicted exam paper writer (Part B)
+      topic_extraction.md            Deep-analysis topic extraction prompt
+      section_critic.md              Deep-analysis refinement / critic prompt
   api/
     main.py              FastAPI application factory
     routes.py            API endpoints (/health, /review)
