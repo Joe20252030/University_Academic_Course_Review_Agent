@@ -133,8 +133,9 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
             if _sys.platform == "darwin":
                 # macOS does NOT apply its squircle mask to programmatically-
                 # set icons — only to proper .app bundle ICNS resources.
-                # We therefore use the pre-rounded 512 px PNG (transparent
-                # corners baked in) so the Dock shows a correctly shaped icon.
+                # We therefore start from the pre-rounded 512 px PNG
+                # (transparent corners baked in) and then add Apple-style
+                # inner padding before passing it to Tk/AppKit.
                 _icon_path = _assets / "logo_512.png"
                 if not _icon_path.exists():
                     _icon_path = _assets / "logo_256.png"
@@ -161,13 +162,10 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
             # directory and handles sizing correctly — skip the programmatic
             # override entirely so macOS stays in control.
             #
-            # When running from source: the logo PNG artwork fills 100% of its
-            # canvas, but Apple's HIG expects artwork to occupy ~82% of the icon
-            # canvas (9% transparent padding on each side).  Without padding the
-            # icon appears visually larger than every other Dock icon.  We use
-            # PIL (already a project dependency) to compose a correctly-padded
-            # image in memory and pass the raw PNG bytes to NSImage so no
-            # temporary file is needed.
+            # When running from source, both the Tk iconphoto path above and
+            # this AppKit override use the same padded artwork. The source PNG
+            # otherwise fills too much of the canvas and appears visually
+            # larger than neighboring Dock icons.
             if _sys.platform == "darwin" and not getattr(_sys, "frozen", False):
                 try:
                     import io as _io

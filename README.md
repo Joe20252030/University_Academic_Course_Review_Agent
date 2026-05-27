@@ -769,6 +769,9 @@ src/uacragent/
       _settings_mixin.py Session Settings dialog and validation flow
       _session_mixin.py  Session list management and persistence hooks
       _chat_mixin.py     Chat send/receive flow, indexing, and output-link UI
+  assets/
+    UACRAgent.icns      macOS app-bundle icon asset
+    logo_*.png/svg/ico  Desktop and package icon variants
 tests/
   test_domain.py         Domain model and enum tests
   test_export.py         Markdown / DOCX / PDF export tests
