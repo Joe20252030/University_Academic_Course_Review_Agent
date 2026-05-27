@@ -153,10 +153,17 @@ LLM provider:
 |----------|--------------------------------------------|-----------------------------------------|
 | Gemini   | Cloud embeddings                           | `GOOGLE_API_KEY`                        |
 | OpenAI   | Cloud embeddings                           | `OPENAI_API_KEY`                        |
-| Local    | On-device sentence-transformers embeddings | No API key; first use downloads a model |
+| Local    | On-device embeddings                       | No API key; first use downloads a model |
 
 The desktop GUI exposes all three embedding options. Local embeddings are free
 to run after the model has been downloaded and cached.
+
+Backend note:
+- In source installs, `EMBEDDING_PROVIDER=local` uses the
+  `sentence-transformers` / HuggingFace stack.
+- In frozen standalone app builds, local embeddings use Chroma's ONNX-based
+  `all-MiniLM-L6-v2` path instead of the PyTorch stack for packaging
+  reliability.
 
 ## Exam Types
 
@@ -222,15 +229,17 @@ metadata (chapter, section, subsection) is preserved on every chunk.
 - One embedding option for retrieval:
   - Google Gemini embeddings with `GOOGLE_API_KEY`, or
   - OpenAI embeddings with `OPENAI_API_KEY`, or
-  - local sentence-transformers embeddings with no API key
+  - local on-device embeddings with no API key
 
 Notes:
 
 - Running the pipeline will make paid model requests (LLM + embeddings).
 - DeepSeek can be used for chat/planning/writing together with either cloud
   embeddings or local embeddings.
-- Local embeddings download a HuggingFace model on first use, then run from the
+- Local embeddings download their model backend on first use, then run from the
   local cache afterward.
+- Source installs use `sentence-transformers` for local embeddings.
+- Frozen app builds use Chroma's ONNX embedding runtime for local embeddings.
 
 ## Install
 
@@ -299,10 +308,11 @@ Embedding configuration:
 
 - `EMBEDDING_PROVIDER=gemini` uses `GOOGLE_API_KEY`
 - `EMBEDDING_PROVIDER=openai` uses `OPENAI_API_KEY`
-- `EMBEDDING_PROVIDER=local` uses a local sentence-transformers model with no API key
+- `EMBEDDING_PROVIDER=local` uses a local on-device embedding backend with no API key
 
 For local embeddings, you can choose the downloaded model with
-`LOCAL_EMBEDDING_MODEL`.
+`LOCAL_EMBEDDING_MODEL` in source installs. Frozen app builds currently use the
+bundled ONNX `all-MiniLM-L6-v2` path for local embeddings.
 
 > Security note: API key fields are excluded from `Settings` repr output, and
 > the desktop session persistence layer intentionally does not write API keys to disk.
@@ -372,7 +382,7 @@ The GUI lets you:
 - Choose an API plan tier (`Free`, `Standard`, `Pro`, `Unlimited`) to match provider rate limits
 - Enter provider API keys in the settings dialog when they are not already set in `.env`
 - Choose an embedding provider (`gemini`, `openai`, or free local embeddings`)
-- Pick a free local embedding model when using on-device embeddings
+- Pick a free local embedding model when using on-device embeddings in a source install
 - Enter a **course name** and optional course details
 - Add files to different document type categories (Syllabus, Lecture Notes, etc.)
 - Search and filter saved sessions from the sidebar search bar
@@ -429,6 +439,8 @@ For most users, the desktop GUI is the easiest way to use the project.
 9. Choose an embedding provider:
    - `gemini` or `openai` if you want cloud embeddings
    - `local` if you want free on-device embeddings
+   - in source installs, `local` uses `sentence-transformers`
+   - in frozen app builds, `local` uses the ONNX local embedding path
 10. Add course files into the appropriate document buckets:
    - syllabus
    - lecture notes
@@ -659,7 +671,8 @@ and the matching API key from the environment.
 directory in the same way as the CLI.
 
 The API likewise respects `EMBEDDING_PROVIDER`, `EMBEDDING_MODEL`, and
-`LOCAL_EMBEDDING_MODEL`.
+`LOCAL_EMBEDDING_MODEL` in source installs. Frozen app builds use the ONNX
+local embedding path instead.
 
 `copy_to_workspace` controls whether uploaded source files are copied into the
 workspace's `.uacragent/uploads/` bundle during API generation. Leave it at
