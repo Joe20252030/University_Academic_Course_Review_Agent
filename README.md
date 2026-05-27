@@ -253,8 +253,8 @@ manually set `PYTHONPATH=src`.
 
 ### API Keys
 
-Create a `.env` file in the repo root (copy from `.env.sample`) and set the
-provider key(s) you want to use:
+Create a `.env` file (copy from `.env.sample`) and set the provider key(s) you
+want to use:
 
 ```env
 GOOGLE_API_KEY=your-google-api-key-here
@@ -272,6 +272,12 @@ GOOGLE_API_KEY=your-google-api-key-here
 
 For the default app data directory, `<app_data_dir>` is `~/.uacragent/` unless
 you changed it in the desktop app settings.
+
+Recommended locations:
+
+- Desktop GUI / CLI: put `.env` in `<app_data_dir>/` if you want the app to
+  find the same keys regardless of the directory you launch it from.
+- API server: put `.env` in the server's current working directory.
 
 Official API platform / key-management pages:
 
@@ -415,7 +421,10 @@ For most users, the desktop GUI is the easiest way to use the project.
 4. Open **Settings**.
 5. Enter a **Course Name**. This is the only required course field.
 6. Choose your LLM provider and model.
-7. Add the matching API key in the settings dialog if it is not already loaded from `.env`.
+7. Add the matching API key in the settings dialog if it is not already loaded
+   from `.env`.
+   For repeat desktop use, placing `.env` in `<app_data_dir>/` is usually the
+   most convenient setup.
 8. Review the provider privacy reminder in Settings if you are working with sensitive course material.
 9. Choose an embedding provider:
    - `gemini` or `openai` if you want cloud embeddings
@@ -484,7 +493,8 @@ Reopening sessions:
 The CLI is an interactive terminal assistant, not a one-shot generator.
 
 1. Install the package with `pip install -e .`.
-2. Set your provider key(s) in `.env` or your shell environment.
+2. Set your provider key(s) in `<app_data_dir>/.env`, `cwd/.env`, or your shell
+   environment. The CLI checks `<app_data_dir>/.env` first.
 3. Start the CLI with one or more course files and a course name.
    Supported inputs include PDF, DOCX, CSV, and common text/code formats.
 4. Wait for startup indexing to finish.
@@ -515,6 +525,7 @@ CLI behavior to remember:
 The FastAPI layer is the programmatic one-shot generation interface.
 
 1. Start the server with `uvicorn uacragent.api.main:app --reload`.
+   The API currently reads `.env` from the server's current working directory.
 2. Prepare a JSON body with:
    - `classified_files`
    - `course_name`
