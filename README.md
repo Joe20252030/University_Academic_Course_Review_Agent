@@ -18,6 +18,91 @@ review materials when you need them through a persistent desktop chat workflow.
 
 This project is released under the **MIT License**. See [LICENSE](LICENSE).
 
+## Privacy & Data Usage
+
+UACRAgent is designed so that most working data stays on your machine, but it
+can still send selected content to third-party model providers depending on how
+you configure it.
+
+What is stored locally:
+
+- Desktop session state is saved on disk so you can reopen sessions later.
+- Session data includes course settings, selected file paths, chat history,
+  chosen provider/model settings, and session UI preferences.
+- Session state is stored in `<workspace>/.uacragent/session.json`.
+- Retrieved document indexes are stored locally in
+  `<workspace>/.uacragent/chroma_db/`.
+- Generated outputs are stored locally in `<workspace>/.uacragent/outputs/`.
+- When files are copied into a workspace, they are stored under
+  `<workspace>/.uacragent/uploads/`.
+- Local embedding models are cached under `<app_data_dir>/models/`.
+
+What is not written to session files:
+
+- Desktop-entered API keys are kept in process memory only.
+- The session persistence layer intentionally does not write provider API keys
+  to disk.
+
+What may be sent to external providers:
+
+- Chat requests may send your message, selected chat attachments, course
+  metadata, recent chat history, and retrieved document excerpts to the active
+  LLM provider.
+- Document-generation requests may send course metadata, planning context,
+  retrieved document chunks, and generation instructions to the active LLM
+  provider.
+- If you use cloud embeddings (`gemini` or `openai`), document chunks are also
+  sent to that embedding provider during indexing.
+- If you enable provider-backed web search or file-attachment features in the
+  desktop chat, the relevant request content is also handled by the selected
+  provider.
+
+Provider and deployment notes:
+
+- If you want to minimize cloud data sharing, use `EMBEDDING_PROVIDER=local`.
+  This still leaves chat/generation requests going to the selected LLM
+  provider unless you also choose a different runtime architecture outside the
+  current app.
+- Local embeddings download a model on first use from the HuggingFace
+  ecosystem, then reuse the local cache afterward.
+- The FastAPI interface accepts absolute file paths. Without
+  `UACRAGENT_ALLOWED_BASE_DIR`, a local or deployed API server can read any
+  absolute existing file path supplied in a request. For any non-local
+  deployment, set `UACRAGENT_ALLOWED_BASE_DIR`.
+- Deleting a session removes the `<workspace>/.uacragent/` bundle. Original
+  source files outside that folder are not deleted.
+
+You are responsible for choosing providers, deployment settings, and input
+documents that meet your own privacy, institutional, and regulatory
+requirements.
+
+## Disclaimer
+
+UACRAgent is an educational study-assistance tool. It can help summarize
+materials, answer grounded questions, and generate review artefacts, but it may
+still produce incorrect, incomplete, outdated, or misleading content.
+
+UACRAgent is an independent open-source project. It is not affiliated with,
+endorsed by, or officially connected to OpenAI, Google, DeepSeek, or any 
+university, school, examination body, or educational institution.
+
+Please keep in mind:
+
+- Generated summaries, mock exams, predictions, and explanations are study aids,
+  not official course materials.
+- The app does not guarantee exam accuracy, topic coverage, grading alignment,
+  or factual correctness.
+- You should verify important claims, formulas, deadlines, policies, and exam
+  expectations against your instructor, syllabus, textbook, and other official
+  sources.
+- Do not rely on this project as a substitute for professional, legal,
+  medical, financial, or institutional advice.
+- If you upload sensitive or confidential documents, review your provider and
+  deployment choices carefully before use.
+- Third-party LLM and embedding providers may apply their own privacy policies,
+  retention practices, and terms of service when processing requests sent from
+  this app.
+
 ## Interfaces
 
 The project currently has three user-facing interfaces:
