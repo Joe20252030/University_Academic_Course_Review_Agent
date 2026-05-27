@@ -38,6 +38,7 @@ where = ["src"]
     "agent/prompts/*.md",
     "assets/*.png",
     "assets/*.ico",
+    "assets/*.icns",
     "assets/*.svg",
 ]
 

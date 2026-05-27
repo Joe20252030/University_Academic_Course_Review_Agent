@@ -113,9 +113,6 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
                 # set icons — only to proper .app bundle ICNS resources.
                 # We therefore use the pre-rounded 512 px PNG (transparent
                 # corners baked in) so the Dock shows a correctly shaped icon.
-                # 512 px ensures macOS scales *down* to Dock size rather than
-                # upscaling a small image, which previously caused it to look
-                # slightly oversized.
                 _icon_path = _assets / "logo_512.png"
                 if not _icon_path.exists():
                     _icon_path = _assets / "logo_256.png"
@@ -130,11 +127,22 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
                 self.iconphoto(True, _icon_img)
                 self._app_icon = _icon_img  # keep ref — prevents GC
 
-            # macOS: also set the Dock icon via AppKit when pyobjc is
-            # available — this is the most reliable path on macOS.
-            if _sys.platform == "darwin":
+            # macOS: set the Dock icon via AppKit when pyobjc is available.
+            #
+            # When running from a PyInstaller .app bundle (sys.frozen = True),
+            # macOS already loads the correct ICNS from the bundle's Resources
+            # directory — we must NOT call setApplicationIconImage_() here,
+            # because the NSImage pixel-size (512×512) is interpreted as point-
+            # size and macOS would display the icon slightly larger than other
+            # Dock icons.
+            #
+            # When running from source we do set the image, but we explicitly
+            # cap the NSImage size to 128×128 pt so macOS scales it consistently
+            # with how it would handle a properly-packaged app icon.
+            if _sys.platform == "darwin" and not getattr(_sys, "frozen", False):
                 try:
                     from AppKit import NSApplication, NSImage  # type: ignore
+                    from Foundation import NSSize               # type: ignore
                     _dock_path = _assets / "logo_512.png"
                     if not _dock_path.exists():
                         _dock_path = _assets / "logo_256.png"
@@ -142,6 +150,12 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
                         _ns_img = NSImage.alloc().initByReferencingFile_(
                             str(_dock_path)
                         )
+                        # NSImage loaded from a PNG defaults its size to the
+                        # pixel dimensions (512×512 pt), which makes the Dock
+                        # icon appear slightly larger than other apps.
+                        # 128 pt is the effective display size macOS targets for
+                        # standard Dock icons and produces consistent sizing.
+                        _ns_img.setSize_(NSSize(128, 128))
                         NSApplication.sharedApplication().setApplicationIconImage_(
                             _ns_img
                         )
