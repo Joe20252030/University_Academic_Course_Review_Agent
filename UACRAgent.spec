@@ -1,7 +1,6 @@
 # UACRAgent.spec  — PyInstaller build spec for macOS
 # Run with:  pyinstaller UACRAgent.spec
 # ---------------------------------------------------------------------------
-import os, sys
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules, collect_all
 
@@ -69,6 +68,7 @@ datas += [
 # 3. Our own modules (ensure none are accidentally excluded)
 # ---------------------------------------------------------------------------
 hiddenimports += [
+    # ── ui ────────────────────────────────────────────────────────────────
     "uacragent",
     "uacragent.ui.desktop.app",
     "uacragent.ui.desktop._appearance_mixin",
@@ -76,21 +76,36 @@ hiddenimports += [
     "uacragent.ui.desktop._chat_mixin",
     "uacragent.ui.desktop._session_mixin",
     "uacragent.ui.desktop._ui_constants",
+    "uacragent.ui.desktop._custom_widgets",   # critical — imported at top of app.py
+    # ── agent ─────────────────────────────────────────────────────────────
     "uacragent.agent.conversation",
     "uacragent.agent.session",
+    "uacragent.agent.pipeline",               # core RAG pipeline
+    "uacragent.agent.reasoning",              # imported by pipeline
+    "uacragent.agent.service",
+    "uacragent.agent.workspace_manager",      # wipe helpers used by _chat_mixin
     "uacragent.agent.prompts._prompts",
+    # ── domain ────────────────────────────────────────────────────────────
     "uacragent.domain.providers",
     "uacragent.domain.rate_tiers",
     "uacragent.domain.types",
     "uacragent.domain.errors",
+    "uacragent.domain.models",                # ReviewPlan / SectionSpec pydantic models
+    "uacragent.domain.doc_priorities",
+    # ── infra ─────────────────────────────────────────────────────────────
     "uacragent.infra.persistence",
     "uacragent.infra.vectorstore",
     "uacragent.infra.settings",
     "uacragent.infra.llm",
     "uacragent.infra.auth",
+    "uacragent.infra.loaders",                # document loader (PDF/DOCX/txt…)
+    "uacragent.infra.workspace",              # WorkspacePaths dataclass
+    # ── export ────────────────────────────────────────────────────────────
     "uacragent.export.docx",
     "uacragent.export.pdf",
-    # stdlib extras
+    "uacragent.export.markdown",              # imported by pipeline
+    "uacragent.export._utils",                # safe_timestamp helper
+    # ── stdlib extras ─────────────────────────────────────────────────────
     "readline",
     "sqlite3",
     "_sqlite3",
