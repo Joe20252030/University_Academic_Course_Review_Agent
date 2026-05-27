@@ -101,7 +101,10 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         # Look for the icon relative to this file so it works whether the app
         # is run from source or installed as a package.
         import sys as _sys
-        _assets = Path(__file__).parent.parent.parent.parent.parent / "assets"
+        # Resolve assets relative to the package root so the path is correct
+        # both when running from source and when installed via pip/PyInstaller.
+        # __file__ = .../uacragent/ui/desktop/app.py → 3 parents → uacragent/
+        _assets = Path(__file__).parent.parent.parent / "assets"
         try:
             from PIL.ImageTk import PhotoImage as _PILPhotoImage
 

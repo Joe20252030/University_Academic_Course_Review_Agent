@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<defs>
+  <linearGradient id="gBg" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="#0d1b3e"/>
+    <stop offset="100%" stop-color="#1b3167"/>
+  </linearGradient>
+
+  <linearGradient id="gGold" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#ffe57f"/>
+    <stop offset="100%" stop-color="#f59f00"/>
+  </linearGradient>
+
+  <filter id="fShadow" x="-20%" y="-20%" width="140%" height="160%">
+    <feDropShadow dx="0" dy="10" stdDeviation="12"
+                  flood-color="#000820" flood-opacity="0.28"/>
+  </filter>
+
+  <filter id="fGlow" x="-80%" y="-80%" width="260%" height="260%">
+    <feGaussianBlur stdDeviation="10" result="blur"/>
+    <feMerge>
+      <feMergeNode in="blur"/>
+      <feMergeNode in="SourceGraphic"/>
+    </feMerge>
+  </filter>
+
+  <clipPath id="iconClip">
+    <rect width="512" height="512" rx="110" ry="110"/>
+  </clipPath>
+</defs>
+
+<g clip-path="url(#iconClip)">
+  <rect width="512" height="512" fill="url(#gBg)"/>
+
+  <!-- Cap base -->
+  <path d="M142 236
+           L256 292
+           L370 236
+           L324 334
+           L256 370
+           L188 334
+           Z"
+        fill="#f6f8fd" filter="url(#fShadow)"/>
+
+  <!-- Board -->
+  <polygon points="256,102 414,204 256,306 98,204"
+           fill="#ffffff" opacity="0.985" filter="url(#fShadow)"/>
+
+  <!-- Underside shadow cast by the top board -->
+  <path d="M154 238
+           L256 288
+           L358 238
+           L256 334
+           Z"
+        fill="#d8dfec" opacity="0.9"/>
+
+  <!-- Centre button -->
+  <circle cx="256" cy="204" r="22" fill="url(#gGold)" filter="url(#fGlow)"/>
+  <circle cx="256" cy="204" r="9.5" fill="#fff8dc"/>
+
+  <!-- Tassel -->
+  <path d="M414 204
+           C426 220 432 274 430 328
+           C429 356 425 379 420 400"
+        stroke="url(#gGold)" stroke-width="7" fill="none" stroke-linecap="round"/>
+  <circle cx="418" cy="372" r="12.5" fill="url(#gGold)"/>
+  <line x1="405" y1="385" x2="398" y2="423"
+        stroke="#ffe57f" stroke-width="5.5" stroke-linecap="round"/>
+  <line x1="418" y1="385" x2="418" y2="427"
+        stroke="#f59f00" stroke-width="5.5" stroke-linecap="round"/>
+  <line x1="431" y1="385" x2="438" y2="423"
+        stroke="#ffe57f" stroke-width="5.5" stroke-linecap="round"/>
+</g>
+</svg>
