@@ -40,11 +40,30 @@ for pkg in [
     "sentence_transformers",
     "tokenizers",
     "huggingface_hub",
+    # sentence_transformers depends on torch and transformers at import time.
+    # Without these the frozen app raises ImportError when trying to load any
+    # local embedding model.  pyinstaller-hooks-contrib (installed alongside
+    # PyInstaller) provides the torch hook that handles native .so discovery.
+    "torch",
+    "transformers",
 ]:
-    d, b, h = collect_all(pkg)
-    datas         += d
-    binaries      += b
-    hiddenimports += h
+    try:
+        d, b, h = collect_all(pkg)
+        datas         += d
+        binaries      += b
+        hiddenimports += h
+    except Exception as _e:
+        print(f"WARNING: collect_all('{pkg}') failed: {_e} — skipping.")
+
+# torch hidden imports that the hook sometimes misses
+hiddenimports += [
+    "torch",
+    "torch._C",
+    "torch.nn",
+    "torch.nn.functional",
+    "torch.utils",
+    "torch.utils.data",
+]
 
 # tiktoken encodings (needed by langchain_openai)
 datas         += collect_data_files("tiktoken")

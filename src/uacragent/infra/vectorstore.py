@@ -105,12 +105,41 @@ def _build_local_embeddings(
     """
     _PACKAGES = ["sentence-transformers", "langchain-huggingface"]
 
+    import sys as _sys
     import warnings
+
+    def _missing_local_deps_error(from_exc: Exception | None = None) -> "ConfigurationError":
+        """Return the appropriate ConfigurationError for missing local-embedding deps.
+
+        When running from the standalone .app bundle (sys.frozen = True) the user
+        cannot run ``pip install`` — the helpful action is to switch to a cloud
+        embedding provider instead.  When running from source they get the normal
+        pip-install instruction.
+        """
+        from uacragent.domain.errors import ConfigurationError
+        if getattr(_sys, "frozen", False):
+            msg = (
+                "Local embedding is not available in this build because the "
+                "PyTorch runtime could not be loaded.\n\n"
+                "Please switch to a cloud embedding provider:\n"
+                "  • Open Session Settings  →  Embedding Provider\n"
+                "  • Choose  Gemini  or  OpenAI  instead of  Local\n\n"
+                "Cloud embedding requires an API key but no extra installation."
+            )
+        else:
+            msg = (
+                "Local embedding model requires additional packages that are not "
+                "installed.  Please run:\n\n"
+                f"    pip install {' '.join(_PACKAGES)}\n\n"
+                "Then restart the application."
+            )
+        return ConfigurationError(msg)
 
     try:
         from langchain_huggingface import HuggingFaceEmbeddings  # preferred
-    except ImportError:
-        # langchain-huggingface not installed; fall back to community shim.
+    except ImportError as _e:
+        # langchain-huggingface not installed (or its torch/transformers deps are
+        # missing in the frozen bundle); fall back to community shim.
         # Suppress the LangChainDeprecationWarning that the shim emits on
         # import and instantiation — the user cannot act on it and it is
         # noise in the terminal.
@@ -119,14 +148,8 @@ def _build_local_embeddings(
                 warnings.filterwarnings("ignore", category=DeprecationWarning)
                 warnings.filterwarnings("ignore", message=".*langchain.huggingface.*")
                 from langchain_community.embeddings import HuggingFaceEmbeddings  # type: ignore[no-redef]
-        except ImportError:
-            from uacragent.domain.errors import ConfigurationError
-            raise ConfigurationError(
-                "Local embedding model requires additional packages that are not "
-                "installed.  Please run:\n\n"
-                f"    pip install {' '.join(_PACKAGES)}\n\n"
-                "Then restart the application."
-            )
+        except ImportError as _e2:
+            raise _missing_local_deps_error(_e2) from _e2
 
     # Return the cached instance if this model was already loaded this session.
     # This avoids the ~1–3 s reload cost on every session open within one run.
@@ -164,15 +187,14 @@ def _build_local_embeddings(
         return instance
     except Exception as exc:
         # Catches ModuleNotFoundError("No module named 'sentence_transformers'")
-        # raised during instantiation when the package is not yet installed.
-        if "sentence_transformers" in str(exc) or isinstance(exc, ImportError):
-            from uacragent.domain.errors import ConfigurationError
-            raise ConfigurationError(
-                "Local embedding model requires additional packages that are not "
-                "installed.  Please run:\n\n"
-                f"    pip install {' '.join(_PACKAGES)}\n\n"
-                "Then restart the application."
-            ) from exc
+        # or ModuleNotFoundError("No module named 'torch'") raised during
+        # instantiation when the required ML packages are absent.
+        if (
+            "sentence_transformers" in str(exc)
+            or "torch" in str(exc)
+            or isinstance(exc, ImportError)
+        ):
+            raise _missing_local_deps_error(exc) from exc
         raise
 
 

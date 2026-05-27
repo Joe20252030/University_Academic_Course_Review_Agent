@@ -450,7 +450,10 @@ class AppearanceMixin:
         except Exception as exc:  # noqa: BLE001
             logger.debug("_apply_theme: widget not ready or update failed: %s", exc)
         try:
-            self._gear_btn.update_style(font=("TkDefaultFont", size))
+            self._gear_btn.update_style(
+                font=("TkDefaultFont", size),
+                icon_font=("TkDefaultFont", size + 4),
+            )
         except Exception as exc:  # noqa: BLE001
             logger.debug("_apply_theme: widget not ready or update failed: %s", exc)
         try:
@@ -518,7 +521,10 @@ class AppearanceMixin:
             logger.debug("_apply_theme: widget not ready or update failed: %s", exc)
         # Session Settings (_RoundedChip)
         try:
-            self._sess_settings_btn.update_style(font=("TkDefaultFont", _ctrl_size))
+            self._sess_settings_btn.update_style(
+                font=("TkDefaultFont", _ctrl_size),
+                icon_font=("TkDefaultFont", _ctrl_size + 4),
+            )
         except Exception as exc:  # noqa: BLE001
             logger.debug("_apply_theme: widget not ready or update failed: %s", exc)
         # Send button (_RoundedChip)

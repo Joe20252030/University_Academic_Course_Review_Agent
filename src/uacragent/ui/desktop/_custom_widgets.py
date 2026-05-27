@@ -426,12 +426,17 @@ class _RoundedChip(tk.Canvas):
         disabled_bg: str = "#c8c8c8",
         disabled_fg: str = "#888888",
         text_anchor: str = "center",
+        icon_font=None,
     ) -> None:
         self._text          = text
         self._chip_bg       = chip_bg
         self._chip_fg       = chip_fg
         self._hover_bg      = hover_bg or chip_bg
         self._font          = font
+        self._icon_font     = icon_font   # optional larger font for first glyph
+        self._icon_draw_w   = 0           # measured icon pixel width (cached)
+        self._label_draw_w  = 0           # measured label pixel width (cached)
+        self._icon_gap      = 4           # px gap between icon and label
         self._padx          = padx
         self._pady          = pady
         self._command       = command
@@ -444,11 +449,7 @@ class _RoundedChip(tk.Canvas):
         self._text_anchor   = text_anchor
 
         # Measure required canvas size via a throw-away Label
-        _tmp = tk.Label(parent, text=text, font=font)
-        _tmp.update_idletasks()
-        _tw = _tmp.winfo_reqwidth()
-        _th = _tmp.winfo_reqheight()
-        _tmp.destroy()
+        _tw, _th = self._measure_content(parent, text, font, icon_font)
 
         _cw = _tw + padx * 2
         _ch = _th + pady * 2
@@ -482,6 +483,39 @@ class _RoundedChip(tk.Canvas):
         if self._enabled and self._command:
             self._command()
 
+    # ------------------------------------------------------------------
+    # Icon-font helpers
+    # ------------------------------------------------------------------
+
+    def _measure_content(self, parent, text, font, icon_font) -> tuple[int, int]:
+        """Return (width, height) for the chip content area.
+
+        When *icon_font* is provided the first character of *text* is
+        treated as an icon and measured at *icon_font*; the rest is
+        measured at *font*.  The two widths are summed with a small gap
+        so the caller can compute the canvas size.
+        """
+        if icon_font and text:
+            icon_char  = text[0]
+            label_text = text[1:].lstrip()
+            _ti = tk.Label(parent, text=icon_char,  font=icon_font)
+            _ti.update_idletasks()
+            _iw, _ih = _ti.winfo_reqwidth(), _ti.winfo_reqheight()
+            _ti.destroy()
+            _tl = tk.Label(parent, text=label_text, font=font)
+            _tl.update_idletasks()
+            _lw, _lh = _tl.winfo_reqwidth(), _tl.winfo_reqheight()
+            _tl.destroy()
+            self._icon_draw_w  = _iw
+            self._label_draw_w = _lw
+            return _iw + self._icon_gap + _lw, max(_ih, _lh)
+        else:
+            _tmp = tk.Label(parent, text=text, font=font)
+            _tmp.update_idletasks()
+            _tw, _th = _tmp.winfo_reqwidth(), _tmp.winfo_reqheight()
+            _tmp.destroy()
+            return _tw, _th
+
     def _redraw(self) -> None:
         self.delete("chip")
         w = self.winfo_width()
@@ -508,7 +542,36 @@ class _RoundedChip(tk.Canvas):
             width=self._outline_width,
             tags="chip",
         )
-        if self._text_anchor == "w":
+        if self._icon_font and self._text:
+            # Render icon (first char) at icon_font, label at self._font
+            icon_char  = self._text[0]
+            label_text = self._text[1:].lstrip()
+            iw = self._icon_draw_w or 0
+            lw = self._label_draw_w or 0
+            if self._text_anchor == "w":
+                ix = self._padx
+                lx = ix + iw + self._icon_gap
+            else:
+                total_w = iw + self._icon_gap + lw
+                ix = (w - total_w) // 2
+                lx = ix + iw + self._icon_gap
+            self.create_text(
+                ix, h // 2,
+                text=icon_char,
+                fill=text_fg,
+                font=self._icon_font,
+                anchor="w",
+                tags="chip",
+            )
+            self.create_text(
+                lx, h // 2,
+                text=label_text,
+                fill=text_fg,
+                font=self._font,
+                anchor="w",
+                tags="chip",
+            )
+        elif self._text_anchor == "w":
             self.create_text(
                 self._padx, h // 2,
                 text=self._text,
@@ -544,11 +607,9 @@ class _RoundedChip(tk.Canvas):
         except Exception:
             parent_widget = self
 
-        _tmp = tk.Label(parent_widget, text=self._text, font=self._font)
-        _tmp.update_idletasks()
-        _tw = _tmp.winfo_reqwidth()
-        _th = _tmp.winfo_reqheight()
-        _tmp.destroy()
+        _tw, _th = self._measure_content(
+            parent_widget, self._text, self._font, self._icon_font
+        )
 
         _cw = max(_tw + self._padx * 2, 1)
         _ch = max(_th + self._pady * 2, 1)
@@ -590,6 +651,7 @@ class _RoundedChip(tk.Canvas):
         outline: str | None     = None,
         outline_width: int | None = None,
         font=None,
+        icon_font=None,
         text_anchor: str | None = None,
     ) -> None:
         """Re-apply theme colours / font — call after every theme switch."""
@@ -600,12 +662,13 @@ class _RoundedChip(tk.Canvas):
         if outline       is not None: self._outline       = outline
         if outline_width is not None: self._outline_width = outline_width
         if font          is not None: self._font          = font
+        if icon_font     is not None: self._icon_font     = icon_font
         if text_anchor   is not None: self._text_anchor   = text_anchor
         if parent_bg     is not None:
             tk.Canvas.configure(self, bg=parent_bg)
         # Resize the canvas whenever content dimensions may have changed
-        # (font or text updated) so larger fonts are never clipped.
-        if font is not None or text is not None:
+        # (font, icon_font, or text updated) so larger fonts are never clipped.
+        if font is not None or icon_font is not None or text is not None:
             self._resize_to_fit()
         self._redraw()
 

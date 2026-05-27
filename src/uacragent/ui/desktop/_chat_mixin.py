@@ -1006,7 +1006,9 @@ class ChatMixin:
                 cursor="ibeam",
                 height=1,
             )
+            sys_text.tag_configure("left", justify="left")
             sys_text.insert("1.0", text)
+            sys_text.tag_add("left", "1.0", "end")
             sys_text.configure(
                 state="disabled",
                 selectbackground=c.get("lb_sel_bg",  "#1b3167"),
