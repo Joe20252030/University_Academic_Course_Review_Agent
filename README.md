@@ -233,9 +233,9 @@ delay/retry settings:
 
 | Tier        | Delay | Retries | Base Retry Delay | Typical Use |
 |-------------|-------|---------|------------------|-------------|
-| `free`      | `6.0` | `3`     | `15.0`           | Free and trial plans |
-| `standard`  | `1.5` | `2`     | `8.0`            | Entry paid plans |
-| `pro`       | `0.3` | `2`     | `4.0`            | Higher paid tiers |
+| `free`      | `6.0` | `4`     | `20.0`           | Free and trial plans |
+| `standard`  | `0.5` | `3`     | `8.0`            | Entry paid plans |
+| `pro`       | `0.1` | `2`     | `3.0`            | Higher paid tiers |
 | `unlimited` | `0.0` | `1`     | `2.0`            | Very high-capacity plans |
 
 If you prefer raw numeric overrides, clear `RATE_TIER` and then set
@@ -412,6 +412,7 @@ The FastAPI layer is the programmatic one-shot generation interface.
    - optional exam/course metadata
    - `task_type`
    - optional `effort_level`
+   - optional `reasoning_mode`
 3. Send a `POST /review` request.
 4. Read the returned plan plus the saved markdown path.
 
@@ -543,15 +544,22 @@ The API likewise respects `EMBEDDING_PROVIDER`, `EMBEDDING_MODEL`, and
 workspace's `.uacragent/uploads/` bundle during API generation. Leave it at
 `true` for the normal self-contained workspace behavior.
 
+Security note:
+
+- Without `UACRAGENT_ALLOWED_BASE_DIR`, the API accepts any absolute existing
+  file path on the host machine. For non-local or network-exposed deployments,
+  set that variable to restrict file access to a trusted directory tree.
+
 API file-path rules:
 
 - every file path in `classified_files` must be absolute
 - the path must point to an existing regular file
 - if `UACRAGENT_ALLOWED_BASE_DIR` is set, the file must resolve under that directory
 
-The API currently exposes `effort_level` for retrieval depth, but not the
-desktop-only `reasoning_mode` selector. API generation therefore uses the
-default quick reasoning pipeline.
+The API exposes both depth controls:
+
+- `effort_level` controls retrieval/context depth
+- `reasoning_mode` controls generation pipeline depth (`quick` or `deep`)
 
 Endpoints:
 
@@ -570,6 +578,7 @@ Endpoints:
     "task_type": "review_summary",
     "extra_instructions": "",
     "effort_level": "medium",
+    "reasoning_mode": "quick",
     "workspace_id": "default",
     "copy_to_workspace": true,
     "university_name": "University of Toronto",
@@ -583,10 +592,10 @@ Endpoints:
   ```
 
 `course_name` is required in the review request. `effort_level` is optional and
-accepts `low`, `medium`, or `high`. The API does not currently expose the
-desktop app's separate `reasoning_mode` control. All other fields
-(`university_name`, `major`, `course_code`, `professor_name`, `semester`,
-`exam_duration`, `exam_info`) are optional.
+accepts `low`, `medium`, or `high`. `reasoning_mode` is optional and accepts
+`quick` or `deep`. All other fields (`university_name`, `major`,
+`course_code`, `professor_name`, `semester`, `exam_duration`, `exam_info`) are
+optional.
 
 ## Output
 

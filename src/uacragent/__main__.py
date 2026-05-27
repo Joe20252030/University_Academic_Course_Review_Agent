@@ -236,7 +236,10 @@ def main() -> None:
         "paths",
         nargs="*",
         metavar="FILE",
-        help="Course document files (.pdf / .txt / .md / .docx)",
+        help=(
+            "Course document files (supports .pdf, .docx, .csv, and common "
+            "text/code formats such as .txt, .md, .py, .js, .ts, .html, .xml, .json)"
+        ),
     )
 
     # Document classification

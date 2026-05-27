@@ -33,7 +33,8 @@ def main(
         user_prefs: User preferences. Keys:
             course_name (required), exam_format, exam_type, task_type,
             extra_instructions, workspace_id, university_name, major,
-            course_code, professor_name, semester, exam_duration, exam_info.
+            course_code, professor_name, semester, exam_duration, exam_info,
+            effort_level, reasoning_mode.
     """
     service = AgentService()
     result = service.run_end_to_end(
@@ -51,6 +52,8 @@ def main(
         semester=str(user_prefs.get("semester", "")),
         exam_duration=str(user_prefs.get("exam_duration", "")),
         exam_info=str(user_prefs.get("exam_info", "")),
+        effort_level=str(user_prefs.get("effort_level", "medium")),
+        reasoning_mode=str(user_prefs.get("reasoning_mode", "quick")),
     )
     print(f"Output generated at {result.markdown_path}")
 
@@ -78,6 +81,8 @@ def main_simple(file_paths: list[str], user_prefs: dict) -> None:
         semester=str(user_prefs.get("semester", "")),
         exam_duration=str(user_prefs.get("exam_duration", "")),
         exam_info=str(user_prefs.get("exam_info", "")),
+        effort_level=str(user_prefs.get("effort_level", "medium")),
+        reasoning_mode=str(user_prefs.get("reasoning_mode", "quick")),
     )
     print(f"Output generated at {result.markdown_path}")
 
