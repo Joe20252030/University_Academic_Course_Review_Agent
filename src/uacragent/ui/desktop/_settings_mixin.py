@@ -843,7 +843,10 @@ class SettingsMixin:
         self._model_chip = _mk_option_chip(
             _mchips, self._llm_model_var,
             lambda: models_for(self._llm_provider_var.get()),
-            on_change=None,   # var is updated by _select inside the chip
+            # Re-evaluate upload-button availability when the model changes
+            # (some models, e.g. gpt-4o-search-preview, do not accept file inputs
+            # even though the provider as a whole supports multimodal uploads).
+            on_change=lambda: self._update_tool_btns() if hasattr(self, "_upload_btn") else None,
         )
         self._model_chip.grid(row=1, column=0, sticky="ew", pady=(6, 0))
         self._update_model_list()   # populate for current provider

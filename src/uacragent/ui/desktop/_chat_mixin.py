@@ -31,7 +31,23 @@ class ChatMixin:
         return get_provider(self._session.llm_provider or "gemini").supports_search
 
     def _provider_supports_files(self) -> bool:
-        return get_provider(self._session.llm_provider or "gemini").supports_files
+        """Return True only when both the provider AND the selected model support file inputs.
+
+        Certain models (e.g. ``gpt-4o-search-preview``, ``gpt-4o-mini-search-preview``)
+        belong to providers that *generally* support file uploads but themselves do not
+        accept multimodal inputs.  We detect them by the ``"search-preview"`` suffix so
+        the upload button is disabled whenever one of those models is active.
+        """
+        if not get_provider(self._session.llm_provider or "gemini").supports_files:
+            return False
+        model: str = ""
+        try:
+            model = self._llm_model_var.get()
+        except Exception:
+            # Widget not yet created (e.g. during early init) — fall back to
+            # the session value which may still be an empty string.
+            model = getattr(self._session, "llm_model", "") or ""
+        return "search-preview" not in model
 
     def _update_tool_btns(self) -> None:
         """Enable/disable search and upload buttons based on active provider capabilities."""
