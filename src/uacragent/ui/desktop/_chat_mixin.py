@@ -10,6 +10,7 @@ from tkinter import ttk
 from uacragent.agent.conversation import ConversationAgent, ChatResponse
 from uacragent.agent.session import AgentSession
 from uacragent.domain.providers import env_var_for, get_provider
+from uacragent.domain.rate_tiers import RATE_TIER_BY_DISPLAY
 from uacragent.domain.types import DocumentType, ExportFormat
 from uacragent.export.docx import save_docx
 from uacragent.export.pdf import save_pdf
@@ -1336,10 +1337,16 @@ class ChatMixin:
         if not self._workspace_committed:
             return
 
+        _rate_disp = (
+            self._rate_tier_disp_var.get()
+            if hasattr(self, "_rate_tier_disp_var")
+            else "Free"
+        )
         ui_extras = {
-            "export_format":       self._export_format_var.get(),
-            "embedding_provider":  self._emb_provider_var.get(),
+            "export_format":         self._export_format_var.get(),
+            "embedding_provider":    self._emb_provider_var.get(),
             "local_embedding_model": self._local_model_var.get(),
+            "rate_tier":             RATE_TIER_BY_DISPLAY.get(_rate_disp, "free"),
         }
         ok = save_session(self._session, ui_extras)
         if not ok:

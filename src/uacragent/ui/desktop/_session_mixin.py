@@ -245,6 +245,23 @@ class SessionMixin:
                 "The previous embedding provider settings will be used."
             )
 
+        # Restore rate tier — saved as a tier id (e.g. "free", "standard").
+        # Allowlist guard: only accept known ids so a tampered session.json
+        # cannot inject arbitrary strings into RATE_TIER / os.environ.
+        from uacragent.domain.rate_tiers import RATE_TIERS, get_rate_tier
+        _KNOWN_RATE_TIERS = frozenset(RATE_TIERS)
+        rate_tier_id = data.get("rate_tier", "free")
+        if rate_tier_id not in _KNOWN_RATE_TIERS:
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "Ignoring unknown rate tier %r from session file; falling back to 'free'.",
+                rate_tier_id,
+            )
+            rate_tier_id = "free"
+        os.environ["RATE_TIER"] = rate_tier_id
+        if hasattr(self, "_rate_tier_disp_var"):
+            self._rate_tier_disp_var.set(get_rate_tier(rate_tier_id).display_name)
+
         self._sync_vars_from_session()
         self._update_header()
         self._clear_chat()
