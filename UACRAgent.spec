@@ -1,7 +1,20 @@
 # UACRAgent.spec  — PyInstaller build spec for macOS
 # Run with:  pyinstaller UACRAgent.spec
 # ---------------------------------------------------------------------------
+import sys
 from pathlib import Path
+
+# Read the canonical version from pyproject.toml so the .app bundle always
+# matches the package version without any manual sync step.
+if sys.version_info >= (3, 11):
+    import tomllib as _tomllib
+else:
+    try:
+        import tomllib as _tomllib          # 3.11+ stdlib
+    except ImportError:
+        import tomli as _tomllib            # pip install tomli  (3.10 backport)
+with open(Path(SPECPATH) / "pyproject.toml", "rb") as _f:
+    _APP_VERSION: str = _tomllib.load(_f)["project"]["version"]
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules, collect_all
 
 block_cipher = None
@@ -177,8 +190,8 @@ app = BUNDLE(
     info_plist={
         "CFBundleDisplayName":        "UACRAgent",
         "CFBundleName":               "UACRAgent",
-        "CFBundleShortVersionString": "0.1.0",
-        "CFBundleVersion":            "0.1.0",
+        "CFBundleShortVersionString": _APP_VERSION,
+        "CFBundleVersion":            _APP_VERSION,
         "NSHighResolutionCapable":    True,
         "NSHumanReadableCopyright":   "MIT License",
         "LSMinimumSystemVersion":     "12.0",

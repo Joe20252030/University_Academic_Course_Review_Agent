@@ -1496,7 +1496,20 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
     # ------------------------------------------------------------------
 
     def _on_close(self) -> None:
-        self._save_current_session()
+        # _save_current_session() returns False when the write fails.
+        # We cannot use _append_chat() here: self.destroy() follows immediately
+        # and the tkinter event loop never runs between them, so any queued
+        # widget update would be silently discarded.  A blocking native dialog
+        # is the only reliable way to show the error before the window is gone.
+        if not self._save_current_session():
+            from tkinter import messagebox as _mb
+            _mb.showwarning(
+                "Session Not Saved",
+                "Your session could not be saved.\n\n"
+                "Changes made since the last save may be lost on next launch.\n"
+                "Check available disk space and folder permissions.",
+                parent=self,
+            )
 
         # Erase API keys from in-process memory before the window is destroyed.
         # The process exit would clean these up anyway, but explicit zeroing is

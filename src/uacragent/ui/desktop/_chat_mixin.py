@@ -1340,7 +1340,17 @@ class ChatMixin:
     # Persistence
     # ------------------------------------------------------------------
 
-    def _save_current_session(self) -> None:
+    def _save_current_session(self) -> bool:
+        """Persist the current session.  Returns True on success, False on failure.
+
+        When the save fails the caller is responsible for surfacing an error to
+        the user in a way that is appropriate for its context:
+          • mid-session callers use ``_append_chat()`` so the warning appears
+            inline in the chat history and stays visible.
+          • ``_on_close()`` uses ``tk.messagebox`` instead, because
+            ``_append_chat()`` queues a widget update that is never painted when
+            ``self.destroy()`` follows immediately after.
+        """
         # Do NOT call _sync_session_from_vars() here.
         # The session object always holds the last-committed state (set by
         # _on_apply_settings).  Syncing from live StringVars would allow
@@ -1351,7 +1361,7 @@ class ChatMixin:
         # or file-less new session from silently appearing in the sidebar just
         # because the user typed a chat message before setting anything up.
         if not self._workspace_committed:
-            return
+            return True
 
         _rate_disp = (
             self._rate_tier_disp_var.get()
@@ -1371,6 +1381,7 @@ class ChatMixin:
                 "⚠️ Session could not be saved — changes may be lost on next launch. "
                 "Check available disk space and folder permissions.",
             )
+        return ok
 
 
     def _on_cancel(self) -> None:
