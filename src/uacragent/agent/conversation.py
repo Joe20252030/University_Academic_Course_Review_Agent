@@ -30,6 +30,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from uacragent.agent.session import AgentSession
 from uacragent.domain.errors import LLMError
+from uacragent.domain.providers import get_provider
 from uacragent.domain.types import TaskType
 from uacragent.infra.llm import LLMClient
 from uacragent.infra.settings import Settings, get_settings
@@ -98,6 +99,16 @@ def _extract_file_text(path: str, mime: str) -> str:
         )
 
 
+def _provider_supports_vision(provider_id: str) -> bool:
+    """Return True if the given provider supports image/file attachments."""
+    return get_provider(provider_id).supports_files
+
+
+_MAX_ATTACHMENTS: int = 5           # cap on number of files per message
+_MAX_ATTACHMENT_BYTES: int = 10 * 1024 * 1024  # 10 MB per file
+_MAX_EXTRACTED_TEXT_CHARS: int = 20_000         # total extracted text budget
+
+
 def _build_human_message(
     message_text: str,
     attachments: list[dict],
@@ -108,17 +119,48 @@ def _build_human_message(
     For image attachments: base64-encoded inline ``image_url`` content parts.
     For PDFs / Word docs / text files: extracted text appended to the message.
     When there are no attachments, returns a plain HumanMessage(content=...).
+
+    Safety limits (applied silently with a log warning):
+    - Maximum ``_MAX_ATTACHMENTS`` (5) files per message.
+    - Each file must be under ``_MAX_ATTACHMENT_BYTES`` (10 MB).
+    - Total extracted text from all non-image files is capped at
+      ``_MAX_EXTRACTED_TEXT_CHARS`` (20 000 chars).
     """
     if not attachments:
         return HumanMessage(content=message_text)
+
+    # Cap number of attachments
+    if len(attachments) > _MAX_ATTACHMENTS:
+        _logger.warning(
+            "Received %d attachments — capping to %d.",
+            len(attachments), _MAX_ATTACHMENTS,
+        )
+        attachments = attachments[:_MAX_ATTACHMENTS]
 
     import base64
 
     parts: list = []
     extra_text_blocks: list[str] = []
+    total_extracted_chars: int = 0
 
     for att in attachments:
         path = att.get("path", "")
+        # Per-file size guard (skip files exceeding the limit)
+        try:
+            file_size = Path(path).stat().st_size if path else 0
+        except Exception:
+            file_size = 0
+        if file_size > _MAX_ATTACHMENT_BYTES:
+            size_mb = file_size / (1024 * 1024)
+            _logger.warning(
+                "Attachment '%s' is %.1f MB — exceeds 10 MB limit; skipping.",
+                Path(path).name, size_mb,
+            )
+            extra_text_blocks.append(
+                f"\n\n[Attachment '{Path(path).name}' was skipped: "
+                f"file size {size_mb:.1f} MB exceeds the 10 MB limit.]"
+            )
+            continue
         mime = att.get("mime", "application/octet-stream")
         name = att.get("name", Path(path).name)
 
@@ -136,8 +178,30 @@ def _build_human_message(
                     f"[Could not encode image {name}: {exc}]"
                 )
         else:
-            # Text-based or document file — extract and append as text
+            # Text-based or document file — extract and append as text.
+            # Check total extracted text budget before extraction.
+            if total_extracted_chars >= _MAX_EXTRACTED_TEXT_CHARS:
+                _logger.warning(
+                    "Total extracted text limit (%d chars) reached; "
+                    "skipping remaining text attachments.",
+                    _MAX_EXTRACTED_TEXT_CHARS,
+                )
+                extra_text_blocks.append(
+                    f"\n\n[Attachment '{name}' was omitted: "
+                    f"total extracted text limit of {_MAX_EXTRACTED_TEXT_CHARS} "
+                    f"characters was already reached.]"
+                )
+                continue
             extracted = _extract_file_text(path, mime)
+            # Truncate this file's extracted text to stay within the budget
+            remaining = _MAX_EXTRACTED_TEXT_CHARS - total_extracted_chars
+            if len(extracted) > remaining:
+                _logger.warning(
+                    "Extracted text from '%s' truncated to %d chars (budget remaining).",
+                    name, remaining,
+                )
+                extracted = extracted[:remaining] + "\n[... truncated — text limit reached]"
+            total_extracted_chars += len(extracted)
             extra_text_blocks.append(
                 f"\n\n--- Attached file: {name} ---\n{extracted}\n---"
             )
@@ -286,10 +350,13 @@ def _ls(lang: str, table: dict[str, dict[str, str]], key: str, **fmt: object) ->
     return text.format(**fmt) if fmt else text
 
 
-# Regex that matches a [TASK:xxx] marker on its own line (optional trailing whitespace)
+# Regex that matches a [TASK:xxx] marker.  The pattern is intentionally
+# case-sensitive (no re.IGNORECASE) because the system prompt instructs the
+# LLM to emit the marker in lower-case only.  If the LLM occasionally emits
+# mixed-case, the defensive `.lower()` call in _extract_task_marker() handles
+# it at the character level after the match so we never silently miss a marker.
 _TASK_MARKER_RE = re.compile(
     r"\[TASK:(review_summary|practice_booklet|mock_exam|exam_prediction)\]",
-    re.IGNORECASE,
 )
 
 
@@ -338,11 +405,13 @@ class ConversationAgent:
         progress_cb: Callable[[str], None] | None = None,
         force_reindex: bool = False,
         language: str = "auto",
-    ) -> tuple[str, bool]:
+    ) -> tuple[str, bool, str | None]:
         """Build or reuse the retriever for *session*.
 
-        Returns ``(status_message, was_cached)`` where *was_cached* is ``True``
-        when the existing ChromaDB was opened directly without any re-embedding.
+        Returns ``(status_message, was_cached, fast_path_warning)`` where
+        *was_cached* is ``True`` when the existing ChromaDB was opened directly
+        without any re-embedding, and *fast_path_warning* is a non-None string
+        when the fast path failed and a forced rebuild was performed.
 
         When *force_reindex* is ``True`` the fast path is skipped and a full
         indexing run is always performed (used by the Apply button so that
@@ -456,16 +525,43 @@ class ConversationAgent:
 
         # -- 2. Build message list ---------------------------------------------
         provider_id = (session.llm_provider or "gemini").lower()
+
+        # Compute user prefs once here so that _render_system_prompt and
+        # _run_task (if triggered) share the same dict without each calling
+        # session.to_user_prefs() (which can do disk I/O via read_exam_info()).
+        prefs = session.to_user_prefs()
+
+        # Strip image attachments if the active provider does not support vision.
+        # Text-based attachments (PDFs, docs, plain text) are always allowed
+        # since they are extracted to text before being sent to the LLM.
+        effective_attachments = list(attachments or [])
+        if not _provider_supports_vision(provider_id):
+            image_atts = [
+                a for a in effective_attachments
+                if a.get("mime", "") in _IMAGE_MIMES
+            ]
+            if image_atts:
+                _logger.warning(
+                    "Provider '%s' does not support image/vision inputs; "
+                    "stripping %d image attachment(s) from the message.",
+                    provider_id, len(image_atts),
+                )
+                effective_attachments = [
+                    a for a in effective_attachments
+                    if a.get("mime", "") not in _IMAGE_MIMES
+                ]
+
         system_content = self._render_system_prompt(
             session, context, language=language,
             history_summary=session.history_summary,
+            prefs=prefs,
         )
         messages: list = [SystemMessage(content=system_content)]
         # Use snapshot() to get a consistent, lock-safe copy of history.
         # This prevents a concurrent cancel from mutating the list mid-iteration.
         messages.extend(session.chat_history.snapshot())
         messages.append(
-            _build_human_message(message, attachments or [], provider_id)
+            _build_human_message(message, effective_attachments, provider_id)
         )
 
         # -- 3. Call LLM (use session provider/model if different from default) --
@@ -505,6 +601,7 @@ class ConversationAgent:
                     output_path = self._run_task(
                         task_type, session, progress_cb,
                         effort_level, reasoning_mode, language,
+                        prefs=prefs,
                     )
                 except Exception as exc:  # noqa: BLE001
                     generation_error = _ls(language, _CHAT_STRINGS, "gen_failed", exc=exc)
@@ -577,6 +674,7 @@ class ConversationAgent:
         context: str,
         language: str = "auto",
         history_summary: str = "",
+        prefs: dict | None = None,
     ) -> str:
         """Fill the system prompt template with session values.
 
@@ -586,6 +684,11 @@ class ConversationAgent:
         *history_summary* is appended as an extra section when non-empty,
         giving the LLM context about conversation turns that were trimmed from
         the live history window to stay within the token budget.
+
+        *prefs* is the pre-computed dict from ``session.to_user_prefs()``.  When
+        provided it is used directly; otherwise it is computed here.  Callers
+        that already hold a prefs dict (e.g. ``chat()``) should pass it in to
+        avoid calling ``read_exam_info()`` (which can do disk I/O) a second time.
         """
         prompt_path = _PROMPTS_DIR / "conversation_system.md"
         try:
@@ -598,7 +701,8 @@ class ConversationAgent:
         except Exception as exc:  # noqa: BLE001
             raise LLMError(f"Could not read system prompt template: {exc}") from exc
 
-        prefs = session.to_user_prefs()
+        if prefs is None:
+            prefs = session.to_user_prefs()
 
         # Build a compact course meta suffix for the opening line
         meta_parts = []
@@ -687,7 +791,19 @@ class ConversationAgent:
             return  # within budget — nothing to do
 
         # Convert flat message list to (human, ai) turn pairs.
-        # Guard against odd-length lists (e.g. a dangling message after a bug).
+        # Guard against odd-length lists (e.g. a dangling message after a bug):
+        # range(0, len-1, 2) naturally skips the last element when odd, so we
+        # preserve it separately as `dangling` and re-append it after trimming.
+        if len(snapshot) % 2 != 0:
+            _logger.warning(
+                "Chat history has odd number of messages (%d); last message will be "
+                "preserved separately.",
+                len(snapshot),
+            )
+            dangling = snapshot[-1]
+        else:
+            dangling = None
+
         turns: list[tuple] = []
         for i in range(0, len(snapshot) - 1, 2):
             turns.append((snapshot[i], snapshot[i + 1]))
@@ -733,8 +849,10 @@ class ConversationAgent:
         # Rebuild the in-memory store atomically
         kept_turns = first_turns + kept_middle + last_turns
         kept_msgs = [m for t in kept_turns for m in t]
-        with session.chat_history._lock:
-            session.chat_history._messages = kept_msgs
+        # Re-append the dangling odd message if one existed, so it is not lost.
+        if dangling is not None:
+            kept_msgs.append(dangling)
+        session.chat_history.replace_all(kept_msgs)
 
         session.history_summary = new_summary
         _logger.debug(
@@ -767,11 +885,12 @@ class ConversationAgent:
         transcript = "\n\n".join(transcript_parts)
 
         if existing_summary:
+            existing_snippet = existing_summary[:800]
             context_prefix = (
                 f"There is already a summary of even earlier turns:\n"
-                f"{existing_summary}\n\n"
+                f"{existing_snippet}\n\n"
                 f"Now incorporate the following additional exchanges into an "
-                f"updated summary:\n\n"
+                f"updated summary (keep total under 300 words):\n\n"
             )
         else:
             context_prefix = "Summarise the following conversation exchanges:\n\n"
@@ -794,8 +913,9 @@ class ConversationAgent:
                 HumanMessage(content=prompt),
             ])
             summary = str(getattr(resp, "content", resp)).strip()
-            # Cap at 800 chars to keep the system prompt lean
-            return summary[:800]
+            # Cap at 1500 chars to keep the system prompt lean while retaining
+            # enough context for meaningful history continuity.
+            return summary[:1500]
         except Exception as exc:  # noqa: BLE001
             _logger.warning("History summarisation failed (%s); using fallback.", exc)
             n_turns = len(messages) // 2
@@ -814,12 +934,20 @@ class ConversationAgent:
         effort_level: str = "medium",
         reasoning_mode: str = "quick",
         language: str = "auto",
+        prefs: dict | None = None,
     ) -> str:
-        """Run the generation pipeline and return the output markdown path."""
+        """Run the generation pipeline and return the output markdown path.
+
+        *prefs* is the pre-computed dict from ``session.to_user_prefs()``.  When
+        provided it is used directly; otherwise it is computed here.  Callers
+        that already hold a prefs dict (e.g. ``chat()``) should pass it in to
+        avoid an unnecessary ``read_exam_info()`` disk I/O call.
+        """
         from uacragent.agent.pipeline import AgentPipeline
 
         pipeline = AgentPipeline(_settings_for_session(self.settings, session))
-        prefs = session.to_user_prefs()
+        if prefs is None:
+            prefs = session.to_user_prefs()
 
         _, _, md_path = pipeline.run_end_to_end(
             classified_files=session.classified_files,

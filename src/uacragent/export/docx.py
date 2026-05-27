@@ -9,20 +9,33 @@ from docx.shared import Pt
 from uacragent.export._utils import safe_timestamp
 from uacragent.infra.workspace import WorkspacePaths
 
-# Regex that splits a text span into (prefix, bold_or_italic_content, suffix, …)
-# Handles **bold**, *italic*, and __bold__, _italic_ variants.
+# Regex that splits a text span into inline formatting groups.
+# Groups (matched in priority order — longest/most-specific first):
+#   1,2  — ***bold-italic***  (triple asterisks)
+#   3,4  — **bold** or __bold__
+#   5,6  — *italic* or _italic_
+#   7    — `code` (backtick code span)
 _INLINE_RE = re.compile(
-    r"(\*\*|__)(.+?)\1"   # bold:   **text** or __text__
+    r"(\*\*\*)(.+?)\1"    # bold+italic: ***text***
     r"|"
-    r"(\*|_)(.+?)\3",     # italic: *text*  or _text_
+    r"(\*\*|__)(.+?)\3"   # bold:        **text** or __text__
+    r"|"
+    r"(\*|_)(.+?)\5"      # italic:      *text*  or _text_
+    r"|"
+    r"`(.+?)`",            # code span:   `text`
     re.DOTALL,
 )
 
 
 def _add_inline_runs(paragraph, text: str, base_size_pt: int = 11) -> None:
-    """Add runs to *paragraph* with bold/italic formatting parsed from *text*.
+    """Add runs to *paragraph* with inline formatting parsed from *text*.
 
-    Handles ``**bold**``, ``*italic*``, ``__bold__``, and ``_italic_`` spans.
+    Handles:
+    - ``***bold-italic***`` — bold + italic (matched before **bold** and *italic*)
+    - ``**bold**`` / ``__bold__`` — bold
+    - ``*italic*`` / ``_italic_`` — italic
+    - `` `code` `` — backtick code span (monospace, no other styling)
+
     Plain text segments between markers are added as unstyled runs.
     All runs are set to *base_size_pt* so body paragraph sizing is preserved.
     """
@@ -33,12 +46,24 @@ def _add_inline_runs(paragraph, text: str, base_size_pt: int = 11) -> None:
             run = paragraph.add_run(text[pos:m.start()])
             run.font.size = Pt(base_size_pt)
 
-        if m.group(1):  # bold marker (**  or __)
+        if m.group(1):      # bold+italic marker (***)
             run = paragraph.add_run(m.group(2))
             run.bold = True
-        else:           # italic marker (*  or _)
-            run = paragraph.add_run(m.group(4))
             run.italic = True
+        elif m.group(3):    # bold marker (** or __)
+            run = paragraph.add_run(m.group(4))
+            run.bold = True
+        elif m.group(5):    # italic marker (* or _)
+            run = paragraph.add_run(m.group(6))
+            run.italic = True
+        else:               # code span (`code`)
+            run = paragraph.add_run(m.group(7))
+            # Apply monospace font for code spans; fall back to plain text if
+            # Courier New is not available (docx will use the default mono font).
+            try:
+                run.font.name = "Courier New"
+            except Exception:  # noqa: BLE001
+                pass
         run.font.size = Pt(base_size_pt)
         pos = m.end()
 

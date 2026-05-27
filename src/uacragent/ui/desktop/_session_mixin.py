@@ -11,7 +11,7 @@ from uacragent.domain.types import ExportFormat
 from uacragent.infra.persistence import (
     delete_session, dict_to_session, get_app_data_dir,
     get_missing_session_files, list_sessions, load_session,
-    rename_session, save_session,
+    rename_session, save_session, _resolve_workspace,
 )
 from uacragent.infra.workspace import workspace_paths
 
@@ -123,17 +123,12 @@ class SessionMixin:
         # call _save_current_session() on the blank AgentSession(), creating a
         # phantom entry in the index that re-appears on the next launch.
         #
-        # Compute the effective workspace for the currently active session:
-        # prefer the explicit workspace_folder; fall back to the auto-path derived
-        # from workspace_id (for UUID-based sessions whose folder was never set
-        # by the user but was committed via Apply or session load).
-        if self._session.workspace_folder:
-            active_ws: Path | None = Path(self._session.workspace_folder).resolve()
-        elif self._session.workspace_id:
-            active_ws = (
-                get_app_data_dir() / "sessions" / self._session.workspace_id
-            ).resolve()
-        else:
+        # Compute the effective workspace for the currently active session using
+        # _resolve_workspace, which encapsulates the priority logic (explicit
+        # workspace_folder first, then auto-path from workspace_id).
+        try:
+            active_ws: Path | None = _resolve_workspace(self._session)
+        except Exception:
             active_ws = None
         if active_ws is not None and active_ws == ws.resolve():
             self._session = AgentSession()
@@ -213,13 +208,29 @@ class SessionMixin:
         self._local_model_disp_var.set(
             self._FREE_EMB_MODEL_TO_DISPLAY.get(local_model, local_model))
 
-        # Commit the embedding provider into os.environ immediately so that
-        # auto-indexing on session load uses the correct provider.
-        # Without this, Settings() would fall back to whatever EMBEDDING_PROVIDER
-        # was set previously (or default "gemini"), ignoring the saved value.
-        os.environ["EMBEDDING_PROVIDER"] = emb_provider
-        if emb_provider == "local":
-            os.environ["LOCAL_EMBEDDING_MODEL"] = local_model
+        # Commit the embedding provider into os.environ so that auto-indexing on
+        # session load uses the correct provider.  Without this, Settings() would
+        # fall back to whatever EMBEDDING_PROVIDER was set previously (or default
+        # "gemini"), ignoring the saved value.
+        #
+        # Threading note: os.environ writes here happen on the main thread, while
+        # background threads started by _attach_session_async() may read the same
+        # env vars via Settings().  This write happens before the background thread
+        # is started (it is called from _load_session_from_workspace, which runs
+        # before _attach_session_async), so there is no concurrent read at the
+        # time of this write.  Do NOT move this write inside a background thread.
+        if not self._is_busy:
+            os.environ["EMBEDDING_PROVIDER"] = emb_provider
+            if emb_provider == "local":
+                os.environ["LOCAL_EMBEDDING_MODEL"] = local_model
+        else:
+            # If somehow busy (e.g. rapid session switching), defer the write.
+            # The background thread will use whatever was last committed.
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "Skipping os.environ write for embedding provider: app is busy. "
+                "The previous embedding provider settings will be used."
+            )
 
         self._sync_vars_from_session()
         self._update_header()

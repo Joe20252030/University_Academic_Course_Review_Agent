@@ -159,6 +159,12 @@ def _serialise_history(history: list[BaseMessage]) -> list[dict]:
             out.append({"role": "human", "content": msg.content})
         elif isinstance(msg, AIMessage):
             out.append({"role": "ai", "content": msg.content})
+        else:
+            logger.warning(
+                "Skipping message of unknown type %s during serialisation; "
+                "it will not be persisted.",
+                type(msg).__name__,
+            )
     return out
 
 
@@ -171,6 +177,21 @@ def _deserialise_history(data: list[dict]) -> list[BaseMessage]:
             msgs.append(HumanMessage(content=content))
         elif role == "ai":
             msgs.append(AIMessage(content=content))
+        else:
+            logger.warning(
+                "Skipping message with unknown role %r during deserialisation.",
+                role,
+            )
+    # Guard: history must have an even number of messages (human+ai pairs).
+    # A dangling message (odd length) indicates a serialisation bug; drop the
+    # last message so the history stays correctly paired.
+    if len(msgs) % 2 != 0:
+        logger.warning(
+            "Deserialised chat history has odd number of messages (%d); "
+            "dropping last dangling message to keep history paired.",
+            len(msgs),
+        )
+        msgs = msgs[:-1]
     return msgs
 
 
@@ -452,7 +473,7 @@ def dict_to_session(data: dict[str, Any]) -> "AgentSession":  # type: ignore[nam
     # Guard against empty workspace_id (e.g. a session.json written with
     # "workspace_id": "").  An empty string would collapse in _resolve_workspace
     # to the shared sessions/default path, corrupting unrelated sessions.
-    workspace_id = data.get("workspace_id", "") or str(_uuid.uuid4())
+    workspace_id = data.get("workspace_id", "") or _uuid.uuid4().hex[:12]
 
     return AgentSession(
         llm_provider=data.get("llm_provider", "gemini"),

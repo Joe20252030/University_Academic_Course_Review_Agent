@@ -43,3 +43,6 @@ Return **valid Markdown** that includes:
 - 2-3 sample questions with full solutions
 
 Tailor the depth to the exam type: a quiz review should be concise and focused, a midterm moderately detailed, and a final comprehensive.
+
+## Language
+{response_language}

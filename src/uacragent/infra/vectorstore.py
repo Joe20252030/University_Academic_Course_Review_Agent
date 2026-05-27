@@ -4,13 +4,11 @@ import hashlib
 import json
 import math
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-try:
-    from langchain_chroma import Chroma  # type: ignore
-except ImportError:
-    from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 
 from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
@@ -30,7 +28,7 @@ _vs_logger = _logging.getLogger(__name__)
 
 def _build_embeddings(
     settings: Settings,
-    progress_cb: "Callable[[str], None] | None" = None,
+    progress_cb: Callable[[str], None] | None = None,
 ) -> Any:
     """Return an embedding model based on *settings.embedding_provider*.
 
@@ -41,16 +39,11 @@ def _build_embeddings(
     "local"   — HuggingFace sentence-transformers, runs entirely on device,
                 free with no API key required.
 
-    Fallback policy
-    ---------------
-    If the selected cloud provider fails (missing API key, network error,
-    quota exceeded, etc.) the function automatically falls back to the local
-    sentence-transformers model ``all-MiniLM-L6-v2``.  If that model is not
-    yet cached it will be downloaded on first use.  The *progress_cb* is called
-    with a visible warning message so the caller can surface it in the UI.
+    When the cloud provider fails (missing API key, network error, etc.) the
+    exception is re-raised.  The caller is responsible for surfacing the error
+    to the user.  Use the local provider explicitly when no cloud key is
+    available.
     """
-    from collections.abc import Callable  # noqa: F401 (used in type hint only)
-
     provider = getattr(settings, "embedding_provider", "gemini")
 
     if provider == "local":
@@ -76,22 +69,16 @@ def _build_embeddings(
             google_api_key=settings.google_api_key,  # type: ignore[arg-type]
         )
 
-    except Exception as exc:  # noqa: BLE001
-        _warn = (
-            f"⚠️ {provider.title()} embedding provider unavailable "
-            f"({type(exc).__name__}: {exc}). "
-            f"Falling back to free local model '{_DEFAULT_LOCAL_MODEL}' — "
-            f"this will be downloaded if not already cached."
-        )
-        _vs_logger.warning("%s", _warn)
-        if progress_cb:
-            progress_cb(_warn)
-        return _build_local_embeddings(_DEFAULT_LOCAL_MODEL, progress_cb=progress_cb)
+    except Exception:
+        # Re-raise so the caller can surface a clear error message to the user.
+        # The local provider fallback has been removed — use the "local" provider
+        # explicitly if no cloud API key is available.
+        raise
 
 
 def _build_local_embeddings(
     model_name: str,
-    progress_cb: "Callable[[str], None] | None" = None,
+    progress_cb: Callable[[str], None] | None = None,
 ) -> Any:
     """Load a local sentence-transformers model — free, no API key needed.
 
@@ -324,7 +311,7 @@ def get_or_create_vectorstore(
     settings: Settings,
     workspace_paths: WorkspacePaths,
     classified_files: dict[DocumentType, list[str]] | None = None,
-    progress_cb: "Callable[[str], None] | None" = None,
+    progress_cb: Callable[[str], None] | None = None,
 ) -> VectorStore:
     """Build or update the Chroma vector store for the current session.
 
@@ -414,8 +401,10 @@ class WeightedDocTypeRetriever(BaseRetriever):
     k: int = 8
     weights: dict = {}  # {doc_type_value: float}
 
-    class Config:
-        arbitrary_types_allowed = True
+    # model_config replaces the deprecated inner class Config (Pydantic v2 style).
+    # arbitrary_types_allowed is required because `vectorstore` is typed as Any
+    # but the actual runtime value is a VectorStore (non-Pydantic type).
+    model_config = {"arbitrary_types_allowed": True}
 
     def _get_relevant_documents(
         self,
@@ -430,7 +419,11 @@ class WeightedDocTypeRetriever(BaseRetriever):
 
         total_weight = sum(active.values())
 
-        # Allocate slots proportionally; ensure each active type gets ≥ 1 slot
+        # Allocate slots proportionally; ensure each active type gets ≥ 1 slot.
+        # math.ceil is used deliberately: it may over-fetch slightly (total could
+        # exceed self.k by up to len(active)-1 chunks), but this is intentional —
+        # we prefer too many candidates over too few, and the final slice
+        # ``results[: self.k]`` trims the merged list back down to exactly k.
         allocations: dict[str, int] = {
             dt_val: max(1, math.ceil(self.k * w / total_weight))
             for dt_val, w in active.items()
@@ -540,7 +533,11 @@ def chroma_is_current(
     re-embedding work.
     """
     chroma_dir = Path(workspace_paths.chroma)
-    if not chroma_dir.exists() or not any(chroma_dir.iterdir()):
+    # Check for the specific Chroma SQLite file rather than any directory entry.
+    # Using `any(chroma_dir.iterdir())` is unreliable because macOS creates
+    # .DS_Store files in directories, which would make an otherwise empty
+    # Chroma directory appear non-empty and skip re-indexing incorrectly.
+    if not (chroma_dir / "chroma.sqlite3").exists():
         return False
     data = _load_manifest(workspace_paths)
     if not data:

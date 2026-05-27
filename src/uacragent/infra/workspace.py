@@ -57,7 +57,9 @@ def workspace_paths(
     clearly-labelled bundle that does not mix with the user's own files.
     """
     if workspace_folder is not None:
-        ws = Path(workspace_folder)
+        # Resolve to an absolute canonical path so symlinks and relative
+        # components (e.g. "..") cannot escape the intended directory.
+        ws = Path(workspace_folder).resolve()
     else:
         from uacragent.infra.persistence import get_app_data_dir
         safe_id = workspace_id or "default"

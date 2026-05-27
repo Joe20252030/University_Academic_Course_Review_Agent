@@ -330,11 +330,54 @@ class AutoHideScrollbar:
         if y2 <= y1:
             y2 = y1 + 2
 
-        draw_rounded_rect(
-            self._cv, x1, y1, x2, y2,
-            r=min(self.CORNER_R, (x2 - x1) // 2, (y2 - y1) // 2),
-            fill=self._color, outline="", tags="thumb",
-        )
+        self._draw_pill(x1, y1, x2, y2)
+
+    def _draw_pill(self, x1: float, y1: float, x2: float, y2: float) -> None:
+        """Draw a capsule/pill thumb using perfect semicircular end caps.
+
+        ``draw_rounded_rect`` uses a smooth B-spline polygon which looks flat
+        at 5 px widths.  Instead we composite three canvas primitives:
+
+        * A filled rectangle for the straight middle section.
+        * Two ``create_oval`` calls — one at each end — whose diameter equals
+          the bar width, giving geometrically exact semicircles.
+
+        If the thumb is too short to fit separate caps (height ≤ width for a
+        vertical bar) the whole thumb collapses to a single oval.
+        """
+        cv    = self._cv
+        color = self._color
+        tags  = "thumb"
+
+        if self._orient == "vertical":
+            r = (x2 - x1) / 2          # half the bar width
+            if y2 - y1 <= x2 - x1:
+                # Too short — draw as a pure oval
+                cv.create_oval(x1, y1, x2, y2, fill=color, outline="", tags=tags)
+            else:
+                # Middle rectangle (bridges the two caps seamlessly)
+                cv.create_rectangle(x1, y1 + r, x2, y2 - r,
+                                    fill=color, outline="", tags=tags)
+                # Top semicircle cap
+                cv.create_oval(x1, y1, x2, y1 + 2 * r,
+                               fill=color, outline="", tags=tags)
+                # Bottom semicircle cap
+                cv.create_oval(x1, y2 - 2 * r, x2, y2,
+                               fill=color, outline="", tags=tags)
+        else:
+            r = (y2 - y1) / 2          # half the bar height
+            if x2 - x1 <= y2 - y1:
+                cv.create_oval(x1, y1, x2, y2, fill=color, outline="", tags=tags)
+            else:
+                # Middle rectangle
+                cv.create_rectangle(x1 + r, y1, x2 - r, y2,
+                                    fill=color, outline="", tags=tags)
+                # Left semicircle cap
+                cv.create_oval(x1, y1, x1 + 2 * r, y2,
+                               fill=color, outline="", tags=tags)
+                # Right semicircle cap
+                cv.create_oval(x2 - 2 * r, y1, x2, y2,
+                               fill=color, outline="", tags=tags)
 
 
 # ---------------------------------------------------------------------------

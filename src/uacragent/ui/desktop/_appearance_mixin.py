@@ -353,6 +353,26 @@ class AppearanceMixin:
             )
         except Exception as exc:  # noqa: BLE001
             logger.debug("_apply_theme: widget not ready or update failed: %s", exc)
+        # Search and upload tool buttons (_RoundedChip) — parent_bg must be
+        # updated so the canvas background matches the input area in dark mode
+        # and the "white edge" artifact (stale light-mode bg bleeding through)
+        # does not appear.
+        try:
+            self._search_btn.update_style(
+                chip_bg=_act_bg, chip_fg=_inp_fg,
+                hover_bg=_act_hov, parent_bg=_inp_bg,
+                outline=_border,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("_apply_theme: widget not ready or update failed: %s", exc)
+        try:
+            self._upload_btn.update_style(
+                chip_bg=_act_bg, chip_fg=_inp_fg,
+                hover_bg=_act_hov, parent_bg=_inp_bg,
+                outline=_border,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("_apply_theme: widget not ready or update failed: %s", exc)
 
         # ── Rounded canvases ───────────────────────────────────────────
         # _redraw_hist_canvas() repaints the unified card rounded rect.

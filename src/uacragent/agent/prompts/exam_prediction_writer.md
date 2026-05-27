@@ -45,3 +45,6 @@ Return **valid Markdown** for this single analysis section, containing:
 - **Sample predicted questions** (2-3) with brief outline answers
 
 Be concise and actionable — help the student allocate their study time effectively for the {exam_type}.
+
+## Language
+{response_language}

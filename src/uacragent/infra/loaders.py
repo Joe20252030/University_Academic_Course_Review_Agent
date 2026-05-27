@@ -277,12 +277,14 @@ class DocumentLoader:
 
     @staticmethod
     def _load_csv(path: str) -> list[Document]:
-        """Load a CSV file as a plain-text document with aligned columns.
+        """Load a CSV file as multiple Documents — one per chunk of rows.
 
-        Each CSV is returned as a single Document whose page_content is a
-        human-readable table (header row + data rows, pipe-separated).
-        This format is LLM-friendly and keeps row context together for
-        retrieval — no chunking artefacts from cutting mid-row.
+        Returns one Document per chunk of N data rows (default 10), each
+        prepended with the header row.  This avoids returning a single giant
+        Document that would be chunked arbitrarily by the text splitter and
+        could cut across row boundaries, losing row context.
+
+        Empty CSVs return a single placeholder document.
         """
         import csv as _csv
 
@@ -293,23 +295,25 @@ class DocumentLoader:
         if not rows:
             return [Document(page_content="(empty CSV)", metadata={"source": path})]
 
-        # Compute column widths for readable alignment
-        col_widths = [0] * max(len(r) for r in rows)
-        for row in rows:
-            for i, cell in enumerate(row):
-                col_widths[i] = max(col_widths[i], len(cell))
+        header = rows[0]
+        header_line = " | ".join(header)
+        data_rows = rows[1:]
 
-        def _fmt_row(row: list[str]) -> str:
-            padded = [cell.ljust(col_widths[i]) for i, cell in enumerate(row)]
-            return " | ".join(padded)
+        if not data_rows:
+            content = f"[CSV file: {Path(path).name}]\n\n{header_line}"
+            return [Document(page_content=content, metadata={"source": path})]
 
-        lines = [_fmt_row(rows[0])]
-        if len(rows) > 1:
-            lines.append("-+-".join("-" * w for w in col_widths))
-            lines.extend(_fmt_row(r) for r in rows[1:])
-
-        content = f"[CSV file: {Path(path).name}]\n\n" + "\n".join(lines)
-        return [Document(page_content=content, metadata={"source": path})]
+        chunk_size = 10
+        docs: list[Document] = []
+        for start in range(0, len(data_rows), chunk_size):
+            batch = data_rows[start:start + chunk_size]
+            body = "\n".join(" | ".join(r) for r in batch)
+            content = (
+                f"[CSV file: {Path(path).name} — rows {start + 1}–{start + len(batch)}]\n\n"
+                f"{header_line}\n{body}"
+            )
+            docs.append(Document(page_content=content, metadata={"source": path}))
+        return docs
 
     def copy_to_workspace(
         self,
@@ -368,7 +372,16 @@ class DocumentLoader:
         all_chunks: list[Document] = []
 
         for doc_type, paths in classified_files.items():
-            for path in paths:
+            # Deduplicate file paths (preserve order) to avoid embedding the
+            # same file twice and inflating the vector store with duplicate chunks.
+            unique_paths = list(dict.fromkeys(paths))
+            if len(unique_paths) < len(paths):
+                import logging as _logging
+                _logging.getLogger(__name__).warning(
+                    "Duplicate file paths found for %s; deduplicating (%d → %d).",
+                    doc_type, len(paths), len(unique_paths),
+                )
+            for path in unique_paths:
                 # Optionally copy to workspace
                 if workspace_paths:
                     path = self.copy_to_workspace(path, doc_type, workspace_paths)

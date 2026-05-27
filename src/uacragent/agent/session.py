@@ -62,12 +62,15 @@ class _HistoryStore:
                 return True
             return False
 
-    def trim(self, max_turns: int = 20) -> None:
-        """Truncate the history to at most *max_turns* turns under the lock."""
-        max_msgs = max_turns * 2  # one turn = 1 human + 1 AI message
+    def replace_all(self, messages: list) -> None:
+        """Atomically replace the entire message list.
+
+        Used by the smart history trim to rewrite the store in one lock
+        acquisition, preventing any concurrent reader from seeing a partially
+        trimmed state.
+        """
         with self._lock:
-            if len(self._messages) > max_msgs:
-                self._messages = self._messages[-max_msgs:]
+            self._messages = list(messages)
 
     # ── Safe read operations ──────────────────────────────────────────────
 
@@ -221,6 +224,3 @@ class AgentSession:
             "extra_instructions": self.extra_instructions,
         }
 
-    def trim_history(self, max_turns: int = 20) -> None:
-        """Simple turn-count trim (kept for compatibility — prefer smart_trim)."""
-        self.chat_history.trim(max_turns)

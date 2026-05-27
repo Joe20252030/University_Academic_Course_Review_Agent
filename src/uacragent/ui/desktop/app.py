@@ -435,8 +435,9 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         self._list_canvas_id = self._list_canvas.create_window(
             3, 3, anchor="nw", window=self._list_inner,
         )
+        self._redraw_list_canvas_id: object = None
         self._list_canvas.bind(
-            "<Configure>", lambda _e: self._redraw_list_canvas()
+            "<Configure>", lambda _e: self._debounced_redraw_list_canvas()
         )
 
         self._session_list = CustomSessionList(
@@ -519,8 +520,9 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         self._hist_canvas_win = self._hist_canvas.create_window(
             0, 0, anchor="nw", window=self._hist_inner,
         )
-        self._hist_canvas.bind("<Configure>", lambda _: self._redraw_hist_canvas())
-        self._hist_inner.bind("<Configure>",  lambda _: self._redraw_hist_canvas())
+        self._redraw_hist_canvas_id: object = None
+        self._hist_canvas.bind("<Configure>", lambda _: self._debounced_redraw_hist_canvas())
+        self._hist_inner.bind("<Configure>",  lambda _: self._debounced_redraw_hist_canvas())
 
         # ── row 0 of _hist_inner: Top bar (sidebar toggle + title) ────────
         self._chat_top_bar = top_bar = tk.Frame(self._hist_inner, bg=_card_bg)
@@ -640,7 +642,7 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         #   row 0 — quick-action chips  (always visible)
         #   row 1 — input text field    (always visible)
         #   row 2 — controls row        (Effort | spacer | [Sess Settings] | Send)
-        self._input_max_lines = 5
+        self._input_max_lines = 12
         self._qa_chips: list          = []
         self._input_block_seps: list  = []   # unused; kept for compat
         self._input_block_bgs: list[tk.Widget] = []
@@ -650,8 +652,6 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         self._pending_attachments: list[dict] = []
         self._search_active: bool = False
 
-        # Session Settings hover state
-        self._sess_settings_visible = False   # starts hidden
         self._input_hover_check_id: object = None
 
         self._input_block = tk.Frame(self._hist_inner, bg=_c0["input_bg"])
@@ -715,8 +715,9 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
             height=38,   # initial single-line height; updated dynamically
         )
         self._input_text_cv.grid(row=0, column=0, sticky="nsew")
+        self._redraw_input_text_cv_id: object = None
         self._input_text_cv.bind(
-            "<Configure>", lambda _: self._redraw_input_text_cv())
+            "<Configure>", lambda _: self._debounced_redraw_input_text_cv())
 
         self._input_text = tk.Text(
             self._input_text_cv,
@@ -919,7 +920,20 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         # Send is visible by default; Cancel swaps in when busy (pack_forget / pack)
 
         # Session Settings button is always visible inside the input block.
-        self._show_sess_settings()
+        # Apply the initial visible style inline (hover-reveal was removed).
+        _ss_mode = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
+        _ss_c = _THEME_COLORS.get(_ss_mode, _THEME_COLORS["light"])
+        try:
+            self._sess_settings_btn.update_style(
+                chip_bg=_ss_c["input_bg"],
+                chip_fg=_ss_c["input_fg"],
+                hover_bg=_ss_c.get("qa_bg", _ss_c["input_bg"]),
+                parent_bg=_ss_c["input_bg"],
+                outline=_ss_c.get("input_border", "#cdd4e8"),
+                outline_width=1,
+            )
+        except Exception:
+            pass
 
         # ── DnD drop overlay (hidden by default, placed over message area) ──
         # A semi-transparent-ish frame with a centred "Drop to attach" label
@@ -1075,6 +1089,37 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
             self._paned.add(self._chat_frame, minsize=500, stretch="always")
             self._sidebar_visible = True
             self._toggle_sidebar_btn.set_sidebar_visible(True)
+
+    # ------------------------------------------------------------------
+    # Debounced <Configure> callbacks (16 ms ≈ 1 frame at 60 Hz)
+    # ------------------------------------------------------------------
+
+    def _debounced_redraw_list_canvas(self) -> None:
+        """Debounce _redraw_list_canvas to avoid excessive redraws on resize."""
+        if self._redraw_list_canvas_id is not None:
+            try:
+                self.after_cancel(self._redraw_list_canvas_id)
+            except Exception:
+                pass
+        self._redraw_list_canvas_id = self.after(16, self._redraw_list_canvas)
+
+    def _debounced_redraw_hist_canvas(self) -> None:
+        """Debounce _redraw_hist_canvas to avoid excessive redraws on resize."""
+        if self._redraw_hist_canvas_id is not None:
+            try:
+                self.after_cancel(self._redraw_hist_canvas_id)
+            except Exception:
+                pass
+        self._redraw_hist_canvas_id = self.after(16, self._redraw_hist_canvas)
+
+    def _debounced_redraw_input_text_cv(self) -> None:
+        """Debounce _redraw_input_text_cv to avoid excessive redraws on resize."""
+        if self._redraw_input_text_cv_id is not None:
+            try:
+                self.after_cancel(self._redraw_input_text_cv_id)
+            except Exception:
+                pass
+        self._redraw_input_text_cv_id = self.after(16, self._redraw_input_text_cv)
 
     # ------------------------------------------------------------------
     # Rounded-corner list canvas
@@ -1600,47 +1645,6 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         cv.tag_raise(self._search_cv_win)
         try:
             self._search_entry.configure(bg=_ibg, fg=_fg, insertbackground=_fg)
-        except Exception:
-            pass
-
-    # ------------------------------------------------------------------
-    # Input-block hover — Session Settings reveal
-    # ------------------------------------------------------------------
-
-    # (hover-reveal removed — Session Settings is always visible)
-
-    def _show_sess_settings(self) -> None:
-        """Restore Session Settings chip to its proper visible colours."""
-        self._sess_settings_visible = True
-        _mode = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
-        c     = _THEME_COLORS.get(_mode, _THEME_COLORS["light"])
-        try:
-            self._sess_settings_btn.update_style(
-                chip_bg=c["input_bg"],
-                chip_fg=c["input_fg"],
-                hover_bg=c.get("qa_bg", c["input_bg"]),
-                parent_bg=c["input_bg"],
-                outline=c.get("input_border", "#cdd4e8"),
-                outline_width=1,
-            )
-        except Exception:
-            pass
-
-    def _hide_sess_settings(self) -> None:
-        """Make Session Settings chip transparent (invisible against input bg)."""
-        self._sess_settings_visible = False
-        _mode = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
-        c     = _THEME_COLORS.get(_mode, _THEME_COLORS["light"])
-        _ibg  = c["input_bg"]
-        try:
-            self._sess_settings_btn.update_style(
-                chip_bg=_ibg,
-                chip_fg=_ibg,
-                hover_bg=_ibg,
-                parent_bg=_ibg,
-                outline=_ibg,
-                outline_width=0,
-            )
         except Exception:
             pass
 

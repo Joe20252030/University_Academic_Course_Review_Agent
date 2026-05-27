@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
 from pathlib import Path
@@ -8,6 +9,8 @@ from fpdf import FPDF
 
 from uacragent.export._utils import safe_timestamp
 from uacragent.infra.workspace import WorkspacePaths
+
+_logger = logging.getLogger(__name__)
 
 # Candidate font pairs (regular, bold).
 # Bold may be None — FPDF2 will emulate bold from the regular file in that case.
@@ -66,6 +69,12 @@ class _ReviewPDF(FPDF):
         if fonts:
             regular, bold = fonts
             self.add_font("Unicode", "", regular)
+            if bold is None:
+                _logger.warning(
+                    "No bold font file found for '%s'; FPDF2 will simulate bold "
+                    "from the regular file.  Install a bold variant for best results.",
+                    regular,
+                )
             # Register bold variant; if no separate bold file, use the regular
             # file — FPDF2 will simulate bold from it.
             self.add_font("Unicode", "B", bold or regular)

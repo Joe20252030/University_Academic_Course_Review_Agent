@@ -76,3 +76,6 @@ For each question provide:
 
 Keep the tone and style consistent with a real university exam paper.
 Do not add any commentary outside the exam paper structure.
+
+## Language
+{response_language}

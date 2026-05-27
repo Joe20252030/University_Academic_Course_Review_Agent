@@ -1,3 +1,11 @@
+"""API routes for UACRAgent.
+
+SECURITY NOTE: This API does not restrict file paths by default.  For any
+non-local deployment, set the UACRAGENT_ALLOWED_BASE_DIR environment variable
+to restrict file access to a trusted directory.  Without this variable set,
+the API accepts any absolute path that exists on the host filesystem, which is
+a path-traversal risk in multi-tenant or network-exposed environments.
+"""
 from __future__ import annotations
 
 import os
@@ -15,10 +23,11 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 # Path-traversal guard
 # ---------------------------------------------------------------------------
-# When set, every file path in an API request must resolve under this directory.
-# Configure via the UACRAGENT_ALLOWED_BASE_DIR environment variable.
-# When unset, the API still requires absolute existing regular files, but does
-# not restrict requests to a single root directory.
+# SECURITY NOTE: When UACRAGENT_ALLOWED_BASE_DIR is set, every file path in an
+# API request must resolve under that directory, preventing path-traversal
+# attacks.  When unset, the API still requires absolute existing regular files
+# but does not restrict requests to a single root directory — do NOT expose
+# this API publicly without setting UACRAGENT_ALLOWED_BASE_DIR.
 _ALLOWED_BASE_DIR: Path | None = (
     Path(os.environ["UACRAGENT_ALLOWED_BASE_DIR"]).resolve()
     if "UACRAGENT_ALLOWED_BASE_DIR" in os.environ
@@ -117,5 +126,6 @@ def generate_review(
         exam_duration=req.exam_duration,
         exam_info=req.exam_info,
         effort_level=req.effort_level,
+        reasoning_mode=req.reasoning_mode,
     )
     return ReviewResponse(markdown_path=result.markdown_path, plan=result.plan)

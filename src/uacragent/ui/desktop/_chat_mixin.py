@@ -72,22 +72,28 @@ class ChatMixin:
         _tbg  = c.get("qa_bg", "#edf0f8")
         _tfg  = c.get("qa_fg", c["input_fg"])
         _thov = c.get("qa_bg_hover", "#dce3f2")
+        _pbg = c.get("input_bg", "#f5f7fb")
         try:
             if self._search_active:
                 self._search_btn.update_style(
                     chip_bg=c.get("btn_primary_bg", "#f5a623"),
                     chip_fg=c.get("btn_primary_fg", "#1a2744"),
                     hover_bg=c.get("btn_primary_hover", "#e8961a"),
+                    parent_bg=_pbg,
                 )
             else:
                 self._search_btn.update_style(
-                    chip_bg=_tbg, chip_fg=_tfg, hover_bg=_thov)
+                    chip_bg=_tbg, chip_fg=_tfg, hover_bg=_thov,
+                    parent_bg=_pbg,
+                )
         except Exception:
             pass
         # Keep upload button colours in sync with theme too
         try:
             self._upload_btn.update_style(
-                chip_bg=_tbg, chip_fg=_tfg, hover_bg=_thov)
+                chip_bg=_tbg, chip_fg=_tfg, hover_bg=_thov,
+                parent_bg=_pbg,
+            )
         except Exception:
             pass
         # Rebuild the strip so the search chip colour matches the new theme
@@ -548,6 +554,11 @@ class ChatMixin:
                     self.after(0, lambda m=msg, c=cached, w=warn, s=session, t=captured_token:
                                self._request_token == t and
                                self._on_session_loaded(m, s, was_cached=c, fast_path_warning=w))
+                else:
+                    # Cancel was requested while the operation was running.
+                    # The completion handler won't be called, so we must release
+                    # the busy lock here after the thread has actually finished.
+                    self.after(0, lambda: self._set_busy(False))
             except Exception as exc:
                 if not self._cancel_event.is_set():
                     self.after(
@@ -556,6 +567,9 @@ class ChatMixin:
                             self._request_token == t and
                             self._on_session_load_error(e, s, _show_err),
                     )
+                else:
+                    # Cancelled; release busy lock from the thread's finally path.
+                    self.after(0, lambda: self._set_busy(False))
 
         threading.Thread(target=_work, daemon=True).start()
 
@@ -646,6 +660,9 @@ class ChatMixin:
                             self._request_token == t and
                             self._on_attach_done(s, c, sess, fast_path_warning=w),
                     )
+                else:
+                    # Cancel was requested; release busy lock from thread's finally path.
+                    self.after(0, lambda: self._set_busy(False))
             except Exception as exc:  # noqa: BLE001
                 if not self._cancel_event.is_set():
                     self.after(
@@ -654,6 +671,9 @@ class ChatMixin:
                             self._request_token == t and
                             self._on_session_load_error(e, s, False),
                     )
+                else:
+                    # Cancelled; release busy lock from thread's finally path.
+                    self.after(0, lambda: self._set_busy(False))
 
         threading.Thread(target=_work, daemon=True).start()
 
@@ -835,6 +855,8 @@ class ChatMixin:
                     # session.chat_history — undo it so the invisible response
                     # doesn't silently persist on disk.
                     captured_session.chat_history.pop_last_turn()
+                    # Release busy lock since the completion handler won't run.
+                    self.after(0, lambda: self._set_busy(False))
                 else:
                     self.after(0, lambda r=response, f=export_fmt, s=captured_session:
                                self._on_chat_response(r, f, s))
@@ -842,6 +864,9 @@ class ChatMixin:
                 if not self._cancel_event.is_set() and self._request_token == captured_token:
                     self.after(0, lambda e=str(exc), s=captured_session:
                                self._on_chat_error(e, s))
+                else:
+                    # Cancelled; release busy lock from thread's finally path.
+                    self.after(0, lambda: self._set_busy(False))
 
         threading.Thread(target=_work, daemon=True).start()
 
@@ -908,15 +933,36 @@ class ChatMixin:
     def _show_welcome(self) -> None:
         self._append_chat("assistant", self._t("welcome_msg"))
 
+    @staticmethod
+    def _content_to_str(content) -> str:
+        """Convert a LangChain message content value to a plain string.
+
+        ``content`` is normally a ``str``, but multimodal messages may use a
+        ``list`` of content parts (e.g. ``[{"type": "text", "text": "..."},
+        {"type": "image_url", ...}]``).  This helper extracts and joins the
+        text parts so the chat display always receives a flat string.
+        """
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = []
+            for part in content:
+                if isinstance(part, str):
+                    parts.append(part)
+                elif isinstance(part, dict) and part.get("type") == "text":
+                    parts.append(part.get("text", ""))
+            return " ".join(parts).strip()
+        return str(content)
+
     def _replay_chat_history(self) -> None:
         """Re-render saved messages into the chat display. No status hints — those
         come from the indexing flow that follows immediately after."""
         from langchain_core.messages import HumanMessage, AIMessage
         for msg in self._session.chat_history.snapshot():
             if isinstance(msg, HumanMessage):
-                self._append_chat("user", msg.content)
+                self._append_chat("user", self._content_to_str(msg.content))
             elif isinstance(msg, AIMessage):
-                self._append_chat("assistant", msg.content)
+                self._append_chat("assistant", self._content_to_str(msg.content))
 
     def _append_chat(self, role: str, text: str) -> None:
         """Append a flat message widget to the chat scroll area."""
@@ -932,26 +978,44 @@ class ChatMixin:
         _H_PAD  = 12  # horizontal padding inside message area
         _V_PAD  = 7   # vertical padding inside message area
 
-        # ── System messages: no bubble, just italic dimmed label ──────────
+        # ── System messages: no bubble, just italic dimmed selectable text ──
         if role == "system":
-            lbl = tk.Label(
+            sys_text = tk.Text(
                 self._msg_frame,
-                text=text,
+                wrap="word",
+                relief="flat", bd=0, highlightthickness=0,
                 bg=card_bg,
                 fg=c.get("status_fg", "#6b7280"),
                 font=("TkDefaultFont", max(sz - 1, 10), "italic"),
-                anchor="w",
-                justify="left",
                 padx=20, pady=5,
-                wraplength=300,
+                cursor="ibeam",
+                height=1,
             )
-            lbl.pack(fill="x", pady=(2, 2))
-            lbl.bind(
-                "<Configure>",
-                lambda e, w=lbl: w.configure(wraplength=max(80, e.width - 40)),
+            sys_text.insert("1.0", text)
+            sys_text.configure(
+                state="disabled",
+                selectbackground=c.get("lb_sel_bg",  "#1b3167"),
+                selectforeground=c.get("lb_sel_fg",  "#ffffff"),
+                inactiveselectbackground=c.get("lb_sel_bg", "#1b3167"),
             )
-            self._bind_chat_scroll(lbl)
-            self._dnd_register(lbl)
+            sys_text.pack(fill="x", pady=(2, 2))
+
+            def _sync_sys_height(_e=None, _w=sys_text):
+                try:
+                    _w.update_idletasks()
+                    n = _w.count("1.0", "end", "displaylines")
+                    if isinstance(n, tuple):
+                        n = n[0] if n else 1
+                    if n and n > 0:
+                        new_h = max(1, n)
+                        if int(str(_w.cget("height"))) != new_h:
+                            _w.configure(height=new_h)
+                except Exception:
+                    pass
+
+            sys_text.bind("<Configure>", _sync_sys_height)
+            self._bind_chat_scroll(sys_text)
+            self._dnd_register(sys_text)
             self._scroll_chat_to_bottom()
             return
 
@@ -988,14 +1052,47 @@ class ChatMixin:
         )
         role_lbl.pack(fill="x")
 
-        body_lbl = tk.Label(
-            shell, text=text,
+        # tk.Text in read-only mode: users can select and copy text with
+        # standard keyboard shortcuts (Cmd+C / Ctrl+C) and mouse drag.
+        body_text = tk.Text(
+            shell,
+            wrap="word",
+            relief="flat", bd=0, highlightthickness=0,
             bg=bubble_bg, fg=body_fg,
             font=("TkDefaultFont", sz),
-            anchor="w", padx=_H_PAD, pady=_V_PAD,
-            justify="left", wraplength=300,
+            padx=_H_PAD, pady=_V_PAD,
+            cursor="ibeam",
+            height=1,
         )
-        body_lbl.pack(fill="x")
+        body_text.insert("1.0", text)
+        body_text.configure(
+            state="disabled",
+            selectbackground=c.get("lb_sel_bg",  "#1b3167"),
+            selectforeground=c.get("lb_sel_fg",  "#ffffff"),
+            inactiveselectbackground=c.get("lb_sel_bg", "#1b3167"),
+        )
+        body_text.pack(fill="x")
+
+        def _sync_body_text_height(_e=None, _w=body_text):
+            """Resize the text widget height to exactly fit its display lines.
+
+            Guards against self-triggering Configure loops by only calling
+            configure() when the computed height actually differs from the
+            current height.
+            """
+            try:
+                _w.update_idletasks()
+                n = _w.count("1.0", "end", "displaylines")
+                if isinstance(n, tuple):
+                    n = n[0] if n else 1
+                if n and n > 0:
+                    new_h = max(1, n)
+                    if int(str(_w.cget("height"))) != new_h:
+                        _w.configure(height=new_h)
+            except Exception:
+                pass
+
+        body_text.bind("<Configure>", _sync_body_text_height)
 
         def _draw(_r=r, _bg=bubble_bg, _bd=border_col):
             cv.delete("bb")
@@ -1010,10 +1107,6 @@ class ChatMixin:
         def _sync_width(e, _wid=win_id, _off=_OFF, _hp=_H_PAD):
             new_w = max(1, e.width - 2 * _off)
             cv.itemconfigure(_wid, width=new_w)
-            try:
-                body_lbl.configure(wraplength=max(60, new_w - 2 * _hp - 4))
-            except Exception:
-                pass
 
         def _sync_height(_e, _off=_OFF):
             req = shell.winfo_reqheight()
@@ -1025,7 +1118,7 @@ class ChatMixin:
         cv.bind("<Configure>",    lambda e: (_sync_width(e), _draw()))
         shell.bind("<Configure>", _sync_height)
 
-        for w in (cv, shell, role_lbl, body_lbl):
+        for w in (cv, shell, role_lbl, body_text):
             self._bind_chat_scroll(w)
             self._dnd_register(w)
 
@@ -1047,25 +1140,53 @@ class ChatMixin:
         )
         role_lbl.pack(fill="x")
 
-        body_lbl = tk.Label(
-            shell, text=text,
+        # tk.Text in read-only mode: users can select and copy text with
+        # standard keyboard shortcuts (Cmd+C / Ctrl+C) and mouse drag.
+        body_text = tk.Text(
+            shell,
+            wrap="word",
+            relief="flat", bd=0, highlightthickness=0,
             bg=card_bg, fg=body_fg,
             font=("TkDefaultFont", sz),
-            anchor="w", pady=_V_PAD,
-            justify="left", wraplength=300,
+            padx=0, pady=_V_PAD,
+            cursor="ibeam",
+            height=1,
         )
-        body_lbl.pack(fill="x")
-        body_lbl.bind(
-            "<Configure>",
-            lambda e, w=body_lbl: w.configure(wraplength=max(60, e.width - 4)),
+        body_text.insert("1.0", text)
+        body_text.configure(
+            state="disabled",
+            selectbackground=c.get("lb_sel_bg",  "#1b3167"),
+            selectforeground=c.get("lb_sel_fg",  "#ffffff"),
+            inactiveselectbackground=c.get("lb_sel_bg", "#1b3167"),
         )
+        body_text.pack(fill="x")
+
+        def _sync_body_text_height(_e=None, _w=body_text):
+            """Resize the text widget height to exactly fit its display lines.
+
+            Guards against self-triggering Configure loops by only calling
+            configure() when the computed height actually differs.
+            """
+            try:
+                _w.update_idletasks()
+                n = _w.count("1.0", "end", "displaylines")
+                if isinstance(n, tuple):
+                    n = n[0] if n else 1
+                if n and n > 0:
+                    new_h = max(1, n)
+                    if int(str(_w.cget("height"))) != new_h:
+                        _w.configure(height=new_h)
+            except Exception:
+                pass
+
+        body_text.bind("<Configure>", _sync_body_text_height)
 
         self._last_assistant_content   = shell
         self._last_assistant_bubble_bg = card_bg
         self._last_assistant_body_fg   = body_fg
         self._last_assistant_card_bg   = card_bg
 
-        for w in (shell, role_lbl, body_lbl):
+        for w in (shell, role_lbl, body_text):
             self._bind_chat_scroll(w)
             self._dnd_register(w)
 
@@ -1232,7 +1353,15 @@ class ChatMixin:
 
 
     def _on_cancel(self) -> None:
-        """Signal the in-flight background request to be discarded."""
+        """Signal the in-flight background request to be discarded.
+
+        Only sets the cancel event here.  _set_busy(False) is NOT called
+        immediately because the background thread may still be running — calling
+        _set_busy(False) now would allow a new message to be sent while the old
+        thread is still active (race condition).  Instead, each _work() function
+        detects the cancel event after its main operation and posts
+        _set_busy(False) via after() so the UI is only unlocked once the thread
+        has actually finished.
+        """
         self._cancel_event.set()
-        self._set_busy(False)
         self._append_chat("system", self._t("request_cancelled"))

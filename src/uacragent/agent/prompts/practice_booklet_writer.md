@@ -42,3 +42,6 @@ Return **valid Markdown** containing:
 - A complete solution key at the end of the section with step-by-step explanations
 
 Label each problem with its difficulty level. For multiple choice questions, provide 4 options.
+
+## Language
+{response_language}

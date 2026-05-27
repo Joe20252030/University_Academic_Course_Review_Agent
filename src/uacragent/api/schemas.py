@@ -42,10 +42,16 @@ class ReviewRequest(BaseModel):
         description="Safe workspace identifier — letters, digits, hyphens, underscores only.",
     )
     copy_to_workspace: bool = True
-    # Retrieval depth only. This API currently exposes the effort axis
-    # (retrieval / context size), but not the desktop app's separate
-    # reasoning-mode axis for quick vs. deep generation pipelines.
+    # Retrieval depth controls how many chunks are fetched and how broadly
+    # the corpus is sampled during plan generation.
     effort_level: str = Field(default="medium", pattern=r"^(low|medium|high)$")
+    # Pipeline depth: "quick" for fast single-pass generation, "deep" for
+    # topic extraction + critic refinement pass (higher quality, more LLM calls).
+    reasoning_mode: str = Field(
+        default="quick",
+        pattern=r"^(quick|deep)$",
+        description="Pipeline depth: 'quick' for fast single-pass, 'deep' for topic extraction + critic pass.",
+    )
     # Optional course information
     university_name: str = ""
     major: str = ""

@@ -123,6 +123,10 @@ PROVIDERS: dict[str, ProviderConfig] = {
         # Tier 2 (5 000 RPM) → switch to "pro"; Tier 4–5 (10 000–15 000 RPM) → "unlimited".
         default_rate_tier="standard",
         supports_search=True,
+        # NOTE: supports_files is a provider-level flag. The search-preview model
+        # variants (gpt-4o-search-preview, gpt-4o-mini-search-preview) do NOT
+        # accept file/vision inputs — the upload button should be disabled when
+        # one of those models is selected, regardless of this flag.
         supports_files=True,
     ),
     "deepseek": ProviderConfig(

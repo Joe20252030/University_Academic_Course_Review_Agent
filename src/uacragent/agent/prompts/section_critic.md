@@ -29,3 +29,6 @@ Carefully review the section above and produce an **improved version** that:
 - Do **not** add speculative or unsubstantiated content — only improve what is evidenced by the existing material.
 - Do **not** include any preamble, commentary about what you changed, or meta-explanation.
 - Return the **full improved section text** directly, ready to be inserted into the final document.
+
+## Language
+{response_language}

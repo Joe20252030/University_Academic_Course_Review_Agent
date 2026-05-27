@@ -19,3 +19,7 @@ class LLMError(UACRAgentError):
 
 class ParseError(UACRAgentError):
     """Raised when structured outputs cannot be parsed/validated."""
+
+
+class ExportError(UACRAgentError):
+    """Raised when document export (PDF, DOCX, Markdown) fails."""

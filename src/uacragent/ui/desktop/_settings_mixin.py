@@ -5,7 +5,7 @@ import os
 import re
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, ttk
+from tkinter import filedialog
 
 from uacragent.domain.providers import (
     PROVIDER_IDS, get_provider, env_var_for, models_for,
@@ -14,7 +14,7 @@ from uacragent.domain.types import DocumentType, ExamFormat, ExamType, ExportFor
 from uacragent.infra.persistence import get_app_data_dir
 from uacragent.infra.workspace import workspace_paths
 
-from ._custom_widgets import _RoundedChip, draw_rounded_rect
+from ._custom_widgets import AutoHideScrollbar, _RoundedChip, draw_rounded_rect
 from ._ui_constants import (
     _PAD, _SUPPORTED_FILETYPES, _STRINGS, _THEME_COLORS, _FONT_SIZE_VALUES,
     _open_file_in_os, _open_folder_in_os,
@@ -654,10 +654,13 @@ class SettingsMixin:
 
         # ── Scrollable canvas inside the dialog ───────────────────────
         canvas = tk.Canvas(win, borderwidth=0, highlightthickness=0, bg=_wbg)
-        sb = ttk.Scrollbar(win, orient="vertical", command=canvas.yview)
-        canvas.configure(yscrollcommand=sb.set)
-        sb.pack(side="right", fill="y")
         canvas.pack(side="left", fill="both", expand=True)
+        sb = AutoHideScrollbar(
+            canvas, orient="vertical",
+            color=c.get("sb_color", "#9aa5be"),
+            bg=_wbg,
+        )
+        canvas.configure(yscrollcommand=sb.set)
 
         inner = tk.Frame(canvas, bg=_wbg, padx=_PAD, pady=_PAD)
         win_id = canvas.create_window((0, 0), window=inner, anchor="nw")
@@ -1193,8 +1196,8 @@ class SettingsMixin:
                        if out_dir.exists()
                        else self._t("settings_no_outputs_folder"))
                 tk.Label(list_frame, text=msg,
-                         bg=_cbg, fg="gray").grid(row=0, column=0, sticky="w",
-                                                   pady=(2, 0))
+                         bg=_cbg, fg=_fg).grid(row=0, column=0, sticky="w",
+                                                pady=(2, 0))
                 return
 
             _row_even = c.get("row_even_bg", "#f7f7f7")
@@ -1214,7 +1217,8 @@ class SettingsMixin:
                 name_lbl = tk.Label(
                     row_f,
                     text=f"📄 {fpath.name}  ({size_str})",
-                    background=bg, anchor="w",
+                    background=bg, fg=c.get("text_fg", "#1a2744"),
+                    anchor="w",
                 )
                 name_lbl.grid(row=0, column=0, sticky="ew", padx=(4, 8))
 
@@ -1332,11 +1336,25 @@ class SettingsMixin:
             anchor="w",
         ).grid(row=0, column=0, columnspan=2, sticky="w", padx=6, pady=(6, 2))
 
-        lb = tk.Listbox(shell, height=3, selectmode=tk.EXTENDED)
-        sb = ttk.Scrollbar(shell, orient="vertical", command=lb.yview)
-        lb.configure(yscrollcommand=sb.set)
-        lb.grid(row=1, column=0, sticky="nsew", padx=(6, 0))
-        sb.grid(row=1, column=1, sticky="ns", padx=(0, 6))
+        # Wrapper frame holds the listbox + overlay scrollbar (spans both cols)
+        lb_wrap = tk.Frame(shell, bg=_cbg)
+        lb_wrap.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=6)
+        lb = tk.Listbox(
+            lb_wrap, height=3, selectmode=tk.EXTENDED,
+            bg=c.get("text_bg", "#ffffff"),
+            fg=c.get("text_fg", "#1a2744"),
+            selectbackground=c.get("lb_sel_bg", "#1b3167"),
+            selectforeground=c.get("lb_sel_fg", "#ffffff"),
+            borderwidth=0, highlightthickness=0,
+            relief="flat",
+        )
+        lb.pack(fill="both", expand=True)
+        lb_vsb = AutoHideScrollbar(
+            lb_wrap, orient="vertical",
+            color=c.get("sb_color", "#9aa5be"),
+            bg=c.get("text_bg", "#ffffff"),
+        )
+        lb.configure(yscrollcommand=lb_vsb.set)
         self._file_listboxes[doc_type] = lb
 
         btn_row = tk.Frame(shell, bg=_cbg)
@@ -1929,6 +1947,16 @@ class SettingsMixin:
         survives app restarts even when there are no files yet.
         """
         self._sync_session_from_vars()
+
+        # M-6: Validate exam_info_path — warn (but do not block Apply) if the
+        # file is set but no longer accessible on disk.
+        _exam_path = self._session.exam_info_path
+        if _exam_path and (not Path(_exam_path).exists() or not Path(_exam_path).is_file()):
+            try:
+                self._settings_status_var.set(f"Warning: Exam info file not found: {_exam_path}")
+            except Exception:  # noqa: BLE001
+                pass  # dialog destroyed between check and set — harmless
+
         self._inject_api_keys()
         self._agent = None          # force re-creation with updated provider/model
         self._update_header()

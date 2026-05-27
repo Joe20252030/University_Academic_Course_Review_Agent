@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -107,6 +108,29 @@ def _task_title(task_type: TaskType, language: str = "en") -> str:
     return titles.get(task_type) or _TASK_TITLES_L10N["en"].get(task_type, "Review")
 
 
+_LANGUAGE_INSTRUCTIONS: dict[str, str] = {
+    "auto": (
+        "Detect the language of the student context (course name, university, etc.) "
+        "and produce all output in that language. Default to English when uncertain."
+    ),
+    "en": "Produce all output in English.",
+    "zh_CN": (
+        "You MUST produce all output entirely in Simplified Chinese (简体中文). "
+        "All section headings, explanations, questions, and answers must be written "
+        "in Chinese. Use English only for established technical terms that lack a "
+        "standard Chinese translation."
+    ),
+}
+
+
+def _get_language_instruction(language: str) -> str:
+    """Return the language steering instruction for *language*.
+
+    Falls back to the English instruction for any unrecognised locale.
+    """
+    return _LANGUAGE_INSTRUCTIONS.get(language, _LANGUAGE_INSTRUCTIONS["en"])
+
+
 def load_prompt(name: str) -> str:
     """Read a prompt template file by name from the prompts directory.
 
@@ -187,8 +211,14 @@ def build_outline(docs: list[Document], max_docs: int = 20, chars_per_doc: int =
     if len(docs) <= max_docs:
         sampled = docs
     else:
-        step = len(docs) / max_docs
-        sampled = [docs[int(i * step)] for i in range(max_docs)]
+        # Linspace-style sampling: includes both the first and last document so
+        # the planner sees material from the full range of the corpus.
+        # The previous step-based approach missed the last document when
+        # len(docs) is not a multiple of max_docs.
+        sampled = [
+            docs[round(i * (len(docs) - 1) / (max_docs - 1))]
+            for i in range(max_docs)
+        ]
 
     parts = [d.page_content[:chars_per_doc] for d in sampled]
     return "\n\n".join(parts).strip()
@@ -201,6 +231,7 @@ def generate_plan(
     max_docs: int = 20,
     chars_per_doc: int = 800,
     _outline_override: str | None = None,
+    language: str = "en",
 ) -> ReviewPlan:
     """Generate a :class:`ReviewPlan` from document chunks.
 
@@ -208,6 +239,9 @@ def generate_plan(
     optionally augmented) outline string instead of building it from scratch.
     Used by the Deep Analysis path to inject topic-priority context into the
     planner prompt without rebuilding the outline a second time.
+
+    *language* steers the output language of the generated plan (``"en"`` or
+    ``"zh_CN"``).
     """
     outline_text = (
         _outline_override
@@ -233,6 +267,7 @@ def generate_plan(
         semester=p["semester"],
         exam_duration=p["exam_duration"],
         exam_info=p["exam_info"],
+        response_language=_get_language_instruction(language),
     )
 
     plan: ReviewPlan = llm_client.generate_structured(ReviewPlan, messages)
@@ -249,6 +284,7 @@ def write_section(
     retriever: BaseRetriever,
     llm_client: LLMClient,
     user_prefs: dict | None = None,
+    language: str = "en",
 ) -> str:
     user_prefs = user_prefs or {}
 
@@ -279,6 +315,7 @@ def write_section(
             semester=p["semester"],
             exam_duration=p["exam_duration"],
             exam_info=p["exam_info"],
+            response_language=_get_language_instruction(language),
         )
     )
     return getattr(resp, "content", str(resp))
@@ -292,6 +329,8 @@ def write_sections_sequential(
     request_delay: float = 6.0,
     progress_cb: Callable[[str], None] | None = None,
     enable_critic: bool = False,
+    cancel_event: "threading.Event | None" = None,
+    language: str = "en",
 ) -> list[str]:
     """Write sections one at a time with a delay between each LLM call.
 
@@ -307,12 +346,27 @@ def write_sections_sequential(
     inter-call delay is inserted after the critic call as well to respect rate
     limits.  The critic pass counts as an additional LLM call per section.
     """
+    def _interruptible_sleep(duration: float) -> bool:
+        """Sleep for *duration* seconds, waking every 0.1 s to check cancel.
+
+        Returns True if cancelled, False if the full sleep completed.
+        """
+        slept = 0.0
+        while slept < duration:
+            if cancel_event and cancel_event.is_set():
+                return True
+            time.sleep(min(0.1, duration - slept))
+            slept += 0.1
+        return False
+
     results: list[str] = []
     n = len(sections)
     for i, section in enumerate(sections):
+        if cancel_event and cancel_event.is_set():
+            return []
         if progress_cb:
             progress_cb(f"Writing section {i + 1}/{n}: {section.title}…")
-        text = write_section(section, retriever, llm_client, user_prefs)
+        text = write_section(section, retriever, llm_client, user_prefs, language=language)
 
         # Deep Analysis: run a refinement / critic pass on each section.
         if enable_critic:
@@ -320,7 +374,9 @@ def write_sections_sequential(
                 progress_cb(
                     f"Reviewing section {i + 1}/{n}: {section.title}…"
                 )
-            time.sleep(request_delay)      # rate-limit before the critic call
+            # Interruptible sleep before the critic call so cancel is responsive.
+            if _interruptible_sleep(request_delay):
+                return []
             text = apply_critic_pass(
                 section_text=text,
                 section_title=section.title,
@@ -331,7 +387,10 @@ def write_sections_sequential(
         results.append(text)
 
         if i < n - 1:                      # no delay after the last section
-            time.sleep(request_delay)
+            # Interruptible sleep: check cancel every 0.1 s so cancellation is
+            # responsive even during long rate-limit delays.
+            if _interruptible_sleep(request_delay):
+                return []
     return results
 
 
@@ -340,6 +399,7 @@ def write_predicted_exam_paper(
     retriever: BaseRetriever,
     llm_client: LLMClient,
     user_prefs: dict | None = None,
+    language: str = "en",
 ) -> str:
     """Generate Part B (predicted exam paper) for the exam_prediction task type."""
     user_prefs = user_prefs or {}
@@ -380,6 +440,7 @@ def write_predicted_exam_paper(
             extra_instructions=p["extra_instructions"],
             predicted_sections=predicted_sections_text,
             context=context,
+            response_language=_get_language_instruction(language),
         )
     )
     return getattr(resp, "content", str(resp))
@@ -572,10 +633,12 @@ class AgentPipeline:
             effort.outline_max_docs * reasoning_cfg.outline_max_docs_scale
         ))
 
+        # Convert task_type string to enum once at the top, and use tt everywhere.
+        tt = TaskType(task_type)
+
         # Build a task-type-aware retriever whose k is scaled to effort level
         # and reasoning mode.  WeightedDocTypeRetriever allocates more k slots
         # to higher-priority doc types (e.g. past_exam for exam_prediction).
-        tt = TaskType(task_type)
         retriever = build_weighted_retriever(
             vectorstore,
             k=scaled_k,
@@ -589,7 +652,7 @@ class AgentPipeline:
         user_prefs = {
             "exam_format": exam_format,
             "exam_type": exam_type,
-            "task_type": task_type,
+            "task_type": tt.value,
             "extra_instructions": extra_instructions,
             "course_name": course_name,
             "university_name": university_name,
@@ -646,18 +709,19 @@ class AgentPipeline:
             request_delay=self.settings.llm_request_delay,
             progress_cb=progress_cb,
             enable_critic=reasoning_cfg.enable_critic_pass,
+            language=language,
         )
 
         # For exam_prediction, generate the full predicted exam paper (Part B)
         paper_text = ""
-        if task_type == TaskType.exam_prediction.value:
+        if tt == TaskType.exam_prediction:
             _progress("Generating predicted exam paper…")
             paper_text = write_predicted_exam_paper(
-                plan, retriever, self.llm_client, user_prefs
+                plan, retriever, self.llm_client, user_prefs, language=language,
             )
 
         _progress("Assembling final document…")
-        final_md = assemble_markdown(plan, section_texts, task_type, paper_text=paper_text,
+        final_md = assemble_markdown(plan, section_texts, tt.value, paper_text=paper_text,
                                      language=language)
         md_path = save_markdown(final_md, ws)
         return plan, final_md, md_path

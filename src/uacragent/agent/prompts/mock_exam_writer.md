@@ -47,3 +47,6 @@ Return **valid Markdown** containing:
   - Correct answers with brief explanations for MCQ
 
 Format the section as it would appear on an actual {exam_type} paper.
+
+## Language
+{response_language}

@@ -46,12 +46,16 @@ def get_agent_service() -> AgentService:
     The service is created lazily on the first call and cached for the lifetime
     of the process.  Call :func:`invalidate_agent_service` to force
     re-creation (e.g., after changing environment variables in tests).
+
+    Uses a simple lock for both the check and creation — the outer unsynchronised
+    check has been removed to avoid the broken double-checked locking pattern in
+    Python (where CPython's GIL makes the outer read safe but it is not portable
+    and creates a confusing pattern).
     """
     global _agent_service
-    if _agent_service is None:
-        with _lock:
-            if _agent_service is None:          # double-checked locking
-                _agent_service = AgentService(settings=get_settings())
+    with _lock:
+        if _agent_service is None:
+            _agent_service = AgentService(settings=get_settings())
     return _agent_service
 
 
