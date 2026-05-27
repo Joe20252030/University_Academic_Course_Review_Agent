@@ -227,7 +227,7 @@ class SessionMixin:
             # If somehow busy (e.g. rapid session switching), defer the write.
             # The background thread will use whatever was last committed.
             import logging as _logging
-            _logging.getLogger(__name__).warning(
+            _logging.getLogger(__name__).debug(
                 "Skipping os.environ write for embedding provider: app is busy. "
                 "The previous embedding provider settings will be used."
             )

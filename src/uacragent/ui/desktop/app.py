@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 import tkinter as tk
 import tkinter.font as tkfont
 from pathlib import Path
@@ -632,6 +633,10 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         # Refs used by _append_chat / _append_output_link / _show_thinking
         self._last_assistant_content: tk.Widget | None = None
         self._thinking_lbl: tk.Widget | None = None
+        # Timer state — elapsed-time ticker shown in the thinking indicator
+        self._busy_start_time: float = 0.0     # monotonic time at _set_busy(True)
+        self._thinking_status: str   = ""      # current progress label text
+        self._timer_after_id: str | None = None  # after() handle for tick
 
         # ── row 2 of _hist_inner: Input block ────────────────────────────
         # Parented directly to _hist_inner — no separate outer canvas.
@@ -1487,6 +1492,10 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
             self._cancel_event.clear()
             self._request_token += 1   # invalidate any callbacks from previous ops
             self._busy_mode = mode
+            # Record start time and launch the elapsed-time ticker
+            self._busy_start_time  = time.monotonic()
+            self._thinking_status  = label
+            self._start_timer_tick()
             if mode == "index":
                 # Keep Send visible but grayed-out so users know chat is coming
                 # once indexing finishes — not a cancel target.
@@ -1500,6 +1509,7 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         else:
             # Kill indicator BEFORE swapping buttons so there is no visual flash
             self._thinking_active = False
+            self._stop_timer()      # cancel ticker before destroying the label
             self._hide_thinking()
             _prev_mode = getattr(self, "_busy_mode", "chat")
             if _prev_mode == "index":
@@ -1517,19 +1527,22 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         """Show (or replace) a progress indicator at the bottom of the chat area.
 
         Uses a plain ``tk.Label`` appended to ``_msg_frame``.  Stale callbacks
-        are silently dropped via ``_thinking_active``.
+        are silently dropped via ``_thinking_active``.  The label text is managed
+        by ``_tick_timer`` which appends the live elapsed time every 500 ms.
         """
         if not getattr(self, "_thinking_active", False):
             return   # _set_busy(False) already ran — discard stale callback
         if not hasattr(self, "_msg_frame"):
             return
         try:
-            self._hide_thinking()   # remove any previous indicator first
+            self._thinking_status = label   # tick will combine this + elapsed
+            self._hide_thinking()           # remove previous indicator first
             _mode = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
             c = _THEME_COLORS.get(_mode, _THEME_COLORS["light"])
+            elapsed = time.monotonic() - getattr(self, "_busy_start_time", time.monotonic())
             lbl = tk.Label(
                 self._msg_frame,
-                text=label,
+                text=self._format_thinking_text(label, elapsed),
                 bg=c.get("text_bg", "#ffffff"),
                 fg=c.get("status_fg", "#9aa5be"),
                 font=("TkDefaultFont", 11, "italic"),
@@ -1542,7 +1555,14 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
             pass
 
     def _hide_thinking(self) -> None:
-        """Remove the thinking indicator label if it exists."""
+        """Destroy the thinking indicator label widget.
+
+        Does NOT cancel the elapsed-time ticker — the ticker must keep
+        running while the operation is in progress so that a replacement
+        label (created by the next ``_show_thinking`` call) is updated
+        immediately.  The ticker is stopped separately in ``_set_busy(False)``
+        via ``_stop_timer()``.
+        """
         lbl = getattr(self, "_thinking_lbl", None)
         if lbl is not None:
             try:
@@ -1551,6 +1571,65 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
                 pass
             self._thinking_lbl = None
 
+    def _stop_timer(self) -> None:
+        """Cancel the elapsed-time ticker.  Called only when the operation ends."""
+        after_id = getattr(self, "_timer_after_id", None)
+        if after_id is not None:
+            try:
+                self.after_cancel(after_id)
+            except Exception:
+                pass
+            self._timer_after_id = None
+
+
+    # ------------------------------------------------------------------
+    # Elapsed-time ticker
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _format_thinking_text(status: str, elapsed: float) -> str:
+        """Combine a progress status string with an ``M:SS`` elapsed time.
+
+        Examples::
+
+            "Thinking…   0:03"
+            "Writing section 2…   1:24"
+        """
+        m = int(elapsed) // 60
+        s = int(elapsed) % 60
+        return f"{status}   {m}:{s:02d}"
+
+    def _start_timer_tick(self) -> None:
+        """Cancel any previous tick and schedule the first one immediately."""
+        after_id = getattr(self, "_timer_after_id", None)
+        if after_id is not None:
+            try:
+                self.after_cancel(after_id)
+            except Exception:
+                pass
+        self._timer_after_id = self.after(500, self._tick_timer)
+
+    def _tick_timer(self) -> None:
+        """Update the thinking label with the current elapsed time.
+
+        Fires every 500 ms while the busy state is active.  Silently stops
+        when ``_thinking_active`` is False so stale after() callbacks from a
+        previous operation cannot leak into a new one.
+        """
+        if not getattr(self, "_thinking_active", False):
+            self._timer_after_id = None
+            return
+        elapsed = time.monotonic() - getattr(self, "_busy_start_time", time.monotonic())
+        lbl = getattr(self, "_thinking_lbl", None)
+        if lbl is not None:
+            try:
+                lbl.configure(
+                    text=self._format_thinking_text(
+                        getattr(self, "_thinking_status", ""), elapsed))
+            except Exception:
+                pass
+        # Schedule the next tick
+        self._timer_after_id = self.after(500, self._tick_timer)
 
     # ------------------------------------------------------------------
     # Scrollable message-bubble canvas helpers
