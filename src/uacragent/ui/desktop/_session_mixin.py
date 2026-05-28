@@ -197,6 +197,10 @@ class SessionMixin:
         export_fmt   = data.get("export_format", ExportFormat.markdown.value)
         emb_provider = data.get("embedding_provider", "gemini")
         local_model  = data.get("local_embedding_model", "all-MiniLM-L6-v2")
+        try:
+            local_model = self._normalize_local_embedding_model(local_model)
+        except Exception:
+            pass
         self._export_format_var.set(export_fmt)
         self._emb_provider_var.set(emb_provider)
         self._emb_provider_disp_var.set(

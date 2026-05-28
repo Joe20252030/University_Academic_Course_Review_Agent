@@ -67,6 +67,16 @@ class SettingsMixin:
             # Best-effort cleanup only — never block Apply on a stale-file delete.
             pass
 
+    @classmethod
+    def _available_local_embedding_models(cls) -> dict[str, str]:
+        """Return the local embedding choices valid for the current runtime."""
+        return cls._FREE_EMB_MODELS
+
+    @classmethod
+    def _normalize_local_embedding_model(cls, model_name: str) -> str:
+        """Return a valid local embedding model id for persisted/session state."""
+        return model_name if model_name in cls._FREE_EMB_MODEL_TO_DISPLAY else "all-MiniLM-L6-v2"
+
     def _register_settings_wrap_target(
         self,
         widget: tk.Widget,
@@ -141,7 +151,9 @@ class SettingsMixin:
         v: k for k, v in _EMB_PROVIDER_OPTIONS.items()
     }
 
-    # Free local models:  display label → HuggingFace model name
+    # Local model labels shown in the Settings dialog. Source installs use the
+    # HuggingFace backend for all of them; frozen builds use ONNX for
+    # all-MiniLM-L6-v2 and HuggingFace for the rest.
     _FREE_EMB_MODELS: dict[str, str] = {
         "all-MiniLM-L6-v2  ★ recommended  (~80 MB)":            "all-MiniLM-L6-v2",
         "all-MiniLM-L12-v2  (balanced, ~120 MB)":              "all-MiniLM-L12-v2",
@@ -1645,7 +1657,7 @@ class SettingsMixin:
             # ── Install-status helpers ─────────────────────────────────────
             def _badge(display_name: str) -> str:
                 """Return '✓' when model is cached locally, '⬇' otherwise."""
-                model_id = self._FREE_EMB_MODELS.get(display_name, "")
+                model_id = self._available_local_embedding_models().get(display_name, "")
                 return "  ✓" if self._is_model_cached(model_id) else "  ⬇"
 
             def _chip_text(display_name: str) -> str:
@@ -1654,14 +1666,17 @@ class SettingsMixin:
             def _on_local_model_selected() -> None:
                 disp = self._local_model_disp_var.get()
                 self._local_model_var.set(
-                    self._FREE_EMB_MODELS.get(disp, "all-MiniLM-L6-v2"))
+                    self._available_local_embedding_models().get(
+                        disp, "all-MiniLM-L6-v2"
+                    )
+                )
                 # Refresh chip label so the badge reflects actual cache state.
                 if _local_chip_holder[0] is not None:
                     _local_chip_holder[0].set_text(_chip_text(disp))
 
             # Build a chip sized to the widest possible label (badge included).
             _chip_sz = max(_sz - 1, 10)
-            _local_opts = list(self._FREE_EMB_MODELS.keys())
+            _local_opts = list(self._available_local_embedding_models().keys())
             # Use the longest badge (✓ and ⬇ occupy the same width; ✓ is fine)
             _local_size_text = max(
                 [f"{o}  ✓ ▾" for o in _local_opts], key=len) if _local_opts else ""
@@ -1807,8 +1822,7 @@ class SettingsMixin:
             _hf_model_is_cached,
             _onnx_model_is_cached,
         )
-        if getattr(_sys, "frozen", False):
-            # Frozen app always uses the ONNX runtime regardless of model_name.
+        if getattr(_sys, "frozen", False) and model_name == "all-MiniLM-L6-v2":
             return _onnx_model_is_cached()
         return _hf_model_is_cached(model_name)
 
@@ -1841,14 +1855,14 @@ class SettingsMixin:
 
         if provider == "local":
             # Explicit local provider: check the user-selected model.
-            model_name = os.environ.get(
+            model_name = self._normalize_local_embedding_model(os.environ.get(
                 "LOCAL_EMBEDDING_MODEL",
                 self._local_model_var.get() or _DEFAULT_LOCAL_MODEL,
-            )
+            ))
         elif not self._has_embedding_key():
             # Cloud key is absent — runtime will silently fall back to the
             # default local model.  Pre-check so the user can decide now.
-            model_name = _DEFAULT_LOCAL_MODEL
+            model_name = self._normalize_local_embedding_model(_DEFAULT_LOCAL_MODEL)
         else:
             # Cloud provider with a key: no local download will occur.
             return True
@@ -1868,7 +1882,7 @@ class SettingsMixin:
         )
         cache_dir = (
             get_chroma_onnx_model_dir(model_name)
-            if getattr(sys, "frozen", False)
+            if getattr(sys, "frozen", False) and model_name == _DEFAULT_LOCAL_MODEL
             else get_hf_cache_dir()
         )
 
@@ -2098,6 +2112,14 @@ class SettingsMixin:
         s.exam_format    = self._exam_format_var.get()
         s.exam_duration  = self._exam_duration_var.get().strip()
         s.exam_info_path = self._exam_info_path_var.get().strip()
+        self._local_model_var.set(
+            self._normalize_local_embedding_model(self._local_model_var.get().strip())
+        )
+        self._local_model_disp_var.set(
+            self._FREE_EMB_MODEL_TO_DISPLAY.get(
+                self._local_model_var.get(), self._local_model_var.get()
+            )
+        )
 
         # Extra instructions (from Text widget if settings dialog is open)
         if self._settings_alive() and hasattr(self, "_extra_text"):
@@ -2206,7 +2228,13 @@ class SettingsMixin:
         emb_provider = self._emb_provider_var.get() or "gemini"
         os.environ["EMBEDDING_PROVIDER"] = emb_provider
         if emb_provider == "local":
-            local_model = self._local_model_var.get() or "all-MiniLM-L6-v2"
+            local_model = self._normalize_local_embedding_model(
+                self._local_model_var.get() or "all-MiniLM-L6-v2"
+            )
+            self._local_model_var.set(local_model)
+            self._local_model_disp_var.set(
+                self._FREE_EMB_MODEL_TO_DISPLAY.get(local_model, local_model)
+            )
             os.environ["LOCAL_EMBEDDING_MODEL"] = local_model
 
         # Propagate rate tier → env so Settings() picks it up on next build.

@@ -367,19 +367,32 @@ def _build_chromadb_onnx_embeddings(
     if progress_cb:
         progress_cb(f"✓ Embedding model ({_MODEL_DISPLAY_NAME}) ready — indexing documents…")
 
+    def _to_python_floats(value: Any) -> Any:
+        """Return *value* converted to plain Python float lists.
+
+        Chroma's ONNX embedding path may return either:
+
+        - numpy arrays (common source install path)
+        - plain Python lists (observed in some frozen-app builds)
+
+        Normalise both shapes so downstream vector-store validators always
+        receive ordinary ``list[float]`` / ``list[list[float]]`` values.
+        """
+        if hasattr(value, "tolist"):
+            value = value.tolist()
+        if isinstance(value, list):
+            return [_to_python_floats(item) for item in value]
+        return float(value)
+
     # Wrap the shared instance as a LangChain Embeddings object.  All calls
     # share the same _onnx_instance so the tokenizer and InferenceSession are
     # loaded from disk only once (they are @cached_property on the instance).
     class _OnnxWrapper(Embeddings):
         def embed_documents(self, texts: list[str]) -> list[list[float]]:
-            # .tolist() recursively converts np.float32 → Python float so
-            # ChromaDB's type validator accepts the result.  list() alone
-            # would leave numpy scalar objects in the list and raise:
-            # "Expected embeddings to be a list of floats or ints …"
-            return _onnx_instance(texts).tolist()
+            return _to_python_floats(_onnx_instance(texts))
 
         def embed_query(self, text: str) -> list[float]:
-            return _onnx_instance([text])[0].tolist()
+            return _to_python_floats(_onnx_instance([text])[0])
 
     return _OnnxWrapper()
 
@@ -396,9 +409,10 @@ def _build_local_embeddings(
     *progress_cb* is called with status messages so the caller can surface
     them in the UI.
 
-    In the frozen ``.app`` build the sentence-transformers / PyTorch stack is
-    replaced by chromadb's built-in ONNX embedding function (same
-    ``all-MiniLM-L6-v2`` model, no PyTorch dependency).
+    In frozen standalone builds, the default ``all-MiniLM-L6-v2`` model uses
+    chromadb's built-in ONNX embedding backend (most reliable with PyInstaller).
+    Other local models continue to use the HuggingFace sentence-transformers
+    backend from the app-managed cache.
 
     Raises
     ------
@@ -410,29 +424,24 @@ def _build_local_embeddings(
     import sys as _sys
     import warnings
 
-    # ── Frozen .app fast-path: use chromadb's bundled ONNX embedding ──────────
-    # PyTorch's native C extensions often fail to load inside a PyInstaller
-    # bundle on macOS even when collect_all("torch") is used, because the
-    # dylib dependency chain is not fully resolved at freeze time.
-    # ChromaDB's DefaultEmbeddingFunction ships onnxruntime + tokenizers as
-    # direct dependencies — both are far more PyInstaller-friendly than torch.
-    if getattr(_sys, "frozen", False):
+    # ── Frozen-app default-model fast-path: use chromadb's bundled ONNX ──────
+    # PyTorch's native extensions are the least reliable part of a frozen build,
+    # so keep the default local model on Chroma's ONNX path. For any non-default
+    # model we fall through to the HuggingFace backend below so frozen builds can
+    # still support the broader local model list when those runtimes are present.
+    if getattr(_sys, "frozen", False) and model_name == _DEFAULT_LOCAL_MODEL:
         try:
             return _build_chromadb_onnx_embeddings(progress_cb=progress_cb)
         except Exception as _onnx_exc:
             from uacragent.domain.errors import ConfigurationError
-            # ConfigurationError already carries a user-friendly message
-            # (e.g. the network-error hint from _build_chromadb_onnx_embeddings).
-            # Re-raise it unchanged so the UI shows the specific diagnosis
-            # rather than the generic "Local embedding is not available" fallback.
             if isinstance(_onnx_exc, ConfigurationError):
                 raise
             raise ConfigurationError(
-                "Local embedding is not available in this build.\n\n"
-                "Please switch to a cloud embedding provider:\n"
-                "  • Open Session Settings  →  Embedding Provider\n"
-                "  • Choose  Gemini  or  OpenAI  instead of  Local\n\n"
-                "Cloud embedding requires an API key but no extra installation."
+                "The default local embedding backend could not be loaded in this build.\n\n"
+                "Please try one of these options:\n"
+                "  • Keep Local embeddings and choose a different local model\n"
+                "  • Or switch to Gemini / OpenAI embeddings instead\n\n"
+                "See the app log under <app_data_dir>/logs/uacragent.log for details."
             ) from _onnx_exc
 
     def _missing_local_deps_error(from_exc: Exception | None = None) -> "ConfigurationError":

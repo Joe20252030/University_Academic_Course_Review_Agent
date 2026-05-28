@@ -209,8 +209,10 @@ def configure_logging() -> None:
     ``<app_data_dir>/logs/uacragent.log.2`` — two rotations back
 
     Each file is capped at 2 MB; three files are kept, giving ~6 MB maximum.
-    If the user deletes the log file while the app is running, the next log
-    message recreates it automatically (no restart required).
+    The current log file is created eagerly at startup so users have a stable
+    path to inspect even before the first warning/error is emitted. If the user
+    deletes the log file while the app is running, the next log message
+    recreates it automatically (no restart required).
 
     Level
     -----
@@ -252,6 +254,10 @@ def configure_logging() -> None:
             return  # truly unable to write logs — give up silently
 
     log_file = log_dir / "uacragent.log"
+    try:
+        log_file.touch(exist_ok=True)
+    except OSError:
+        pass
 
     # ── Level ─────────────────────────────────────────────────────────────────
     level_name = os.environ.get("UACRAGENT_LOG_LEVEL", "WARNING").upper()

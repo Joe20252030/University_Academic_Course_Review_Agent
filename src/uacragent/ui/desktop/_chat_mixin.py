@@ -629,6 +629,7 @@ class ChatMixin:
                     # the busy lock here after the thread has actually finished.
                     self.after(0, lambda: self._set_busy(False))
             except Exception as exc:
+                _logger.exception("Session indexing failed in background worker.")
                 if not self._cancel_event.is_set():
                     self.after(
                         0,
@@ -715,6 +716,7 @@ class ChatMixin:
                     # Cancel was requested; release busy lock from thread's finally path.
                     self.after(0, lambda: self._set_busy(False))
             except Exception as exc:  # noqa: BLE001
+                _logger.exception("Session attach failed in background worker.")
                 if not self._cancel_event.is_set():
                     self.after(
                         0,

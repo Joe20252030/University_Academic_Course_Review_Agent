@@ -350,9 +350,13 @@ Embedding configuration:
 - `EMBEDDING_PROVIDER=local` uses a local on-device embedding backend with no API key
 
 For local embeddings, you can choose the downloaded model with
-`LOCAL_EMBEDDING_MODEL` in source installs. Frozen app builds currently use the
-bundled ONNX `all-MiniLM-L6-v2` path for local embeddings, downloaded on first
-use into `<app_data_dir>/models/chroma/onnx_models/`.
+`LOCAL_EMBEDDING_MODEL` in source installs. Frozen app builds support the same
+local model list with two runtime paths:
+
+- `all-MiniLM-L6-v2` uses the built-in ONNX backend, downloaded into
+  `<app_data_dir>/models/chroma/onnx_models/`
+- the other local models use the app-managed HuggingFace cache under
+  `<app_data_dir>/models/`
 
 > Security note: API key fields are excluded from `Settings` repr output, and
 > the desktop session persistence layer intentionally does not write API keys to disk.
@@ -622,6 +626,8 @@ Notes:
 - Local embedding models are cached under `<app_data_dir>/models/`, including
   the frozen app's ONNX backend under
   `<app_data_dir>/models/chroma/onnx_models/`.
+- Desktop and API logs are written under
+  `<app_data_dir>/logs/uacragent.log`.
 - All agent-generated files inside a workspace are grouped under
   `<workspace>/.uacragent/` so they stay separate from the user’s own files.
 - Once a session has been created and its workspace committed, that workspace
