@@ -1669,6 +1669,8 @@ class SettingsMixin:
             def _badge(display_name: str) -> str:
                 """Return '✓' when model is cached locally, '⬇' otherwise."""
                 model_id = self._available_local_embedding_models().get(display_name, "")
+                if not model_id:
+                    return "  ⬇"   # unknown display name → not cached
                 return "  ✓" if self._is_model_cached(model_id) else "  ⬇"
 
             def _chip_text(display_name: str) -> str:
@@ -2077,7 +2079,8 @@ class SettingsMixin:
 
     def _on_add_files(self, doc_type: DocumentType) -> None:
         paths = filedialog.askopenfilenames(
-            title=f"Select {self._t(f'doctype_{doc_type.value}')} files",
+            title=self._t("add_files_dialog_title").format(
+                doctype=self._t(f"doctype_{doc_type.value}")),
             filetypes=_SUPPORTED_FILETYPES)
         lb = self._file_listboxes.get(doc_type)
         if lb is None:
@@ -2113,7 +2116,16 @@ class SettingsMixin:
         s.classified_files = {dt: list(paths) for dt, paths in self._staged_files.items()}
         s.llm_provider   = self._llm_provider_var.get()
         s.llm_model      = self._llm_model_var.get()
-        s.course_name    = self._course_name_var.get().strip()
+        _MAX_COURSE_NAME = 200
+        _raw_course_name = self._course_name_var.get().strip()
+        if len(_raw_course_name) > _MAX_COURSE_NAME:
+            _raw_course_name = _raw_course_name[:_MAX_COURSE_NAME]
+            self._course_name_var.set(_raw_course_name)
+            try:
+                self._settings_status_var.set(self._t("course_name_too_long"))
+            except Exception:  # noqa: BLE001
+                pass
+        s.course_name    = _raw_course_name
         s.university_name = self._university_var.get().strip()
         s.major          = self._major_var.get().strip()
         s.course_code    = self._course_code_var.get().strip()

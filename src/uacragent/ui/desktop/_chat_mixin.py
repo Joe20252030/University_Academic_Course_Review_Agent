@@ -6,7 +6,6 @@ import os
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import ttk
 
 from uacragent.agent.conversation import ConversationAgent, ChatResponse
 from uacragent.agent.session import AgentSession
@@ -29,11 +28,16 @@ _logger = logging.getLogger(__name__)
 _MAX_ERROR_DISPLAY_CHARS = 400
 
 
-def _truncate_error(msg: str) -> str:
-    """Return *msg* truncated to _MAX_ERROR_DISPLAY_CHARS with an ellipsis."""
-    if len(msg) <= _MAX_ERROR_DISPLAY_CHARS:
-        return msg
-    return msg[:_MAX_ERROR_DISPLAY_CHARS] + "…"
+def _truncate_error(msg: object) -> str:
+    """Return *msg* as a string, truncated to _MAX_ERROR_DISPLAY_CHARS.
+
+    Accepts any object (coerces via ``str()``) so callers never need to
+    guard against accidentally passing an ``Exception`` instance directly.
+    """
+    s = str(msg)
+    if len(s) <= _MAX_ERROR_DISPLAY_CHARS:
+        return s
+    return s[:_MAX_ERROR_DISPLAY_CHARS] + "…"
 
 
 class ChatMixin:
@@ -215,7 +219,7 @@ class ChatMixin:
 
             _RoundedChip(
                 strip,
-                text="🌐  Web search ON  ×",
+                text=self._t("search_on_chip"),
                 chip_bg=_sbg, chip_fg=_sfg,
                 parent_bg=pbg,
                 font=("TkDefaultFont", 10, "bold"),

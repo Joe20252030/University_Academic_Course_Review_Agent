@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from uacragent.domain.errors import ConfigurationError
 from uacragent.domain.types import DocumentType
 
 # Only alphanumeric characters, hyphens, and underscores are allowed in a
@@ -29,13 +30,29 @@ class WorkspacePaths:
 
 
 def ensure_workspace_dirs(paths: WorkspacePaths) -> None:
-    """Create all workspace directories if they don't exist."""
-    paths.agent_dir.mkdir(parents=True, exist_ok=True)
-    paths.uploads.mkdir(parents=True, exist_ok=True)
-    paths.outputs.mkdir(parents=True, exist_ok=True)
-    paths.chroma.mkdir(parents=True, exist_ok=True)
-    for folder in paths.doc_folders.values():
-        folder.mkdir(parents=True, exist_ok=True)
+    """Create all workspace directories if they don't exist.
+
+    Raises :class:`~uacragent.domain.errors.ConfigurationError` when any
+    directory cannot be created (e.g. read-only volume, disk quota exceeded).
+    The caller can catch this and surface a user-readable message rather than
+    letting a bare ``OSError`` propagate into the chat panel.
+    """
+    dirs = [
+        paths.agent_dir,
+        paths.uploads,
+        paths.outputs,
+        paths.chroma,
+        *paths.doc_folders.values(),
+    ]
+    for d in dirs:
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise ConfigurationError(
+                f"Cannot create workspace directory '{d}': {exc}.\n"
+                "Check that the workspace location is writable and that you "
+                "have sufficient disk space."
+            ) from exc
 
 
 def workspace_paths(

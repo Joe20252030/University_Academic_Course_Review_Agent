@@ -357,6 +357,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
         # Exam info file missing at Apply time
         "exam_file_not_found": "Warning: Exam info file not found: {path}",
+        "course_name_too_long": "Warning: Course name is very long and has been trimmed to 200 characters.",
         "error_status":       "Error: {error}",
         "indexing_failed":    "⚠️ Indexing failed: {error}",
         "chat_error":         "⚠️ Error: {error}",
@@ -461,6 +462,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "search_unsupported": "Web search is not supported by the current provider.",
         "files_unsupported":  "File upload is not supported by the current provider.",
         "search_on":          "🌐 Web search ON — will apply to next message",
+        "search_on_chip":     "🌐  Web search ON  ×",
+        "add_files_dialog_title": "Select {doctype} files",
         "search_off":         "Web search OFF",
         "dnd_drop_label":     "📎  Drop files here to attach",
     },
@@ -743,6 +746,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
         # Exam info file missing at Apply time
         "exam_file_not_found": "警告：找不到考试信息文件：{path}",
+        "course_name_too_long": "警告：课程名称过长，已自动截断至 200 个字符。",
         "error_status":       "错误：{error}",
         "indexing_failed":    "⚠️ 索引失败：{error}",
         "chat_error":         "⚠️ 错误：{error}",
@@ -845,6 +849,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "search_unsupported": "当前提供商不支持网络搜索。",
         "files_unsupported":  "当前提供商不支持文件上传。",
         "search_on":          "🌐 网络搜索已开启 — 将应用于下一条消息",
+        "search_on_chip":     "🌐  网络搜索已开启  ×",
+        "add_files_dialog_title": "选择 {doctype} 文件",
         "search_off":         "网络搜索已关闭",
         "dnd_drop_label":     "📎  拖放文件以附加",
     },

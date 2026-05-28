@@ -790,16 +790,33 @@ def get_or_create_vectorstore(
         if chroma_dir.exists():
             shutil.rmtree(chroma_dir)
 
-    chroma_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        chroma_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        from uacragent.domain.errors import ConfigurationError
+        raise ConfigurationError(
+            f"Cannot create vector-store directory '{chroma_dir}': {exc}.\n"
+            "Check that the workspace location is writable and that you have "
+            "sufficient disk space."
+        ) from exc
 
-    db = Chroma(
-        persist_directory=str(chroma_dir),
-        embedding_function=embeddings,
-        client_settings=ChromaClientSettings(
-            anonymized_telemetry=False,
-            is_persistent=True,
-        ),
-    )
+    try:
+        db = Chroma(
+            persist_directory=str(chroma_dir),
+            embedding_function=embeddings,
+            client_settings=ChromaClientSettings(
+                anonymized_telemetry=False,
+                is_persistent=True,
+            ),
+        )
+    except Exception as exc:
+        from uacragent.domain.errors import ConfigurationError
+        raise ConfigurationError(
+            f"Vector database could not be opened — it may be corrupted or "
+            f"locked by another process.\n"
+            f"Try deleting '{chroma_dir}' and re-indexing your documents.\n"
+            f"Original error: {exc}"
+        ) from exc
 
     # ── Add only new chunks (content-hash dedup) ──────────────────────
     # Chroma's SQLite backend can time out on very large id lists sent in a
