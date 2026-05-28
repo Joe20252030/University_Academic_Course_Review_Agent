@@ -728,12 +728,17 @@ def delete_session(workspace: Path) -> None:
         ".DS_Store", ".localized", "Thumbs.db", "desktop.ini", ".Spotlight-V100",
     })
     try:
-        # Only auto-delete when workspace is under the managed app-data dir.
-        # resolve() collapses symlinks and ".." components so the comparison
-        # is reliable even when the paths were constructed differently.
-        _managed_root = get_app_data_dir().resolve()
+        # Only auto-delete when workspace is under the dedicated sessions/
+        # subdirectory — the exact location where _resolve_workspace() places
+        # auto-created workspaces (<app_data_dir>/sessions/<workspace_id>/).
+        # Using the full sessions/ path rather than just <app_data_dir> is
+        # intentionally precise: a user-chosen workspace folder that happens to
+        # live inside <app_data_dir> (but outside sessions/) must not be
+        # auto-deleted.  resolve() collapses symlinks and ".." components so
+        # the comparison is reliable even when paths were constructed differently.
+        _sessions_dir = (get_app_data_dir() / "sessions").resolve()
         _workspace_resolved = workspace.resolve()
-        _is_managed = _workspace_resolved.is_relative_to(_managed_root)
+        _is_managed = _workspace_resolved.is_relative_to(_sessions_dir)
 
         if _is_managed and workspace.exists():
             user_items = [p for p in workspace.iterdir() if p.name not in _OS_METADATA]

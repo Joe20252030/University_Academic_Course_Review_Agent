@@ -480,8 +480,24 @@ class _RoundedChip(tk.Canvas):
         self._redraw()
 
     def _on_click(self) -> None:
-        if self._enabled and self._command:
+        if not (self._enabled and self._command):
+            return
+        # Guard against double-click / double-destroy: if the widget (or the
+        # window it belongs to) has already been destroyed by the time this
+        # event fires, winfo_exists() returns 0 and we silently skip.
+        try:
+            if not self.winfo_exists():
+                return
+        except Exception:
+            return
+        try:
             self._command()
+        except tk.TclError:
+            # The command itself (e.g. win.destroy) may raise TclError when the
+            # target widget was already destroyed by a concurrent path (e.g. the
+            # WM_DELETE_WINDOW protocol fired first).  Swallow silently — the
+            # window is gone and no further action is needed.
+            pass
 
     # ------------------------------------------------------------------
     # Icon-font helpers

@@ -191,10 +191,10 @@ _STRINGS: dict[str, dict[str, str]] = {
             "When this session is deleted, the agent bundle (.uacragent/) inside "
             "the workspace folder — including all session history, the vector store, "
             "generated outputs, and uploaded file copies — is permanently removed.\n"
-            "If the workspace folder is empty afterwards, the folder itself is also "
-            "deleted.\n"
-            "If you choose a folder that already contains your own files, those "
-            "files are not affected — only .uacragent/ is removed."
+            "For auto-managed workspaces (created inside the app data folder), the "
+            "workspace folder itself is also removed when it is empty after deletion.\n"
+            "For custom workspace folders you chose yourself, the folder is never "
+            "deleted — only the .uacragent/ bundle inside it is removed."
         ),
         "settings_export_format_label":      "Export format:",
         "settings_extra_instructions_label": "Extra instructions:",
@@ -596,8 +596,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         "settings_deletion_warning_body": (
             "删除此会话时，工作空间文件夹内的代理包（.uacragent/）——"
             "包括所有会话历史、向量数据库、生成的输出及上传的文件副本——将被永久删除。\n"
-            "若删除后工作空间文件夹为空，该文件夹本身也将被删除。\n"
-            "若您选择的文件夹已包含其他文件，这些文件不受影响——仅 .uacragent/ 会被删除。"
+            "对于自动管理的工作区（在应用数据目录内创建），删除后若文件夹为空，"
+            "该文件夹本身也将被一并删除。\n"
+            "对于您自行选择的自定义工作空间文件夹，文件夹本身不会被删除——"
+            "仅其中的 .uacragent/ 包会被移除。"
         ),
         "settings_export_format_label":      "导出格式:",
         "settings_extra_instructions_label": "额外说明:",
