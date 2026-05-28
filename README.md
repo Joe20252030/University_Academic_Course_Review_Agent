@@ -72,9 +72,10 @@ Provider and deployment notes:
   session settings dialog also shows a provider-specific privacy reminder and
   privacy-policy link.
 - The FastAPI interface accepts absolute file paths. Without
-  `UACRAGENT_ALLOWED_BASE_DIR`, a local or deployed API server can read any
-  absolute existing file path supplied in a request. For any non-local
-  deployment, set `UACRAGENT_ALLOWED_BASE_DIR`.
+  `UACRAGENT_ALLOWED_BASE_DIR`, a local API server can read any absolute
+  existing file path supplied in a request. The current API is intended for
+  local trusted use only; if you still want an extra filesystem safety fence,
+  set `UACRAGENT_ALLOWED_BASE_DIR`.
 - Deleting a session removes the `<workspace>/.uacragent/` bundle. Original
   source files outside that folder are not deleted.
 
@@ -200,6 +201,8 @@ All fields are passed to every planner and writer prompt, so the LLM can tailor 
 
 Interface note:
 - The desktop GUI accepts an exam info sheet file from the Session Settings dialog.
+- When the desktop exam info sheet is changed or cleared later, the old
+  workspace-local copied file is cleaned up automatically.
 - The API accepts `exam_info` as plain text in the request body.
 - The current CLI does not expose a dedicated exam-info argument.
 
@@ -500,6 +503,8 @@ What **Apply** does:
 - locks in the workspace folder for that session
 - saves the session to disk
 - copies uploaded files into the session workspace when needed
+- keeps the exam info sheet self-contained inside the workspace and removes old
+  copied exam-info files when that field is changed or cleared later
 - builds or refreshes the Chroma index
 - makes the current provider / embedding / model settings take effect
 
@@ -720,8 +725,12 @@ workspace's `.uacragent/uploads/` bundle during API generation. Leave it at
 Security note:
 
 - Without `UACRAGENT_ALLOWED_BASE_DIR`, the API accepts any absolute existing
-  file path on the host machine. For non-local or network-exposed deployments,
-  set that variable to restrict file access to a trusted directory tree.
+  file path on the host machine.
+- The current API is intended for local trusted use, not public or multi-user
+  deployment.
+- If you want an extra local safety boundary, set
+  `UACRAGENT_ALLOWED_BASE_DIR` to restrict file access to a trusted directory
+  tree.
 
 API file-path rules:
 

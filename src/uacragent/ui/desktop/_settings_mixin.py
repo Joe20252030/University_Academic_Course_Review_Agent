@@ -2295,6 +2295,9 @@ class SettingsMixin:
         # ── Copy exam info file into workspace ────────────────────────────────
         # Store a workspace-local copy so the session remains self-contained even
         # if the original file is moved, renamed, or deleted by the user later.
+        # Superseded workspace-local copies are cleaned up above when the field
+        # is changed or cleared, so only the current managed exam-info copy
+        # remains inside the session workspace.
         # Only copy when: (a) a file is selected, (b) workspace is committed, and
         # (c) the current path is NOT already inside the workspace (avoid re-copy).
         # The copy is performed in a background thread to avoid blocking the main
