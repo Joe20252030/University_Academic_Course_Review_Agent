@@ -20,6 +20,40 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
+def _safe_rmtree(path: Path, expected_parent: Path) -> None:
+    """Delete *path* only when it is a real directory under *expected_parent*.
+
+    Guards against two classes of attack / misconfiguration:
+
+    * **Symlink traversal** — if ``path`` is a symlink (even to a real
+      directory), we refuse to call ``shutil.rmtree`` because rmtree would
+      follow the link and wipe the target, which could be an arbitrary
+      location on disk (e.g. ``~/Documents``).
+    * **Path escape** — if ``path.resolve()`` is not beneath
+      ``expected_parent.resolve()``, the deletion is refused.  This prevents
+      a misbehaving caller from accidentally wiping something outside the
+      workspace.
+
+    Both refusals are logged as warnings so they surface in the log file.
+    """
+    resolved = path.resolve()
+    parent_resolved = expected_parent.resolve()
+    try:
+        resolved.relative_to(parent_resolved)
+    except ValueError:
+        logger.warning(
+            "rmtree refused: %s is not under expected parent %s",
+            path, expected_parent,
+        )
+        return
+    if path.is_symlink():
+        logger.warning("rmtree refused: %s is a symlink", path)
+        return
+    if not path.is_dir():
+        return
+    shutil.rmtree(path)
+
+
 def wipe_session_uploads(session: "AgentSession") -> None:  # type: ignore[name-defined]
     """Delete all typed upload subfolders for *session*'s workspace.
 
@@ -41,7 +75,7 @@ def wipe_session_uploads(session: "AgentSession") -> None:  # type: ignore[name-
         )
         for folder in ws.doc_folders.values():
             if folder.exists():
-                shutil.rmtree(folder)
+                _safe_rmtree(folder, ws.uploads)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Could not wipe session uploads: %s", exc)
 
@@ -68,7 +102,7 @@ def wipe_session_vectorstore(session: "AgentSession") -> None:  # type: ignore[n
         # Wipe the Chroma directory
         chroma_dir = Path(ws.chroma)
         if chroma_dir.exists():
-            shutil.rmtree(chroma_dir)
+            _safe_rmtree(chroma_dir, ws.agent_dir)
         # Reset the manifest to an empty file set so the next indexing run
         # starts from a clean slate rather than comparing against stale paths.
         reset_manifest(ws)

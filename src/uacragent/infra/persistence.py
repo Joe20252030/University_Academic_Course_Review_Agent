@@ -706,17 +706,27 @@ def delete_session(workspace: Path) -> None:
     except Exception as exc:
         logger.warning("Could not remove agent dir %s: %s", agent_dir, exc)
 
-    # Remove the workspace folder itself if it is now effectively empty.
+    # Remove the workspace folder itself only when it is both effectively
+    # empty AND was auto-created by the agent (i.e. it lives inside the
+    # managed app-data directory tree).  User-chosen workspace folders that
+    # happen to contain only OS metadata files must never be silently deleted
+    # — the user picked that location and may rely on it for other purposes.
     #
-    # "Effectively empty" means the only surviving items are OS-generated
-    # metadata files (macOS .DS_Store, Windows Thumbs.db / desktop.ini).
-    # Those are invisible to the user and safe to delete together with the
-    # parent folder.  Any real user file keeps the workspace folder alive.
+    # "Effectively empty" = only OS-generated metadata files remain
+    # (.DS_Store, Thumbs.db, etc.), which are invisible to the user and safe
+    # to remove together with the parent folder.
     _OS_METADATA: frozenset[str] = frozenset({
         ".DS_Store", ".localized", "Thumbs.db", "desktop.ini", ".Spotlight-V100",
     })
     try:
-        if workspace.exists():
+        # Only auto-delete when workspace is under the managed app-data dir.
+        # resolve() collapses symlinks and ".." components so the comparison
+        # is reliable even when the paths were constructed differently.
+        _managed_root = get_app_data_dir().resolve()
+        _workspace_resolved = workspace.resolve()
+        _is_managed = _workspace_resolved.is_relative_to(_managed_root)
+
+        if _is_managed and workspace.exists():
             user_items = [p for p in workspace.iterdir() if p.name not in _OS_METADATA]
             if not user_items:
                 shutil.rmtree(workspace)

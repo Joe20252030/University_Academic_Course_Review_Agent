@@ -29,6 +29,33 @@ _DEFAULT_LOCAL_MODEL = "all-MiniLM-L6-v2"
 
 _vs_logger = logging.getLogger(__name__)
 
+
+def _safe_rmtree(path: Path, expected_parent: Path) -> None:
+    """Delete *path* only when it is a real directory under *expected_parent*.
+
+    Refuses deletion if:
+    * ``path`` resolves to a location outside *expected_parent* (path escape).
+    * ``path`` is a symlink — rmtree would follow it and wipe the link target.
+
+    Both cases are logged as warnings.
+    """
+    resolved = path.resolve()
+    parent_resolved = expected_parent.resolve()
+    try:
+        resolved.relative_to(parent_resolved)
+    except ValueError:
+        _vs_logger.warning(
+            "rmtree refused: %s is not under expected parent %s",
+            path, expected_parent,
+        )
+        return
+    if path.is_symlink():
+        _vs_logger.warning("rmtree refused: %s is a symlink", path)
+        return
+    if not path.is_dir():
+        return
+    shutil.rmtree(path)
+
 # Module-level cache for local HuggingFace embedding model instances.
 # Loading a sentence-transformers model from disk into RAM is expensive
 # (~1–3 s and produces the "Loading weights" progress bar).  Caching the
@@ -788,7 +815,7 @@ def get_or_create_vectorstore(
     # ── Removal check: wipe and rebuild if files were removed ─────────
     if classified_files is not None and _files_were_removed(workspace_paths, classified_files):
         if chroma_dir.exists():
-            shutil.rmtree(chroma_dir)
+            _safe_rmtree(chroma_dir, Path(workspace_paths.agent_dir))
 
     try:
         chroma_dir.mkdir(parents=True, exist_ok=True)

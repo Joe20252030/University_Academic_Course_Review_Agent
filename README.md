@@ -441,7 +441,7 @@ The GUI lets you:
 - Use quick actions to generate a Review Summary, Practice Booklet, Mock Exam, or Exam Prediction
 - Open generated outputs directly from the chat transcript
 - Cancel an in-flight indexing or chat request from the main panel
-- Open global app settings to change color mode, font size, language (`Auto`, `en`, or `zh_CN`), and the shared app data directory
+- Open global app settings to change color mode, font size, language (`Auto`, `en`, or `zh_CN`), and the shared app data directory (see [Changing the App Data Folder](#changing-the-app-data-folder) before doing so)
 - Use the selected desktop language to steer assistant replies and generated document headings in English or Simplified Chinese
 - Review the first-launch privacy notice and reopen it later from App Settings when needed
 
@@ -624,7 +624,7 @@ Notes:
 - Global appearance settings are persisted in the bootstrap config and include
   light/dark mode, small/medium/large font size, and `Auto` / `en` / `zh_CN` UI language.
 - Local embedding models are cached under `<app_data_dir>/models/`, including
-  the frozen app's ONNX backend under
+  the frozen app’s ONNX backend under
   `<app_data_dir>/models/chroma/onnx_models/`.
 - Desktop and API logs are written under
   `<app_data_dir>/logs/uacragent.log`.
@@ -634,6 +634,30 @@ Notes:
   is treated as fixed for the lifetime of the session.
 - Deleting a session removes the `<workspace>/.uacragent/` bundle. Original
   source files outside that folder are not affected.
+
+### Changing the App Data Folder
+
+The app data folder can be changed in App Settings. Before doing so, read the
+following carefully:
+
+**Sessions are not migrated.** Changing the folder does not move any existing
+data. Sessions created under the old folder remain there and will not appear in
+the session list until you switch back. If you want to continue using existing
+sessions, switch back to the original folder in App Settings.
+
+**Do not point the app at a folder that already contains unrelated files.** The
+app writes its own files (index.json, session workspaces, model cache, logs)
+directly into the chosen folder. Using a folder that already contains your own
+documents or other application data risks name collisions and makes the app’s
+files harder to identify and manage.
+
+Recommended practice:
+
+- Use a dedicated, initially empty folder as the app data directory.
+- If you need to relocate your data, manually copy the entire old app data
+  folder to the new location first, then point the app at the new path.
+- If you change the folder by mistake, switch back immediately in App Settings
+  — the original folder and its sessions are still intact.
 
 ## Run (CLI)
 

@@ -730,7 +730,14 @@ class ConversationAgent:
             parts: list[str] = []
             total = 0
             for doc in docs:
-                chunk = doc.page_content
+                # Sanitise any [TASK:xxx] patterns embedded in document text.
+                # A malicious document could contain "[TASK:mock_exam]" which,
+                # once retrieved, would be indistinguishable from a real marker
+                # in the LLM response and trigger unintended generation.
+                # Inserting a zero-width word-joiner (U+2060) between "[TASK"
+                # and ":" neutralises the pattern for our regex while leaving
+                # the text readable and unambiguous to a human reviewer.
+                chunk = doc.page_content.replace("[TASK:", "[TASK⁠:")
                 if total + len(chunk) > _MAX_CONTEXT_CHARS:
                     remaining = _MAX_CONTEXT_CHARS - total
                     if remaining > 200:   # worth including a partial chunk
