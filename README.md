@@ -244,7 +244,9 @@ Notes:
 - Local embeddings download their model backend on first use, then run from the
   local cache afterward.
 - Source installs use `sentence-transformers` for local embeddings.
-- Frozen app builds use Chroma's ONNX embedding runtime for local embeddings.
+- Frozen app builds use Chroma ONNX for local embeddings.
+- In the current standalone build, only `all-MiniLM-L6-v2` is supported for
+  free local embeddings.
 - Standalone app builds also rely on `onnxruntime` and `tiktoken`, which are
   listed in `requirements.txt`.
 - Frozen app builds download the ONNX local embedding model into
@@ -350,13 +352,11 @@ Embedding configuration:
 - `EMBEDDING_PROVIDER=local` uses a local on-device embedding backend with no API key
 
 For local embeddings, you can choose the downloaded model with
-`LOCAL_EMBEDDING_MODEL` in source installs. Frozen app builds support the same
-local model list with two runtime paths:
+`LOCAL_EMBEDDING_MODEL` in source installs. Frozen app builds currently support
+only one built-app local model:
 
 - `all-MiniLM-L6-v2` uses the built-in ONNX backend, downloaded into
   `<app_data_dir>/models/chroma/onnx_models/`
-- the other local models use the app-managed HuggingFace cache under
-  `<app_data_dir>/models/`
 
 > Security note: API key fields are excluded from `Settings` repr output, and
 > the desktop session persistence layer intentionally does not write API keys to disk.
@@ -484,7 +484,7 @@ For most users, the desktop GUI is the easiest way to use the project.
    - `gemini` or `openai` if you want cloud embeddings
    - `local` if you want free on-device embeddings
    - in source installs, `local` uses `sentence-transformers`
-   - in frozen app builds, `local` uses the ONNX local embedding path
+   - in frozen app builds, `local` supports `all-MiniLM-L6-v2` via the ONNX local path
 10. Add course files into the appropriate document buckets:
    - syllabus
    - lecture notes
@@ -721,8 +721,9 @@ directory in the same way as the CLI.
 
 The API likewise respects `EMBEDDING_PROVIDER`, `EMBEDDING_MODEL`, and
 `LOCAL_EMBEDDING_MODEL` in source installs. Frozen app builds use the ONNX
-local embedding path instead, but its downloaded model is still stored under
-`<app_data_dir>/models/chroma/onnx_models/`.
+local embedding path instead:
+
+- `all-MiniLM-L6-v2` under `<app_data_dir>/models/chroma/onnx_models/`
 
 `copy_to_workspace` controls whether uploaded source files are copied into the
 workspace's `.uacragent/uploads/` bundle during API generation. Leave it at

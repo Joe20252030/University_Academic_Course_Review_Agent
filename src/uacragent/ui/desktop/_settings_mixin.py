@@ -70,12 +70,25 @@ class SettingsMixin:
     @classmethod
     def _available_local_embedding_models(cls) -> dict[str, str]:
         """Return the local embedding choices valid for the current runtime."""
+        if getattr(sys, "frozen", False):
+            return {
+                "all-MiniLM-L6-v2  ★ recommended  (~80 MB, ONNX)": "all-MiniLM-L6-v2",
+            }
         return cls._FREE_EMB_MODELS
 
     @classmethod
     def _normalize_local_embedding_model(cls, model_name: str) -> str:
         """Return a valid local embedding model id for persisted/session state."""
-        return model_name if model_name in cls._FREE_EMB_MODEL_TO_DISPLAY else "all-MiniLM-L6-v2"
+        available = set(cls._available_local_embedding_models().values())
+        return model_name if model_name in available else "all-MiniLM-L6-v2"
+
+    @classmethod
+    def _local_model_display_label(cls, model_name: str) -> str:
+        """Return the current-runtime display label for a local embedding model."""
+        for display, internal in cls._available_local_embedding_models().items():
+            if internal == model_name:
+                return display
+        return model_name
 
     def _register_settings_wrap_target(
         self,
@@ -151,9 +164,7 @@ class SettingsMixin:
         v: k for k, v in _EMB_PROVIDER_OPTIONS.items()
     }
 
-    # Local model labels shown in the Settings dialog. Source installs use the
-    # HuggingFace backend for all of them; frozen builds use ONNX for
-    # all-MiniLM-L6-v2 and HuggingFace for the rest.
+    # Source-install local model labels shown in the Settings dialog.
     _FREE_EMB_MODELS: dict[str, str] = {
         "all-MiniLM-L6-v2  ★ recommended  (~80 MB)":            "all-MiniLM-L6-v2",
         "all-MiniLM-L12-v2  (balanced, ~120 MB)":              "all-MiniLM-L12-v2",
@@ -1808,8 +1819,8 @@ class SettingsMixin:
           (``<app_data_dir>/models/models--…/snapshots/…/pytorch_model.bin``).
 
         This reflects the current runtime split: source installs use the
-        app-managed HuggingFace cache, while frozen builds use Chroma's ONNX
-        backend but now store that model inside the same app-managed data tree.
+        app-managed HuggingFace cache, while frozen builds use the packaged
+        ONNX local backend under the same app-managed data tree.
 
         The old implementation used ``huggingface_hub.scan_cache_dir()``, which
         scans the system-wide HF cache directory and ignores the app's custom
@@ -1872,7 +1883,7 @@ class SettingsMixin:
 
         # ── Model not cached — ask the user ───────────────────────────────
         # Look up the display label to extract the size hint (e.g. "~80 MB").
-        disp = self._FREE_EMB_MODEL_TO_DISPLAY.get(model_name, model_name)
+        disp = self._local_model_display_label(model_name)
         size_match = re.search(r"~([\d.]+ MB)", disp)
         size_str = size_match.group(1) if size_match else "unknown size"
 
@@ -2116,9 +2127,7 @@ class SettingsMixin:
             self._normalize_local_embedding_model(self._local_model_var.get().strip())
         )
         self._local_model_disp_var.set(
-            self._FREE_EMB_MODEL_TO_DISPLAY.get(
-                self._local_model_var.get(), self._local_model_var.get()
-            )
+            self._local_model_display_label(self._local_model_var.get())
         )
 
         # Extra instructions (from Text widget if settings dialog is open)
@@ -2233,7 +2242,7 @@ class SettingsMixin:
             )
             self._local_model_var.set(local_model)
             self._local_model_disp_var.set(
-                self._FREE_EMB_MODEL_TO_DISPLAY.get(local_model, local_model)
+                self._local_model_display_label(local_model)
             )
             os.environ["LOCAL_EMBEDDING_MODEL"] = local_model
 

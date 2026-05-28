@@ -409,10 +409,9 @@ def _build_local_embeddings(
     *progress_cb* is called with status messages so the caller can surface
     them in the UI.
 
-    In frozen standalone builds, the default ``all-MiniLM-L6-v2`` model uses
-    chromadb's built-in ONNX embedding backend (most reliable with PyInstaller).
-    Other local models continue to use the HuggingFace sentence-transformers
-    backend from the app-managed cache.
+    In the frozen ``.app`` build the sentence-transformers / PyTorch stack is
+    replaced by chromadb's built-in ONNX embedding function (same
+    ``all-MiniLM-L6-v2`` model, no PyTorch dependency).
 
     Raises
     ------
@@ -424,24 +423,28 @@ def _build_local_embeddings(
     import sys as _sys
     import warnings
 
-    # ── Frozen-app default-model fast-path: use chromadb's bundled ONNX ──────
+    # ── Frozen .app fast-path: use chromadb's bundled ONNX embedding ──────────
     # PyTorch's native extensions are the least reliable part of a frozen build,
-    # so keep the default local model on Chroma's ONNX path. For any non-default
-    # model we fall through to the HuggingFace backend below so frozen builds can
-    # still support the broader local model list when those runtimes are present.
-    if getattr(_sys, "frozen", False) and model_name == _DEFAULT_LOCAL_MODEL:
+    # so only the default local model is supported in the frozen build.
+    if getattr(_sys, "frozen", False):
+        from uacragent.domain.errors import ConfigurationError
+        if model_name != _DEFAULT_LOCAL_MODEL:
+            raise ConfigurationError(
+                "Only all-MiniLM-L6-v2 is supported for local embeddings in this build.\n\n"
+                "Please select all-MiniLM-L6-v2 in Session Settings, or switch to "
+                "a cloud embedding provider."
+            )
         try:
             return _build_chromadb_onnx_embeddings(progress_cb=progress_cb)
         except Exception as _onnx_exc:
-            from uacragent.domain.errors import ConfigurationError
             if isinstance(_onnx_exc, ConfigurationError):
                 raise
             raise ConfigurationError(
-                "The default local embedding backend could not be loaded in this build.\n\n"
-                "Please try one of these options:\n"
-                "  • Keep Local embeddings and choose a different local model\n"
-                "  • Or switch to Gemini / OpenAI embeddings instead\n\n"
-                "See the app log under <app_data_dir>/logs/uacragent.log for details."
+                "Local embedding is not available in this build.\n\n"
+                "Please switch to a cloud embedding provider:\n"
+                "  • Open Session Settings  →  Embedding Provider\n"
+                "  • Choose  Gemini  or  OpenAI  instead of  Local\n\n"
+                "Cloud embedding requires an API key but no extra installation."
             ) from _onnx_exc
 
     def _missing_local_deps_error(from_exc: Exception | None = None) -> "ConfigurationError":

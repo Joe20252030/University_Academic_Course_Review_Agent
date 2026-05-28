@@ -40,13 +40,9 @@ for pkg in [
     "sentence_transformers",
     "tokenizers",
     "huggingface_hub",
-    # Local embedding in the frozen .app uses chromadb's built-in ONNX path
-    # (DefaultEmbeddingFunction) instead of sentence_transformers + PyTorch,
-    # because PyTorch's native C extensions frequently fail to load inside a
-    # PyInstaller bundle on macOS.  We still bundle torch/transformers so that
-    # source-mode users who run from the repo can use HuggingFaceEmbeddings
-    # normally — the frozen app's _build_local_embeddings() takes the ONNX
-    # fast-path before those imports are even attempted.
+    # Local embedding in the frozen .app uses Chroma's built-in ONNX path for
+    # all-MiniLM-L6-v2. The broader sentence-transformers model list remains
+    # source-mode only because PyTorch is not reliable enough in the packaged app.
     "onnxruntime",    # primary local-embedding runtime in frozen .app
     "torch",          # kept for source-mode / future support
     "transformers",   # kept for source-mode / future support

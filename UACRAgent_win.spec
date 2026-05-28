@@ -85,13 +85,9 @@ for pkg in [
     "sentence_transformers",
     "tokenizers",
     "huggingface_hub",
-    # Local embedding in the frozen .exe uses chromadb's built-in ONNX path
-    # (DefaultEmbeddingFunction) instead of sentence_transformers + PyTorch,
-    # because PyTorch's DLL dependency chain frequently breaks inside a
-    # PyInstaller bundle on Windows.  We still bundle torch/transformers so
-    # that source-mode users can use HuggingFaceEmbeddings normally — the
-    # frozen app's _build_local_embeddings() takes the ONNX fast-path before
-    # those imports are ever attempted.
+    # Local embedding in the frozen .exe uses Chroma's built-in ONNX path for
+    # all-MiniLM-L6-v2. The broader sentence-transformers model list remains
+    # source-mode only because PyTorch is not reliable enough in the packaged app.
     "onnxruntime",    # primary local-embedding runtime in frozen .exe
     "torch",          # kept for source-mode / future support
     "transformers",   # kept for source-mode / future support

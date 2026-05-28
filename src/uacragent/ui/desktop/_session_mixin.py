@@ -207,7 +207,7 @@ class SessionMixin:
             self._EMB_PROVIDER_DISPLAY.get(emb_provider, emb_provider))
         self._local_model_var.set(local_model)
         self._local_model_disp_var.set(
-            self._FREE_EMB_MODEL_TO_DISPLAY.get(local_model, local_model))
+            self._local_model_display_label(local_model))
 
         # Commit the embedding provider into os.environ so that auto-indexing on
         # session load uses the correct provider.  Without this, Settings() would

@@ -311,7 +311,7 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         _default_local = "all-MiniLM-L6-v2"
         self._local_model_var       = tk.StringVar(value=_default_local)
         self._local_model_disp_var  = tk.StringVar(
-            value=self._FREE_EMB_MODEL_TO_DISPLAY.get(_default_local, _default_local))
+            value=self._local_model_display_label(_default_local))
 
         self._course_name_var  = tk.StringVar()
         self._university_var   = tk.StringVar()

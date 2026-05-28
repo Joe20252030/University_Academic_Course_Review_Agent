@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import os
 import sys
-import types
 from pathlib import Path
 
 from chromadb.utils.embedding_functions.onnx_mini_lm_l6_v2 import ONNXMiniLM_L6_V2
@@ -101,31 +100,10 @@ def test_build_chromadb_onnx_embeddings_accepts_plain_python_lists(monkeypatch) 
     assert emb.embed_query("a") == [0.1, 0.2, 0.3]
 
 
-def test_frozen_non_default_local_model_uses_huggingface_backend(monkeypatch) -> None:
+def test_frozen_non_default_local_model_is_rejected(monkeypatch) -> None:
     monkeypatch.setattr(sys, "frozen", True, raising=False)
-    monkeypatch.setattr(vectorstore_mod, "_hf_model_is_cached", lambda model_name: True)
-    monkeypatch.setattr(
-        vectorstore_mod,
-        "_build_chromadb_onnx_embeddings",
-        lambda progress_cb=None: (_ for _ in ()).throw(AssertionError("ONNX path should not be used")),
-    )
-    monkeypatch.setattr(vectorstore_mod, "_local_embeddings_cache", {})
+    import pytest
+    from uacragent.domain.errors import ConfigurationError
 
-    class _FakeHF:
-        def __init__(self, model_name: str):
-            self.model_name = model_name
-
-        def embed_documents(self, texts):
-            return [[1.0] for _ in texts]
-
-        def embed_query(self, text):
-            return [1.0]
-
-    monkeypatch.setitem(
-        sys.modules,
-        "langchain_huggingface",
-        types.SimpleNamespace(HuggingFaceEmbeddings=_FakeHF),
-    )
-
-    emb = vectorstore_mod._build_local_embeddings("all-MiniLM-L12-v2")
-    assert emb.embed_query("x") == [1.0]
+    with pytest.raises(ConfigurationError):
+        vectorstore_mod._build_local_embeddings("BAAI/bge-small-en-v1.5")
