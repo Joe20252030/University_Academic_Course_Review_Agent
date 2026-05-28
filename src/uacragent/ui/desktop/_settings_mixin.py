@@ -25,6 +25,110 @@ from ._ui_constants import (
 class SettingsMixin:
     """Mixin: session settings dialog — open, apply, and all helper methods."""
 
+    @staticmethod
+    def _is_managed_exam_info_path(path: str, workspace_folder: Path | None) -> bool:
+        """Return True when *path* is inside the workspace-managed exam-info area."""
+        if not path or workspace_folder is None:
+            return False
+        try:
+            p = Path(path).resolve()
+            exam_root = (
+                Path(workspace_folder).resolve() / ".uacragent" / "uploads" / "exam_info"
+            )
+            p.relative_to(exam_root)
+            return True
+        except Exception:
+            return False
+
+    def _cleanup_stale_exam_info_copy(
+        self,
+        old_path: str,
+        new_path: str,
+        workspace_folder: Path | None,
+    ) -> None:
+        """Delete a superseded workspace-local exam-info copy, if any.
+
+        Only files inside ``<workspace>/.uacragent/uploads/exam_info/`` are
+        eligible. User-owned source files outside the workspace are never
+        touched.
+        """
+        if not old_path or old_path == new_path:
+            return
+        if not self._is_managed_exam_info_path(old_path, workspace_folder):
+            return
+        try:
+            stale = Path(old_path)
+            if stale.exists():
+                stale.unlink()
+            parent = stale.parent
+            if parent.name == "exam_info" and parent.exists() and not any(parent.iterdir()):
+                parent.rmdir()
+        except Exception:
+            # Best-effort cleanup only — never block Apply on a stale-file delete.
+            pass
+
+    def _register_settings_wrap_target(
+        self,
+        widget: tk.Widget,
+        container: tk.Widget | None = None,
+        *,
+        pad: int = 24,
+        min_wrap: int = 180,
+    ) -> None:
+        """Register a settings-dialog label whose wraplength should resize live."""
+        if not hasattr(self, "_settings_wrap_targets"):
+            self._settings_wrap_targets: list[tuple[tk.Widget, tk.Widget, int, int]] = []
+        self._settings_wrap_targets.append((widget, container or widget, pad, min_wrap))
+        self._refresh_settings_wrap_targets()
+
+    def _refresh_settings_wrap_targets(self) -> None:
+        """Recompute wraplengths for settings-dialog notice labels."""
+        targets = getattr(self, "_settings_wrap_targets", None)
+        if not targets:
+            return
+        # Cancel any queued debounced call before we run synchronously so the
+        # same refresh does not fire twice (once now, once from after()).
+        _pending = getattr(self, "_settings_wrap_after_id", None)
+        if _pending is not None:
+            try:
+                self.after_cancel(_pending)
+            except Exception:
+                pass
+        self._settings_wrap_after_id = None
+        kept: list[tuple[tk.Widget, tk.Widget, int, int]] = []
+        for widget, container, pad, min_wrap in targets:
+            try:
+                if not widget.winfo_exists() or not container.winfo_exists():
+                    continue
+                width = max(min_wrap, container.winfo_width() - pad)
+                current = int(float(widget.cget("wraplength") or 0))
+                if current != width:
+                    widget.configure(wraplength=width)
+                kept.append((widget, container, pad, min_wrap))
+            except tk.TclError:
+                continue
+        self._settings_wrap_targets = kept
+
+    def _schedule_settings_wrap_refresh(self, delay_ms: int = 30) -> None:
+        """Throttle settings-dialog wrap recalculation during live resize.
+
+        Coalesces bursts of ``<Configure>`` events into at most one pending
+        refresh at a time. This keeps resize dragging smooth while still
+        allowing notice labels to reflow continuously as the user drags.
+        """
+        win = getattr(self, "_settings_win", None)
+        if win is None or not win.winfo_exists():
+            return
+        _after_id = getattr(self, "_settings_wrap_after_id", None)
+        if _after_id is not None:
+            return
+        try:
+            self._settings_wrap_after_id = win.after(
+                delay_ms, self._refresh_settings_wrap_targets
+            )
+        except tk.TclError:
+            self._settings_wrap_after_id = None
+
     # ── Embedding provider choices ────────────────────────────────────────
     # Display label → internal key used in Settings / env vars
     _EMB_PROVIDER_OPTIONS: dict[str, str] = {
@@ -175,7 +279,7 @@ class SettingsMixin:
         btn_row = tk.Frame(frm, bg=_cbg)
         btn_row.pack(anchor="e")
         _RoundedChip(
-            btn_row, text="OK",
+            btn_row, text=self._t("btn_ok"),
             chip_bg=_pbg, chip_fg=_pfg,
             parent_bg=_cbg,
             font=("TkDefaultFont", _sz, "bold"),
@@ -245,7 +349,7 @@ class SettingsMixin:
 
         _RoundedChip(
             btn_row,
-            text=confirm_text or "OK",
+            text=confirm_text or self._t("btn_ok"),
             chip_bg=_cfm_bg, chip_fg=_cfm_fg,
             parent_bg=_cbg,
             font=("TkDefaultFont", _sz, "bold"),
@@ -601,6 +705,13 @@ class SettingsMixin:
         win.minsize(560, 600)
         win.resizable(True, True)
         self._settings_win = win
+        self._settings_wrap_targets = []
+        self._settings_wrap_after_id = None
+
+        def _on_settings_configure(_event: tk.Event | None = None) -> None:
+            self._schedule_settings_wrap_refresh()
+
+        win.bind("<Configure>", _on_settings_configure, add=True)
 
         # ── Fixed banner (always visible, above the scroll area) ──────
         _note_sz = max(self._font_size() - 1, 10)  # notice font: 1pt below body, min 10
@@ -623,11 +734,13 @@ class SettingsMixin:
         bottom_bar.pack(side="bottom", fill="x")
 
         self._settings_status_var = tk.StringVar(value="")
-        tk.Label(bottom_bar, textvariable=self._settings_status_var,
-                 bg=_wbg, fg=_sfg,
-                 font=("TkDefaultFont", _note_sz),
-                 wraplength=440, anchor="w",
-                 ).pack(side="left", fill="x", expand=True)
+        _settings_status_lbl = tk.Label(bottom_bar, textvariable=self._settings_status_var,
+                                        bg=_wbg, fg=_sfg,
+                                        font=("TkDefaultFont", _note_sz),
+                                        wraplength=440, anchor="w", justify="left",
+                                        )
+        _settings_status_lbl.pack(side="left", fill="x", expand=True)
+        self._register_settings_wrap_target(_settings_status_lbl, bottom_bar, pad=140)
 
         _action_frame = tk.Frame(bottom_bar, bg=_wbg)
         _action_frame.pack(side="right")
@@ -854,12 +967,14 @@ class SettingsMixin:
         # ── Per-provider privacy reminder ─────────────────────────────
         _note_sz = max(self._font_size() - 1, 10)
         self._privacy_reminder_var = tk.StringVar()
-        tk.Label(
+        _privacy_reminder_lbl = tk.Label(
             mf, textvariable=self._privacy_reminder_var,
             bg=_cbg, fg=c.get("status_fg", "#6b7280"),
             font=("TkDefaultFont", _note_sz),
             wraplength=400, anchor="w", justify="left",
-        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        )
+        _privacy_reminder_lbl.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        self._register_settings_wrap_target(_privacy_reminder_lbl, mf, pad=36)
 
         self._privacy_policy_lbl = tk.Label(
             mf, text="",
@@ -891,7 +1006,8 @@ class SettingsMixin:
             font=("TkDefaultFont", max(self._font_size() - 1, 10)),
             wraplength=460, anchor="w", justify="left",
         )
-        _rate_hint_lbl.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        _rate_hint_lbl.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        self._register_settings_wrap_target(_rate_hint_lbl, rf, pad=36)
 
         def _update_rate_hint(*_: object) -> None:
             disp = self._rate_tier_disp_var.get()
@@ -909,12 +1025,14 @@ class SettingsMixin:
 
         # Suggestion label — blue info tone; only visible when current ≠ suggested.
         self._rate_suggestion_var = tk.StringVar()
-        tk.Label(
+        _rate_suggestion_lbl = tk.Label(
             rf, textvariable=self._rate_suggestion_var,
             bg=_cbg, fg="#1565c0",
             font=("TkDefaultFont", max(self._font_size() - 1, 10)),
-            wraplength=460, anchor="w",
-        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(2, 0))
+            wraplength=460, anchor="w", justify="left",
+        )
+        _rate_suggestion_lbl.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(2, 0))
+        self._register_settings_wrap_target(_rate_suggestion_lbl, rf, pad=36)
 
         # ── API Key (single row, changes with provider) ───────────────
         akf = self._make_section_card(inner, row, self._t("settings_api_key_section"), c)
@@ -955,12 +1073,14 @@ class SettingsMixin:
             akf, fill_color=_info_bg, border_color=_info_brd,
             parent_bg=_cbg, r=8, padx=10, pady=6)
         _note_cv.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(8, 0))
-        tk.Label(
+        _api_key_note_lbl = tk.Label(
             _note_shell,
             text=self._t("settings_api_key_note"),
             background=_info_bg, foreground=_info_fg,
             font=("TkDefaultFont", _note_sz), anchor="w", justify="left", wraplength=440,
-        ).pack(fill="x")
+        )
+        _api_key_note_lbl.pack(fill="x")
+        self._register_settings_wrap_target(_api_key_note_lbl, akf, pad=48)
 
         # ── Embedding ─────────────────────────────────────────────────────
         embf = self._make_section_card(inner, row, self._t("settings_embedding_section"), c)
@@ -1072,15 +1192,26 @@ class SettingsMixin:
             tk.Label(ws_row, text="🔒", bg=_cbg, fg="gray"
                      ).grid(row=0, column=2, padx=(4, 0))
         else:
-            # Not yet committed: allow user to pick
+            # Not yet committed: allow an optional custom workspace selection.
             self._workspace_label = tk.Label(
-                ws_row, textvariable=self._workspace_var,
-                bg=_cbg, fg="gray", anchor="w")
+                ws_row,
+                bg=_cbg, fg="gray", anchor="w", justify="left", wraplength=360,
+            )
             self._workspace_label.grid(row=0, column=0, sticky="ew")
-            _mk_chip(ws_row, self._t("settings_browse_btn"),
-                     self._on_pick_workspace).grid(row=0, column=1, padx=(4, 0))
-            _mk_chip(ws_row, self._t("settings_reset_btn"),
-                     self._on_reset_workspace).grid(row=0, column=2, padx=(4, 0))
+            self._register_settings_wrap_target(self._workspace_label, ws_row, pad=120)
+            self._workspace_pick_btn = _mk_chip(
+                ws_row,
+                self._t("settings_set_btn"),
+                self._on_pick_workspace,
+            )
+            self._workspace_pick_btn.grid(row=0, column=1, padx=(4, 0))
+            self._workspace_clear_btn = _mk_chip(
+                ws_row,
+                self._t("settings_clear_btn"),
+                self._on_reset_workspace,
+            )
+            self._workspace_clear_btn.grid(row=0, column=2, padx=(4, 0))
+            self._refresh_workspace_label()
 
         # ── Deletion warning (rounded warning box) ────────────────────────
         _warn_bg       = c.get("warn_bg",       "#fff3e0")
@@ -1098,13 +1229,15 @@ class SettingsMixin:
             font=("TkDefaultFont", _note_sz, "bold"),
             anchor="w",
         ).pack(side="top", fill="x")
-        tk.Label(
+        _warn_body_lbl = tk.Label(
             _warn_shell,
             text=self._t("settings_deletion_warning_body"),
             background=_warn_bg, foreground=_warn_body_fg,
             font=("TkDefaultFont", _note_sz),
             anchor="w", justify="left", wraplength=440,
-        ).pack(side="top", fill="x")
+        )
+        _warn_body_lbl.pack(side="top", fill="x")
+        self._register_settings_wrap_target(_warn_body_lbl, wf, pad=48)
 
         tk.Label(wf, text=self._t("settings_export_format_label"),
                  bg=_cbg, fg=_fg).grid(
@@ -1206,9 +1339,22 @@ class SettingsMixin:
 
             files: list[Path] = []
             if out_dir.exists():
-                files = sorted(out_dir.iterdir(), key=lambda p: p.stat().st_mtime,
-                               reverse=True)
-                files = [f for f in files if f.is_file()]
+                # Guard each stat() call against TOCTOU: a file may be deleted
+                # between iterdir() materialising its path and stat() reading it.
+                def _safe_mtime(p: Path) -> float:
+                    try:
+                        return p.stat().st_mtime
+                    except OSError:
+                        return 0.0
+
+                files = sorted(out_dir.iterdir(), key=_safe_mtime, reverse=True)
+                # Exclude hidden/system files (e.g. .DS_Store on macOS,
+                # Thumbs.db on Windows) — only real user-visible outputs.
+                files = [
+                    f for f in files
+                    if f.is_file() and not f.name.startswith(".")
+                    and f.name not in {"Thumbs.db", "desktop.ini"}
+                ]
 
             # Enable/disable the "Open folder" button based on folder existence
             open_folder_btn.set_state(out_dir.exists())
@@ -1250,7 +1396,10 @@ class SettingsMixin:
                 # Open
                 self._make_util_chip(
                     btn_cell, self._t("output_open_btn"),
-                    lambda p=str(fpath): _open_file_in_os(p),
+                    lambda p=str(fpath): _open_file_in_os(
+                        p,
+                        on_error=lambda msg: self._append_chat("system", f"⚠️ {msg}"),
+                    ),
                     parent_bg=bg,
                 ).pack(side="left", padx=(0, 3))
 
@@ -1563,13 +1712,15 @@ class SettingsMixin:
                 anchor="w",
             ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(2, 0))
 
-            tk.Label(
+            _local_hint_lbl = tk.Label(
                 frame,
                 text=self._t("settings_emb_local_hint"),
                 bg=_cbg, fg="#6b7280",
                 font=("TkDefaultFont", max(_sz - 1, 10)),
-                wraplength=400, anchor="w",
-            ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(2, 0))
+                wraplength=400, anchor="w", justify="left",
+            )
+            _local_hint_lbl.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(2, 0))
+            self._register_settings_wrap_target(_local_hint_lbl, frame, pad=24)
         else:
             # API-based: show a key entry field for the embedding provider.
             env_var = "GOOGLE_API_KEY" if provider == "gemini" else "OPENAI_API_KEY"
@@ -1602,15 +1753,17 @@ class SettingsMixin:
             # Status hint below the entry
             key_present = bool(os.environ.get(env_var, "").strip())
             if key_present:
-                hint     = f"✓  {env_var} loaded from .env"
+                hint     = self._t("emb_hint_loaded").format(env_var=env_var)
                 hint_fg  = "#6b7280"
             else:
-                hint     = f"⚠  {env_var} not set — enter it above or choose Free — Local."
+                hint     = self._t("emb_hint_missing").format(env_var=env_var)
                 hint_fg  = "#cc4400"
-            tk.Label(frame, text=hint, bg=_cbg, fg=hint_fg,
-                     font=("TkDefaultFont", max(_sz - 1, 10)),
-                     wraplength=400, anchor="w",
-                     ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(3, 0))
+            _emb_hint_lbl = tk.Label(frame, text=hint, bg=_cbg, fg=hint_fg,
+                                     font=("TkDefaultFont", max(_sz - 1, 10)),
+                                     wraplength=400, anchor="w", justify="left",
+                                     )
+            _emb_hint_lbl.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(3, 0))
+            self._register_settings_wrap_target(_emb_hint_lbl, frame, pad=24)
 
     def _has_embedding_key(self) -> bool:
         """Return True if the committed embedding provider has what it needs.
@@ -1629,21 +1782,35 @@ class SettingsMixin:
 
     @staticmethod
     def _is_model_cached(model_name: str) -> bool:
-        """Return True if the HuggingFace model is already in the local cache.
+        """Return True if the embedding model is already fully downloaded.
 
-        Uses ``huggingface_hub.scan_cache_dir()`` when available.  Falls back
-        to False (assume not cached) if the package is absent or the scan fails,
-        which causes the confirmation dialog to appear — safer than silently
-        skipping it.
+        Delegates to the same helpers used by the actual download code so the
+        check is always consistent with what the runtime will find on disk.
+
+        * **Frozen .app** — checks the app-managed Chroma ONNX cache
+          (``<app_data_dir>/models/chroma/onnx_models/…/onnx/model.onnx``).
+        * **Source mode** — checks the app-managed HuggingFace Hub cache
+          (``<app_data_dir>/models/models--…/snapshots/…/pytorch_model.bin``).
+
+        This reflects the current runtime split: source installs use the
+        app-managed HuggingFace cache, while frozen builds use Chroma's ONNX
+        backend but now store that model inside the same app-managed data tree.
+
+        The old implementation used ``huggingface_hub.scan_cache_dir()``, which
+        scans the system-wide HF cache directory and ignores the app's custom
+        ``HF_HUB_CACHE`` path.  It also had no awareness of the ONNX path used
+        in frozen builds, so the download dialog reappeared on every Apply even
+        after a successful first download in the frozen .app.
         """
-        try:
-            from huggingface_hub import scan_cache_dir  # type: ignore[import]
-            cached_ids = {repo.repo_id for repo in scan_cache_dir().repos}
-            # Short names (e.g. "all-MiniLM-L6-v2") live under sentence-transformers/
-            full_name = model_name if "/" in model_name else f"sentence-transformers/{model_name}"
-            return full_name in cached_ids
-        except Exception:
-            return False  # conservative: prompt the user
+        import sys as _sys
+        from uacragent.infra.vectorstore import (
+            _hf_model_is_cached,
+            _onnx_model_is_cached,
+        )
+        if getattr(_sys, "frozen", False):
+            # Frozen app always uses the ONNX runtime regardless of model_name.
+            return _onnx_model_is_cached()
+        return _hf_model_is_cached(model_name)
 
     def _confirm_model_download(self) -> bool:
         """Show a confirmation dialog before downloading a local embedding model.
@@ -1695,8 +1862,15 @@ class SettingsMixin:
         size_match = re.search(r"~([\d.]+ MB)", disp)
         size_str = size_match.group(1) if size_match else "unknown size"
 
-        from uacragent.infra.persistence import get_hf_cache_dir
-        cache_dir = get_hf_cache_dir()
+        from uacragent.infra.persistence import (
+            get_chroma_onnx_model_dir,
+            get_hf_cache_dir,
+        )
+        cache_dir = (
+            get_chroma_onnx_model_dir(model_name)
+            if getattr(sys, "frozen", False)
+            else get_hf_cache_dir()
+        )
 
         return self._show_confirm_dialog(
             self._t("mb_dl_model_title"),
@@ -1705,7 +1879,7 @@ class SettingsMixin:
                 size_str=size_str,
                 cache_dir=cache_dir,
             ),
-            confirm_text="Download",
+            confirm_text=self._t("btn_download"),
         )
 
     def _update_rate_suggestion(self) -> None:
@@ -1783,12 +1957,22 @@ class SettingsMixin:
             pass  # widget already destroyed — harmless
 
     def _on_provider_changed(self, _event: object = None) -> None:
+        """React to the user selecting a different LLM provider in the dropdown.
+
+        Refreshes the model list, API-key row label, rate-tier suggestion, and
+        the privacy reminder to match the newly selected provider.
+        """
         self._update_model_list()
         self._update_api_key_row()
         self._update_rate_suggestion()
         self._update_privacy_reminder()
 
     def _toggle_key_entry(self, entry: tk.Widget, btn: tk.Widget | None = None) -> None:
+        """Toggle the API-key entry field between masked (``***``) and plaintext.
+
+        Flips the ``show`` option on *entry* and updates *btn*'s label to match
+        the new state so the user knows which action another click will perform.
+        """
         if entry.cget("show") == "*":
             entry.configure(show="")
             if btn:
@@ -1800,7 +1984,7 @@ class SettingsMixin:
 
     def _on_pick_exam_info(self) -> None:
         path = filedialog.askopenfilename(
-            title="Select exam information sheet file",
+            title=self._t("pick_exam_info_title"),
             filetypes=[("All supported", "*.pdf *.txt *.md *.docx"),
                        ("PDF", "*.pdf"), ("Text", "*.txt"),
                        ("Markdown", "*.md"), ("Word", "*.docx")])
@@ -1808,6 +1992,20 @@ class SettingsMixin:
             self._exam_info_path_var.set(path)
             if hasattr(self, "_exam_info_path_label"):
                 self._exam_info_path_label.configure(foreground="black")
+            # Warn immediately if the file is larger than the LLM-injection cap.
+            try:
+                from uacragent.agent.session import AgentSession as _Session
+                if _Session._EXAM_INFO_MAX_CHARS is not None:
+                    import os as _os
+                    raw_size = _os.path.getsize(path)
+                    # Use a conservative byte-to-char estimate (1.5×) to avoid
+                    # a full parse just for the size check.
+                    if raw_size > _Session._EXAM_INFO_MAX_CHARS * 1.5:
+                        if hasattr(self, "_settings_status_var"):
+                            self._settings_status_var.set(
+                                self._t("exam_info_too_large"))
+            except Exception:
+                pass
 
     def _on_clear_exam_info(self) -> None:
         self._exam_info_path_var.set("")
@@ -1815,16 +2013,42 @@ class SettingsMixin:
             self._exam_info_path_label.configure(foreground="gray")
 
     def _on_pick_workspace(self) -> None:
-        folder = filedialog.askdirectory(title="Select workspace folder")
+        folder = filedialog.askdirectory(title=self._t("pick_workspace_title"))
         if folder:
             self._workspace_var.set(folder)
-            if hasattr(self, "_workspace_label"):
-                self._workspace_label.configure(foreground="black")
+            self._refresh_workspace_label()
 
     def _on_reset_workspace(self) -> None:
         self._workspace_var.set("")
-        if hasattr(self, "_workspace_label"):
-            self._workspace_label.configure(foreground="gray")
+        self._refresh_workspace_label()
+
+    def _refresh_workspace_label(self) -> None:
+        """Refresh the workspace-path / default-assignment hint controls."""
+        if not hasattr(self, "_workspace_label"):
+            return
+        _path = self._workspace_var.get().strip()
+        if _path:
+            self._workspace_label.configure(
+                text=_path,
+                foreground="black",
+            )
+            if hasattr(self, "_workspace_pick_btn"):
+                self._workspace_pick_btn.configure(
+                    text=self._t("settings_change_btn")
+                )
+            if hasattr(self, "_workspace_clear_btn"):
+                self._workspace_clear_btn.grid()
+        else:
+            self._workspace_label.configure(
+                text=self._t("settings_workspace_unset"),
+                foreground="gray",
+            )
+            if hasattr(self, "_workspace_pick_btn"):
+                self._workspace_pick_btn.configure(
+                    text=self._t("settings_set_btn")
+                )
+            if hasattr(self, "_workspace_clear_btn"):
+                self._workspace_clear_btn.grid_remove()
 
     def _on_add_files(self, doc_type: DocumentType) -> None:
         paths = filedialog.askopenfilenames(
@@ -1957,8 +2181,15 @@ class SettingsMixin:
         }
         changed = False
         for env_var, value in key_map.items():
-            if value and value != os.environ.get(env_var, ""):
-                os.environ[env_var] = value
+            current = os.environ.get(env_var, "")
+            if value != current:
+                if value:
+                    os.environ[env_var] = value
+                else:
+                    # Empty field → user is clearing the key; remove from env so
+                    # subsequent calls correctly fail with "no API key" rather than
+                    # silently continuing with the stale old value.
+                    os.environ.pop(env_var, None)
                 changed = True
         if changed:
             self._agent = None  # force re-creation with new keys
@@ -2008,6 +2239,20 @@ class SettingsMixin:
         for indexing to succeed; the session is committed immediately so it
         survives app restarts even when there are no files yet.
         """
+        # Guard: do not mutate session state while a background thread holds a
+        # reference to it (indexing, chat, or attachment copy still running).
+        # Mutating os.environ keys or session fields mid-flight can produce
+        # inconsistent state in the running operation.
+        if getattr(self, "_is_busy", False):
+            try:
+                self._settings_status_var.set(
+                    self._t("busy_cannot_apply")
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            return
+
+        _prev_exam_info_path = self._session.exam_info_path
         self._sync_session_from_vars()
 
         # M-6: Validate exam_info_path — warn (but do not block Apply) if the
@@ -2015,7 +2260,8 @@ class SettingsMixin:
         _exam_path = self._session.exam_info_path
         if _exam_path and (not Path(_exam_path).exists() or not Path(_exam_path).is_file()):
             try:
-                self._settings_status_var.set(f"Warning: Exam info file not found: {_exam_path}")
+                self._settings_status_var.set(
+                    self._t("exam_file_not_found").format(path=_exam_path))
             except Exception:  # noqa: BLE001
                 pass  # dialog destroyed between check and set — harmless
 
@@ -2040,38 +2286,77 @@ class SettingsMixin:
                 self._workspace_var.set(str(self._session.workspace_folder))
             self._workspace_committed = True
 
-        # ── Copy exam info file into workspace (M-4) ───────────────────────────
+        self._cleanup_stale_exam_info_copy(
+            _prev_exam_info_path,
+            self._session.exam_info_path,
+            self._session.workspace_folder,
+        )
+
+        # ── Copy exam info file into workspace ────────────────────────────────
         # Store a workspace-local copy so the session remains self-contained even
         # if the original file is moved, renamed, or deleted by the user later.
         # Only copy when: (a) a file is selected, (b) workspace is committed, and
         # (c) the current path is NOT already inside the workspace (avoid re-copy).
+        # The copy is performed in a background thread to avoid blocking the main
+        # thread with large PDF files (chunked SHA-256 comparison + shutil.copy2
+        # can take several seconds for a 50 MB+ file on a slow disk).
         _exam_src = self._session.exam_info_path
         if _exam_src and self._session.workspace_folder:
             _src_path = Path(_exam_src)
             _ws_folder = self._session.workspace_folder
             _exam_uploads = _ws_folder / ".uacragent" / "uploads" / "exam_info"
-            # Only copy if the file is not already in our workspace
             if _src_path.exists() and not str(_src_path).startswith(str(_ws_folder)):
-                try:
-                    import shutil as _shutil
-                    _exam_uploads.mkdir(parents=True, exist_ok=True)
-                    _dest = _exam_uploads / _src_path.name
-                    # Avoid overwriting a different file with the same name
-                    _counter = 1
-                    while _dest.exists() and _dest.read_bytes() != _src_path.read_bytes():
-                        _dest = _exam_uploads / f"{_src_path.stem}_{_counter}{_src_path.suffix}"
-                        _counter += 1
-                    if not _dest.exists():
-                        _shutil.copy2(str(_src_path), str(_dest))
-                    # Update session and UI to point at the workspace copy
-                    self._session.exam_info_path = str(_dest)
-                    self._exam_info_path_var.set(str(_dest))
-                    # Invalidate the read cache so next read_exam_info() uses the copy
-                    self._session._exam_info_cache = None
-                except Exception as _exc:  # noqa: BLE001
-                    import logging as _logging
-                    _logging.getLogger(__name__).warning(
-                        "Could not copy exam info file to workspace: %s", _exc)
+                import shutil as _shutil, hashlib as _hashlib, threading as _threading
+
+                def _file_sha256(p: Path) -> bytes:
+                    h = _hashlib.sha256()
+                    with p.open("rb") as _f:
+                        for _chunk in iter(lambda: _f.read(65536), b""):
+                            h.update(_chunk)
+                    return h.digest()
+
+                def _do_copy(
+                    src: Path = _src_path,
+                    uploads_dir: Path = _exam_uploads,
+                    session=self._session,
+                ) -> None:
+                    try:
+                        uploads_dir.mkdir(parents=True, exist_ok=True)
+                        dest = uploads_dir / src.name
+                        counter = 1
+                        while dest.exists() and _file_sha256(dest) != _file_sha256(src):
+                            dest = uploads_dir / f"{src.stem}_{counter}{src.suffix}"
+                            counter += 1
+                        if not dest.exists():
+                            _shutil.copy2(str(src), str(dest))
+                        dest_str = str(dest)
+                        # Update session + UI from the main thread.
+                        # Guard against session switches: if the user navigated
+                        # to a different session while the copy ran, discard the
+                        # stale result rather than corrupting the new session.
+                        def _apply(
+                            _dest=dest_str,
+                            _session=session,
+                        ) -> None:
+                            if self._session is not _session:
+                                return  # user switched sessions — discard
+                            _session.exam_info_path = _dest
+                            try:
+                                self._exam_info_path_var.set(_dest)
+                                _session._exam_info_cache = None  # noqa: SLF001
+                                self._save_current_session()
+                            except Exception:  # noqa: BLE001
+                                pass
+                        try:
+                            self.after(0, _apply)
+                        except Exception:  # noqa: BLE001
+                            pass
+                    except Exception as exc:  # noqa: BLE001
+                        import logging as _logging
+                        _logging.getLogger(__name__).warning(
+                            "Could not copy exam info file to workspace: %s", exc)
+
+                _threading.Thread(target=_do_copy, daemon=True).start()
 
         self._save_current_session()
         self._refresh_session_list()

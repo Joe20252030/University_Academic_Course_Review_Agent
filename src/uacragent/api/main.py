@@ -22,8 +22,8 @@ async def _lifespan(app: FastAPI):
     except ImportError:
         pass
 
-    # Point HuggingFace downloads at the app-managed cache so all agent data
-    # (models, sessions, index) lives in one place regardless of run mode.
+    # Point local model downloads at app-managed cache folders so all agent
+    # data (models, sessions, index) lives in one place regardless of run mode.
     from uacragent.infra.persistence import configure_hf_cache
     configure_hf_cache()
 

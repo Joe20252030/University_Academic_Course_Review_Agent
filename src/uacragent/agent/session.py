@@ -176,12 +176,20 @@ class AgentSession:
         """Return only doc-type buckets that have at least one file."""
         return {k: v for k, v in self.classified_files.items() if v}
 
+    # Maximum characters injected into the LLM prompt for the exam info sheet.
+    # Files that exceed this are silently truncated; the UI warns the user
+    # separately via _read_exam_info_with_warning().
+    _EXAM_INFO_MAX_CHARS: int = 8_000
+
     def read_exam_info(self) -> str:
         """Read and return the content of the exam info sheet file, or ''.
 
         The result is cached so that repeated calls within a single session
         (e.g. one per chat turn) do not repeat expensive PDF/docx parsing.
         The cache is invalidated automatically when *exam_info_path* changes.
+
+        Content is capped at ``_EXAM_INFO_MAX_CHARS`` characters to prevent
+        the exam info sheet from consuming the entire LLM context window.
         """
         path = self.exam_info_path
         if not path:
@@ -204,8 +212,40 @@ class AgentSession:
         except Exception as exc:  # noqa: BLE001
             logger.warning("Could not read exam info sheet %r: %s", path, exc)
             content = ""
+        # Cap content to avoid overwhelming the LLM context window.
+        if len(content) > self._EXAM_INFO_MAX_CHARS:
+            logger.warning(
+                "Exam info sheet %r is %d chars; truncating to %d for LLM injection.",
+                path, len(content), self._EXAM_INFO_MAX_CHARS,
+            )
+            content = content[: self._EXAM_INFO_MAX_CHARS]
         self._exam_info_cache = (path, content)
         return content
+
+    def is_exam_info_oversized(self) -> bool:
+        """Return True if the exam info file exceeds the LLM-injection cap.
+
+        Reads the raw file length without going through the cached truncated
+        copy, so the UI can warn the user that only part of the file is used.
+        """
+        path = self.exam_info_path
+        if not path:
+            return False
+        try:
+            p = Path(path)
+            suffix = p.suffix.lower()
+            if suffix == ".pdf":
+                from langchain_community.document_loaders import PyPDFLoader
+                docs = PyPDFLoader(path).load()
+                raw = "\n".join(d.page_content for d in docs)
+            elif suffix == ".docx":
+                import docx2txt
+                raw = docx2txt.process(path)
+            else:
+                raw = p.read_text(encoding="utf-8", errors="replace")
+            return len(raw) > self._EXAM_INFO_MAX_CHARS
+        except Exception:  # noqa: BLE001
+            return False
 
     def to_user_prefs(self) -> dict:
         """Build the user_prefs dict expected by the pipeline."""

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import logging
 import os
+import subprocess
+import sys
 import tkinter as tk
 import tkinter.font as tkfont
 from pathlib import Path
@@ -22,6 +24,66 @@ from ._ui_constants import _STRINGS, _THEME_COLORS, _FONT_SIZE_VALUES
 
 class AppearanceMixin:
     """Mixin: appearance, theming, language switching, and app-settings dialog."""
+
+    @staticmethod
+    def _runtime_secret_env_vars() -> tuple[str, ...]:
+        """Return env vars that should not survive an app relaunch."""
+        return (
+            "GOOGLE_API_KEY",
+            "OPENAI_API_KEY",
+            "DEEPSEEK_API_KEY",
+            "EMBEDDING_PROVIDER",
+            "LOCAL_EMBEDDING_MODEL",
+        )
+
+    def _clear_runtime_secrets(self) -> None:
+        """Erase API-key/runtime-secret state from the current process."""
+        for var in (self._gemini_key_var, self._openai_key_var, self._deepseek_key_var):
+            try:
+                var.set("")
+            except Exception:  # noqa: BLE001
+                pass
+        for env_var in self._runtime_secret_env_vars():
+            os.environ.pop(env_var, None)
+
+    def _build_relaunch_command(self) -> list[str]:
+        """Return the command used to relaunch the desktop app."""
+        if getattr(sys, "frozen", False):
+            return [sys.executable, *sys.argv[1:]]
+        return [sys.executable, "-m", "uacragent.ui.desktop.app"]
+
+    def _relaunch_after_app_data_change(self, old_app_data: Path) -> bool:
+        """Relaunch the app and close the current process on success.
+
+        Returns ``True`` when the new process was launched successfully.
+        On failure, the app-data-folder change is rolled back and the current
+        process remains open.
+        """
+        child_env = os.environ.copy()
+        for env_var in self._runtime_secret_env_vars():
+            child_env.pop(env_var, None)
+
+        cmd = self._build_relaunch_command()
+        try:
+            subprocess.Popen(
+                cmd,
+                cwd=os.getcwd(),
+                env=child_env,
+                start_new_session=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            set_app_data_dir(old_app_data)
+            self._app_data_dir_var.set(str(old_app_data))
+            self._show_info_dialog(
+                self._t("app_data_relaunch_failed_title"),
+                self._t("app_data_relaunch_failed_body").format(error=str(exc)),
+            )
+            return False
+
+        self._clear_runtime_secrets()
+        self.destroy()
+        return True
+
     def _t(self, key: str) -> str:
         """Return the UI string for *key* in the current language."""
         lang = self._language_var.get() if hasattr(self, "_language_var") else "en"
@@ -793,8 +855,26 @@ class AppearanceMixin:
                 except Exception as exc:
                     self._show_info_dialog(self._t("mb_cannot_create_folder"), str(exc))
                     return
+                current_app_data = get_app_data_dir().resolve()
+                new_app_data = p.resolve()
+                if new_app_data != current_app_data:
+                    if not self._show_confirm_dialog(
+                        self._t("app_data_change_title"),
+                        self._t("app_data_change_body").format(path=new_app_data),
+                        confirm_text=self._t("app_data_change_confirm"),
+                    ):
+                        return
+                    if not self._save_current_session():
+                        self._show_info_dialog(
+                            self._t("mb_session_not_saved_title"),
+                            self._t("mb_session_not_saved_body"),
+                        )
                 set_app_data_dir(p)
-                self._app_data_dir_var.set(str(p.resolve()))
+                self._app_data_dir_var.set(str(new_app_data))
+                if new_app_data != current_app_data:
+                    win.destroy()
+                    self._relaunch_after_app_data_change(current_app_data)
+                    return
             win.destroy()
 
         def _cancel() -> None:
@@ -1061,4 +1141,3 @@ class AppearanceMixin:
     # ------------------------------------------------------------------
     # Provider / model helpers
     # ------------------------------------------------------------------
-

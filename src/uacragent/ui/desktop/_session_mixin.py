@@ -177,10 +177,7 @@ class SessionMixin:
         if data.get("_version_mismatch"):
             self._append_chat(
                 "system",
-                "⚠️ This session was saved by a different version of UACRAgent "
-                "and cannot be restored. Please re-create the session by clicking "
-                "**New Session**, adding your files again, and pressing **Apply**. "
-                f"(Session folder: {ws})",
+                self._t("session_version_mismatch").format(ws=ws),
             )
             return
         self._session = dict_to_session(data)

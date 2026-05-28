@@ -43,12 +43,14 @@ _DOC_TYPE_LABELS = {
     DocumentType.past_exam: "Past Exams",
     DocumentType.other: "Other",
 }
-# (label_i18n_key, message_sent_to_llm)
-_QUICK_ACTIONS = [
-    ("review_summary",    "Generate a review summary for this course."),
-    ("practice_booklet",  "Generate a practice booklet for this course."),
-    ("mock_exam",         "Generate a mock exam for this course."),
-    ("exam_prediction",   "Generate an exam prediction for this course."),
+# label_i18n_key for each quick-action chip.
+# The LLM trigger message is looked up via "qa_msg_<key>" in the i18n table so
+# that non-English UI users send the prompt in their own language.
+_QUICK_ACTIONS: list[str] = [
+    "review_summary",
+    "practice_booklet",
+    "mock_exam",
+    "exam_prediction",
 ]
 
 # ---------------------------------------------------------------------------
@@ -69,6 +71,13 @@ _STRINGS: dict[str, dict[str, str]] = {
         "practice_booklet":   "Practice Booklet",
         "mock_exam":          "Mock Exam",
         "exam_prediction":    "Exam Prediction",
+        # Messages sent to the LLM when a quick-action chip is clicked.
+        # Keep these in the i18n table so the LLM receives the prompt in the
+        # same language as the UI (avoids an English-only prompt for ZH users).
+        "qa_msg_review_summary":   "Generate a review summary for this course.",
+        "qa_msg_practice_booklet": "Generate a practice booklet for this course.",
+        "qa_msg_mock_exam":        "Generate a mock exam for this course.",
+        "qa_msg_exam_prediction":  "Generate an exam prediction for this course.",
         "effort_label":       "Effort:",
         "low":                "Low",
         "medium":             "Medium",
@@ -98,7 +107,33 @@ _STRINGS: dict[str, dict[str, str]] = {
             "The index.json and any auto-created session workspaces\n"
             "are stored here.  Changes take effect on next launch."
         ),
+        "app_data_change_title": "Change App Data Folder",
+        "app_data_change_body": (
+            "Apply this app data folder change?\n\n"
+            "If you continue, UACRAgent will save and relaunch immediately.\n\n"
+            "New launches will use:\n"
+            "  • index.json\n"
+            "  • auto-created session workspaces\n"
+            "  • local model downloads\n"
+            "  • the app-level .env lookup\n\n"
+            "This does not automatically move data from the old folder.\n"
+            "Until you migrate it manually, the new folder will behave like a\n"
+            "fresh app home on next launch.\n\n"
+            "API keys entered only in this app window are not carried across the relaunch.\n\n"
+            "New folder:\n"
+            "{path}"
+        ),
+        "app_data_change_confirm": "Change Folder",
+        "app_data_relaunch_failed_title": "Relaunch Failed",
+        "app_data_relaunch_failed_body": (
+            "UACRAgent could not relaunch automatically.\n\n"
+            "The app data folder change was reverted, and the current app session "
+            "will continue using the previous folder.\n\n"
+            "Error:\n"
+            "{error}"
+        ),
         "save":               "Save",
+        "btn_ok":             "OK",
         "cancel_btn":         "Cancel",
         # --- Session Settings dialog ---
         "settings_dialog_title":    "Session Settings",
@@ -137,6 +172,13 @@ _STRINGS: dict[str, dict[str, str]] = {
         "settings_clear_btn":            "Clear",
         "settings_workspace_section":    "Workspace & Export",
         "settings_workspace_label":      "Workspace folder:",
+        "settings_workspace_unset":      (
+            "Not set yet. If left empty, a default workspace will be assigned "
+            "on first Apply. The session workspace cannot be changed after the "
+            "session is created."
+        ),
+        "settings_set_btn":              "Set...",
+        "settings_change_btn":           "Change...",
         "settings_open_btn":             "Open",
         "settings_reset_btn":            "Reset",
         "settings_deletion_warning_title": "⚠️  Deletion warning",
@@ -264,8 +306,57 @@ _STRINGS: dict[str, dict[str, str]] = {
             "Re-add the files in ⚙ Settings if you need them."
         ),
         # Completion / error notices
-        "docs_indexed":       "✓ Documents indexed. {status}",
+        # NOTE: "docs_indexed" key removed — completion messages now come
+        # directly from initialize_session's _INIT_STATUS strings (which
+        # already include the ✓/⚠️ prefix) and are shown without a wrapper.
         "settings_saved_cached": "✓ Settings saved. No re-indexing needed — existing index is still current.",
+        # Shown when the user cancels the model-download confirmation dialog.
+        # Embedding-provider key hint labels shown beneath the key entry field.
+        "emb_hint_loaded":  "✓  {env_var} loaded from environment",
+        "emb_hint_missing": "⚠  {env_var} not set — enter it above or choose Free — Local.",
+        "warn_download_cancelled": (
+            "⚠️ Model download cancelled — your files are saved but not yet indexed.\n"
+            "Open Settings and click Apply again when you are ready to download the "
+            "model and index your documents."
+        ),
+        # Shown inline before a chat message when files are listed but not indexed.
+        "warn_files_not_indexed": (
+            "⚠️ Your files are listed but not yet indexed — this reply will not have "
+            "access to your documents.\n"
+            "Open Settings → Apply to download the model and index them first."
+        ),
+        # Shown in the settings status bar when Apply is clicked while busy
+        "busy_cannot_apply":  "⚠ Cannot apply while a background operation is running — please wait.",
+        # File-picker dialog titles (F-17 / F-18)
+        "pick_exam_info_title":  "Select exam information sheet file",
+        "pick_workspace_title":  "Select workspace folder",
+        # Download confirm button (F-19)
+        "btn_download":          "Download",
+        # Warning when the exam info file is very large and will be truncated (F-12)
+        "exam_info_too_large":   (
+            "⚠ The exam info file is very large — only the first 8 000 characters "
+            "will be sent to the AI. Consider trimming it down for best results."
+        ),
+        # Document generation / export labels in chat
+        "doc_generated":      "📄 {label} generated: ",
+        "open_folder":        "[Open folder]",
+        "exporting_fmt":      "⏳ Exporting {fmt}…",
+        "export_done":        "📥 {fmt} export: {name}",
+        "export_failed":      "⚠️ Export failed: {error}",
+        # Session save failure (shown inline in chat)
+        "session_save_failed": (
+            "⚠️ Session could not be saved — changes may be lost on next launch. "
+            "Check available disk space and folder permissions."
+        ),
+        # Session version mismatch (shown inline in chat after loading)
+        "session_version_mismatch": (
+            "⚠️ This session was saved by a different version of UACRAgent "
+            "and cannot be restored. Please re-create the session by clicking "
+            "**New Session**, adding your files again, and pressing **Apply**. "
+            "(Session folder: {ws})"
+        ),
+        # Exam info file missing at Apply time
+        "exam_file_not_found": "Warning: Exam info file not found: {path}",
         "error_status":       "Error: {error}",
         "indexing_failed":    "⚠️ Indexing failed: {error}",
         "chat_error":         "⚠️ Error: {error}",
@@ -353,6 +444,12 @@ _STRINGS: dict[str, dict[str, str]] = {
         "mb_delete_file_title":   "Delete File",
         "mb_delete_file_body":    "Permanently delete:\n{name}?",
         "mb_delete_fail_title":   "Delete Failed",
+        "mb_session_not_saved_title": "Session Not Saved",
+        "mb_session_not_saved_body": (
+            "Your session could not be saved.\n\n"
+            "Changes made since the last save may be lost on next launch.\n"
+            "Check available disk space and folder permissions."
+        ),
         "output_copy_dest_title": "Choose destination folder",
         # File attachment / web search
         "attach_files_title": "Select files to attach",
@@ -381,6 +478,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         "practice_booklet":   "练习册",
         "mock_exam":          "模拟考试",
         "exam_prediction":    "考试预测",
+        # Messages sent to the LLM when a quick-action chip is clicked (ZH).
+        "qa_msg_review_summary":   "为这门课程生成一份复习总结。",
+        "qa_msg_practice_booklet": "为这门课程生成一份练习册。",
+        "qa_msg_mock_exam":        "为这门课程生成一份模拟试卷。",
+        "qa_msg_exam_prediction":  "为这门课程生成一份考点预测。",
         "effort_label":       "算力:",
         "low":                "低",
         "medium":             "中",
@@ -410,7 +512,32 @@ _STRINGS: dict[str, dict[str, str]] = {
             "索引文件及自动创建的会话工作空间将存储在此处。\n"
             "更改将在下次启动后生效。"
         ),
+        "app_data_change_title": "更改应用数据目录",
+        "app_data_change_body": (
+            "要应用这个应用数据目录更改吗？\n\n"
+            "如果继续，UACRAgent 将立即保存并重新启动。\n\n"
+            "下次启动后，以下内容将使用新目录：\n"
+            "  • index.json\n"
+            "  • 自动创建的会话工作区\n"
+            "  • 本地模型下载\n"
+            "  • 应用级 .env 读取位置\n\n"
+            "系统不会自动把旧目录中的数据迁移过来。\n"
+            "在你手动迁移之前，新目录在下次启动后会像一个\n"
+            "全新的应用主目录一样使用。\n\n"
+            "仅保存在当前应用窗口内的 API 密钥不会随重新启动一起保留。\n\n"
+            "新目录：\n"
+            "{path}"
+        ),
+        "app_data_change_confirm": "更改目录",
+        "app_data_relaunch_failed_title": "重新启动失败",
+        "app_data_relaunch_failed_body": (
+            "UACRAgent 无法自动重新启动。\n\n"
+            "应用数据目录更改已回滚，当前应用会继续使用旧目录。\n\n"
+            "错误：\n"
+            "{error}"
+        ),
         "save":               "保存",
+        "btn_ok":             "好",
         "cancel_btn":         "取消",
         # --- Session Settings dialog ---
         "settings_dialog_title":    "会话设置",
@@ -445,6 +572,12 @@ _STRINGS: dict[str, dict[str, str]] = {
         "settings_clear_btn":            "清除",
         "settings_workspace_section":    "工作空间与导出",
         "settings_workspace_label":      "工作空间目录:",
+        "settings_workspace_unset":      (
+            "当前未设置。若保持为空，系统会在首次点击“应用”时自动分配默认工作空间。"
+            "会话创建后，工作空间将无法更改。"
+        ),
+        "settings_set_btn":              "设置...",
+        "settings_change_btn":           "更改...",
         "settings_open_btn":             "打开",
         "settings_reset_btn":            "重置",
         "settings_deletion_warning_title": "⚠️  删除警告",
@@ -567,8 +700,49 @@ _STRINGS: dict[str, dict[str, str]] = {
             "如有需要，请在 ⚙ 设置 中重新添加。"
         ),
         # Completion / error notices
-        "docs_indexed":       "✓ 文档已索引。{status}",
+        # NOTE: "docs_indexed" key removed — see English locale comment above.
         "settings_saved_cached": "✓ 设置已保存。无需重新索引——现有索引仍然有效。",
+        # Embedding-provider key hint labels shown beneath the key entry field.
+        "emb_hint_loaded":  "✓  {env_var} 已从环境中加载",
+        "emb_hint_missing": "⚠  {env_var} 未设置 — 请在上方输入，或选择免费本地模型。",
+        "warn_download_cancelled": (
+            "⚠️ 模型下载已取消——您的文件已保存，但尚未完成索引。\n"
+            "准备好后，请打开设置并再次点击应用，以下载模型并索引文档。"
+        ),
+        "warn_files_not_indexed": (
+            "⚠️ 您的文件已添加，但尚未完成索引——本次回复无法访问您的文档。\n"
+            "请打开设置 → 应用，先下载模型并完成索引。"
+        ),
+        "busy_cannot_apply":  "⚠ 后台操作正在运行，无法应用设置——请稍候。",
+        # File-picker dialog titles (F-17 / F-18)
+        "pick_exam_info_title":  "选择考试信息表文件",
+        "pick_workspace_title":  "选择工作区文件夹",
+        # Download confirm button (F-19)
+        "btn_download":          "下载",
+        # Warning when the exam info file is very large and will be truncated (F-12)
+        "exam_info_too_large":   (
+            "⚠ 考试信息文件过大——只有前 8 000 个字符会发送给 AI。"
+            "建议精简文件内容以获得最佳效果。"
+        ),
+        # Document generation / export labels in chat
+        "doc_generated":      "📄 {label} 已生成：",
+        "open_folder":        "[打开文件夹]",
+        "exporting_fmt":      "⏳ 正在导出 {fmt}…",
+        "export_done":        "📥 {fmt} 导出：{name}",
+        "export_failed":      "⚠️ 导出失败：{error}",
+        # Session save failure (shown inline in chat)
+        "session_save_failed": (
+            "⚠️ 会话无法保存——下次启动时更改可能丢失。"
+            "请检查磁盘空间和文件夹权限。"
+        ),
+        # Session version mismatch (shown inline in chat after loading)
+        "session_version_mismatch": (
+            "⚠️ 此会话由不同版本的 UACRAgent 保存，无法恢复。"
+            "请点击「新建会话」，重新添加文件后点击「应用」。"
+            "（会话文件夹：{ws}）"
+        ),
+        # Exam info file missing at Apply time
+        "exam_file_not_found": "警告：找不到考试信息文件：{path}",
         "error_status":       "错误：{error}",
         "indexing_failed":    "⚠️ 索引失败：{error}",
         "chat_error":         "⚠️ 错误：{error}",
@@ -654,6 +828,12 @@ _STRINGS: dict[str, dict[str, str]] = {
         "mb_delete_file_title":   "删除文件",
         "mb_delete_file_body":    "永久删除：\n{name}？",
         "mb_delete_fail_title":   "删除失败",
+        "mb_session_not_saved_title": "会话未保存",
+        "mb_session_not_saved_body": (
+            "您的会话无法保存。\n\n"
+            "自上次保存以来所做的更改可能在下次启动时丢失。\n"
+            "请检查磁盘空间和文件夹权限。"
+        ),
         "output_copy_dest_title": "选择目标文件夹",
         # File attachment / web search
         "attach_files_title": "选择要附加的文件",
@@ -808,7 +988,12 @@ _FONT_SIZE_VALUES: dict[str, int] = {
 # ---------------------------------------------------------------------------
 # OS helpers
 # ---------------------------------------------------------------------------
-def _open_in_os(path: str, *, reveal_folder: bool = False) -> None:
+def _open_in_os(
+    path: str,
+    *,
+    reveal_folder: bool = False,
+    on_error: "Callable[[str], None] | None" = None,
+) -> None:
     """Open *path* in the default OS application.
 
     Parameters
@@ -820,7 +1005,12 @@ def _open_in_os(path: str, *, reveal_folder: bool = False) -> None:
         rather than launching the folder's default handler.  On macOS and
         Linux the same ``open`` / ``xdg-open`` command handles both files
         and directories correctly so this flag has no effect there.
+    on_error:
+        Optional callback invoked with a human-readable error message when
+        the OS cannot open the path (e.g. the file was deleted).  If not
+        provided the error is silently logged.
     """
+    import logging as _logging
     system = platform.system()
     try:
         if system == "Darwin":
@@ -835,18 +1025,29 @@ def _open_in_os(path: str, *, reveal_folder: bool = False) -> None:
         else:
             proc = subprocess.Popen(["xdg-open", path])
             threading.Thread(target=proc.wait, daemon=True).start()
-    except Exception:
-        pass
+    except Exception as exc:
+        _logging.getLogger(__name__).warning("Could not open '%s': %s", path, exc)
+        if on_error:
+            try:
+                on_error(f"Could not open '{path}': {exc}")
+            except Exception:
+                pass
 
 
-def _open_file_in_os(path: str) -> None:
+def _open_file_in_os(
+    path: str,
+    on_error: "Callable[[str], None] | None" = None,
+) -> None:
     """Open *path* in the OS default application for that file type."""
-    _open_in_os(path, reveal_folder=False)
+    _open_in_os(path, reveal_folder=False, on_error=on_error)
 
 
-def _open_folder_in_os(path: str) -> None:
+def _open_folder_in_os(
+    path: str,
+    on_error: "Callable[[str], None] | None" = None,
+) -> None:
     """Open *path* as a directory in the OS file manager."""
-    _open_in_os(path, reveal_folder=True)
+    _open_in_os(path, reveal_folder=True, on_error=on_error)
 
 
 def _strip_markdown(text: str) -> str:
@@ -856,9 +1057,16 @@ def _strip_markdown(text: str) -> str:
     inline code backticks, and link syntax.  Intentionally simple — the goal
     is legibility in a monospaced plain-text box, not perfect round-tripping.
     """
-    # Bold / italic: **, __, *, _ (keep content, drop markers)
-    text = re.sub(r'\*{1,3}(.*?)\*{1,3}', r'\1', text)
-    text = re.sub(r'_{1,3}(.*?)_{1,3}', r'\1', text)
+    # Bold / italic: **, __, *, _ (keep content, drop markers).
+    # Use [^\n] instead of . so the pattern cannot span across line boundaries,
+    # which would cause a standalone bullet asterisk to consume the next line's
+    # closing marker and eat content.
+    text = re.sub(r'\*{1,3}([^\n]*?)\*{1,3}', r'\1', text)
+    text = re.sub(r'_{1,3}([^\n]*?)_{1,3}', r'\1', text)
+    # Clean up any lone asterisk/underscore left by unmatched markers
+    # (e.g. a "* item" bullet where the closing marker was on a later line).
+    text = re.sub(r'(?<!\w)\*(?!\w)', '', text)
+    text = re.sub(r'(?<!\w)_(?!\w)', '', text)
     # ATX headings: "# Title" → "Title"
     text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
     # Horizontal rules

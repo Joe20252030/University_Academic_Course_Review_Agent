@@ -81,6 +81,16 @@ except Exception:               # ImportError or Tcl/Tk extension not found
     _HAS_DND = False
 
 # ---------------------------------------------------------------------------
+# Module-level layout constants
+# ---------------------------------------------------------------------------
+
+# Gap (in pixels) between the rounded-rectangle canvas edge and the inner
+# text window for the chat-input field.  Defined once here so the three
+# independent usages (_build_chat_pane, _redraw_input_text_cv, and
+# _sync_input_text_cv_height) always stay in sync.
+_INPUT_CV_PAD: int = 4
+
+# ---------------------------------------------------------------------------
 # Main window
 # ---------------------------------------------------------------------------
 
@@ -656,7 +666,7 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         # Guards prevent any scroll when content fully fits in the viewport
         # (lo==0 and hi==1) and stop over-scroll past either end.
         import sys as _sys_plat
-        if _sys_plat.platform == "darwin":
+        if _sys_plat.platform.startswith("darwin"):
             self._msg_canvas.bind(
                 "<MouseWheel>",
                 lambda e: self._bounded_chat_scroll(int(-1 * e.delta)))
@@ -696,7 +706,6 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         #   row 2 — controls row        (Effort | spacer | [Sess Settings] | Send)
         self._input_max_lines = 12
         self._qa_chips: list          = []
-        self._input_block_seps: list  = []   # unused; kept for compat
         self._input_block_bgs: list[tk.Widget] = []
         self._effort_flat_widgets: list[tk.Widget] = []
 
@@ -724,7 +733,7 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         self._qa_chips.append(_qa_label)
         self._i18n_widgets.append((_qa_label, "text", "quick_actions"))
 
-        for _qa_key, _qa_msg in _QUICK_ACTIONS:
+        for _qa_key in _QUICK_ACTIONS:
             _chip = _RoundedChip(
                 chips_row,
                 text=self._t(_qa_key),
@@ -734,7 +743,11 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
                 font=("TkDefaultFont", 12),
                 padx=9, pady=4,
                 hover_bg=_c0.get("qa_bg_hover", _c0["qa_bg"]),
-                command=lambda m=_qa_msg: self._send_message(m),
+                # Look up the LLM message at click time so it uses whichever
+                # language the user has selected (qa_msg_<key> i18n entry).
+                command=lambda k=_qa_key: self._send_message(
+                    self._t(f"qa_msg_{k}")
+                ),
             )
             _chip.pack(side="left", padx=(0, 6))
             self._qa_chips.append(_chip)
@@ -758,8 +771,6 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         # the text widget's required height by _sync_input_text_cv_height().
         _inner_bg = _c0.get("text_bg", "#ffffff")
         _border   = _c0.get("input_border", "#cdd4e8")
-        _cv_pad   = 4   # gap between canvas edge and inner text window
-
         self._input_text_cv = tk.Canvas(
             _input_row,
             bg=_c0["input_bg"],
@@ -783,7 +794,7 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
             padx=10, pady=8,
         )
         self._input_text_cv_win = self._input_text_cv.create_window(
-            _cv_pad, _cv_pad, anchor="nw", window=self._input_text,
+            _INPUT_CV_PAD, _INPUT_CV_PAD, anchor="nw", window=self._input_text,
         )
         self._input_text.bind("<KeyRelease>", self._auto_resize_input)
         self._input_text.bind("<Return>",     self._on_return_key)
@@ -1305,8 +1316,6 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
 
         inner_bg = c.get("text_bg", "#ffffff")
         border   = c.get("input_border", "#cdd4e8")
-        _cv_pad  = 4
-
         self._input_text_cv.configure(bg=c["input_bg"])
         self._input_text_cv.delete("itf")
         # Inset 1 px so the 1-px outline is never clipped at the canvas edge.
@@ -1318,8 +1327,8 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         # Size the text window to fill inside the rounded rect
         self._input_text_cv.itemconfigure(
             self._input_text_cv_win,
-            width=max(1, w - 2 * _cv_pad),
-            height=max(1, h - 2 * _cv_pad),
+            width=max(1, w - 2 * _INPUT_CV_PAD),
+            height=max(1, h - 2 * _INPUT_CV_PAD),
         )
         self._input_text_cv.tag_raise(self._input_text_cv_win)
 
@@ -1461,8 +1470,7 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
             req_h = self._input_text.winfo_reqheight()
             if req_h < 2:
                 return
-            _cv_pad = 4
-            new_cv_h = req_h + 2 * _cv_pad
+            new_cv_h = req_h + 2 * _INPUT_CV_PAD
             cur_cv_h = self._input_text_cv.winfo_height()
             if abs(cur_cv_h - new_cv_h) > 1:
                 self._input_text_cv.configure(height=new_cv_h)
@@ -1503,11 +1511,12 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         # is the only reliable way to show the error before the window is gone.
         if not self._save_current_session():
             from tkinter import messagebox as _mb
+            # Native blocking dialog intentional: self.destroy() follows
+            # immediately below, so a Toplevel-based dialog would race with
+            # window destruction and never render.
             _mb.showwarning(
-                "Session Not Saved",
-                "Your session could not be saved.\n\n"
-                "Changes made since the last save may be lost on next launch.\n"
-                "Check available disk space and folder permissions.",
+                self._t("mb_session_not_saved_title"),
+                self._t("mb_session_not_saved_body"),
                 parent=self,
             )
 
@@ -1689,8 +1698,12 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
                         getattr(self, "_thinking_status", ""), elapsed))
             except Exception:
                 pass
-        # Schedule the next tick
-        self._timer_after_id = self.after(500, self._tick_timer)
+        # Schedule the next tick — guard against TclError if the window
+        # has already been destroyed (e.g. rapid quit during a run).
+        try:
+            self._timer_after_id = self.after(500, self._tick_timer)
+        except tk.TclError:
+            self._timer_after_id = None
 
     # ------------------------------------------------------------------
     # Scrollable message-bubble canvas helpers
@@ -1827,7 +1840,10 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
 # ---------------------------------------------------------------------------
 def main() -> None:
     from dotenv import load_dotenv
-    from uacragent.infra.persistence import configure_hf_cache, get_app_data_dir
+    from uacragent.infra.persistence import configure_hf_cache, configure_logging, get_app_data_dir
+
+    # ── Logging: first — captures everything that follows, including startup errors.
+    configure_logging()
 
     # Load .env from the app workspace folder (~/.uacragent/.env) so the app
     # picks up API keys regardless of which directory it was launched from.
@@ -1838,8 +1854,8 @@ def main() -> None:
         load_dotenv(_app_env)
     load_dotenv()   # cwd fallback; won't override keys already loaded above
 
-    # Redirect HuggingFace model downloads into the app data folder so all
-    # agent data lives in one place.  Must run before any HF import.
+    # Redirect local model downloads into the app data folder so all agent
+    # data lives in one place.  Must run before any local-model backend import.
     configure_hf_cache()
 
     # Warn about env vars that look like uacragent settings but aren't recognised

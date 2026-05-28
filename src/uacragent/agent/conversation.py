@@ -78,8 +78,13 @@ def _extract_file_text(path: str, mime: str) -> str:
     """Extract text from a file given its path and MIME type.
 
     Uses PyPDFLoader for PDFs, Docx2txtLoader for Word documents, and
-    plain utf-8 text reading for all other supported text-based formats.
-    Returns extracted text, or an error notice string on failure.
+    plain utf-8 text reading for known text-based formats (``_TEXT_MIMES``).
+    Returns extracted text, or an error/notice string on failure.
+
+    Unknown / binary MIME types (e.g. ``application/octet-stream``, Excel
+    spreadsheets) are explicitly rejected rather than decoded as UTF-8, which
+    would produce kilobytes of ``\\uFFFD`` replacement characters that waste
+    token budget and confuse the LLM.
     """
     try:
         if mime == "application/pdf":
@@ -90,8 +95,16 @@ def _extract_file_text(path: str, mime: str) -> str:
             from langchain_community.document_loaders import Docx2txtLoader
             docs = Docx2txtLoader(path).load()
             return "\n\n".join(d.page_content for d in docs)
-        else:
+        elif mime in _TEXT_MIMES:
             return Path(path).read_text(encoding="utf-8", errors="replace")
+        else:
+            # Unsupported binary or unknown type — do not attempt to decode.
+            return (
+                f"[UNSUPPORTED FILE TYPE: '{Path(path).name}' has MIME type "
+                f"'{mime}' which cannot be extracted as text.  Please inform "
+                f"the user that this file type is not supported and ask them to "
+                f"convert it to PDF, DOCX, or plain text before attaching.]"
+            )
     except Exception as exc:  # noqa: BLE001
         # Return a clearly-marked error block so the LLM treats it as a signal
         # rather than as file content, and can tell the user what went wrong.
@@ -117,27 +130,38 @@ def _build_human_message(
     message_text: str,
     attachments: list[dict],
     provider_id: str,
-) -> "HumanMessage":
+) -> "tuple[HumanMessage, list[str]]":
     """Build a HumanMessage with optional multimodal content parts.
 
     For image attachments: base64-encoded inline ``image_url`` content parts.
     For PDFs / Word docs / text files: extracted text appended to the message.
     When there are no attachments, returns a plain HumanMessage(content=...).
 
-    Safety limits (applied silently with a log warning):
+    Safety limits (applied with a log warning + UI-facing warning string):
     - Maximum ``_MAX_ATTACHMENTS`` (5) files per message.
     - Each file must be under ``_MAX_ATTACHMENT_BYTES`` (10 MB).
     - Total extracted text from all non-image files is capped at
       ``_MAX_EXTRACTED_TEXT_CHARS`` (20 000 chars).
+
+    Returns:
+        (HumanMessage, warnings) where *warnings* is a list of human-readable
+        strings describing any attachments that were skipped or truncated.
+        The caller should surface these in the chat UI.
     """
     if not attachments:
-        return HumanMessage(content=message_text)
+        return HumanMessage(content=message_text), []
 
     # Cap number of attachments
+    ui_warnings: list[str] = []
     if len(attachments) > _MAX_ATTACHMENTS:
+        dropped = len(attachments) - _MAX_ATTACHMENTS
         _logger.warning(
             "Received %d attachments — capping to %d.",
             len(attachments), _MAX_ATTACHMENTS,
+        )
+        ui_warnings.append(
+            f"{dropped} attachment(s) were not sent — only the first "
+            f"{_MAX_ATTACHMENTS} files per message are allowed."
         )
         attachments = attachments[:_MAX_ATTACHMENTS]
 
@@ -160,9 +184,14 @@ def _build_human_message(
                 "Attachment '%s' is %.1f MB — exceeds 10 MB limit; skipping.",
                 Path(path).name, size_mb,
             )
+            fname = Path(path).name
             extra_text_blocks.append(
-                f"\n\n[Attachment '{Path(path).name}' was skipped: "
+                f"\n\n[Attachment '{fname}' was skipped: "
                 f"file size {size_mb:.1f} MB exceeds the 10 MB limit.]"
+            )
+            ui_warnings.append(
+                f"'{fname}' was not included — file size {size_mb:.1f} MB "
+                f"exceeds the 10 MB limit."
             )
             continue
         mime = att.get("mime", "application/octet-stream")
@@ -181,6 +210,9 @@ def _build_human_message(
                 extra_text_blocks.append(
                     f"[Could not encode image {name}: {exc}]"
                 )
+                ui_warnings.append(
+                    f"'{name}' could not be attached — image encoding failed: {exc}"
+                )
         else:
             # Text-based or document file — extract and append as text.
             # Check total extracted text budget before extraction.
@@ -195,6 +227,10 @@ def _build_human_message(
                     f"total extracted text limit of {_MAX_EXTRACTED_TEXT_CHARS} "
                     f"characters was already reached.]"
                 )
+                ui_warnings.append(
+                    f"'{name}' was not included — the {_MAX_EXTRACTED_TEXT_CHARS:,}-character "
+                    f"text budget was already reached by earlier attachments."
+                )
                 continue
             extracted = _extract_file_text(path, mime)
             # Truncate this file's extracted text to stay within the budget
@@ -205,6 +241,10 @@ def _build_human_message(
                     name, remaining,
                 )
                 extracted = extracted[:remaining] + "\n[... truncated — text limit reached]"
+                ui_warnings.append(
+                    f"'{name}' was partially included — text was truncated at "
+                    f"{remaining:,} characters to stay within the message budget."
+                )
             total_extracted_chars += len(extracted)
             extra_text_blocks.append(
                 f"\n\n--- Attached file: {name} ---\n{extracted}\n---"
@@ -218,9 +258,9 @@ def _build_human_message(
     if parts:
         # Multimodal content list: text part first, then image parts
         content: list = [{"type": "text", "text": full_text}] + parts
-        return HumanMessage(content=content)
+        return HumanMessage(content=content), ui_warnings
     else:
-        return HumanMessage(content=full_text)
+        return HumanMessage(content=full_text), ui_warnings
 
 
 def _settings_for_session(base: Settings, session: AgentSession) -> Settings:
@@ -244,6 +284,20 @@ def _settings_for_session(base: Settings, session: AgentSession) -> Settings:
 # Localised strings used inside agent responses
 # ---------------------------------------------------------------------------
 
+# Progress message shown in the "thinking" bubble while the summarisation LLM
+# Localised progress message shown to the user when the history-compaction LLM
+# call fires.  This fires only when chat history exceeds the trim budget, so it
+# may surprise users who see a second LLM call after receiving a reply.
+_SUMMARISING_HISTORY_MSGS: dict[str, str] = {
+    "en": (
+        "Compacting conversation history… (the AI is summarising earlier turns "
+        "to stay within the context limit — this is not a new reply)"
+    ),
+    "zh_CN": (
+        "正在压缩对话历史……（AI 正在总结早期对话以保持在上下文限制内——这不是新的回复）"
+    ),
+}
+
 # Strings returned by initialize_session() as the session-status message.
 _INIT_STATUS: dict[str, dict[str, str]] = {
     "en": {
@@ -252,14 +306,19 @@ _INIT_STATUS: dict[str, dict[str, str]] = {
             "Add files in the Session Settings panel and click **Apply** to index them."
         ),
         "ready_cached": (
-            "Session ready. {n_files} file(s) across {n_types} "
-            "document type(s) already indexed."
+            "✓ {n_files} file(s) across {n_types} document type(s) already indexed."
         ),
+        # This string is shown directly in the chat bubble on completion.
+        # It must be self-contained: starts with ✓ so it reads as a success
+        # notice without any additional wrapper added by the UI.
         "ready_indexed": (
-            "Session ready. Indexed {n_files} file(s) across {n_types} document "
-            "type(s). You can now ask questions or request a study document."
+            "✓ Indexed {n_files} file(s) across {n_types} document type(s). "
+            "You can now ask questions or request a study document."
         ),
-        "init_failed": "Failed to initialise session: {exc}",
+        # Shown directly in the chat bubble on failure (no additional wrapper).
+        # The ⚠️ prefix is the visual error signal; {exc} carries the full
+        # explanation (e.g. from ConfigurationError, it is already user-friendly).
+        "init_failed": "⚠️ {exc}",
     },
     "zh_CN": {
         "no_docs": (
@@ -267,13 +326,13 @@ _INIT_STATUS: dict[str, dict[str, str]] = {
             "请在会话设置面板添加文件，然后点击**应用**进行索引。"
         ),
         "ready_cached": (
-            "会话就绪。已有 {n_files} 个文件（{n_types} 种文档类型）完成索引。"
+            "✓ 已完成索引：{n_files} 个文件（{n_types} 种文档类型）。"
         ),
         "ready_indexed": (
-            "会话就绪。已成功索引 {n_files} 个文件（{n_types} 种文档类型）。"
+            "✓ 已成功索引 {n_files} 个文件（{n_types} 种文档类型）。"
             "您可以提问或请求生成学习文档。"
         ),
-        "init_failed": "会话初始化失败：{exc}",
+        "init_failed": "⚠️ {exc}",
     },
 }
 
@@ -365,6 +424,9 @@ class ChatResponse:
     output_path: str | None = None  # set when a task document was generated
     task_type: str | None = None    # the TaskType value that was triggered, if any
     error: str | None = None        # set when generation failed
+    attachment_warnings: list[str] = field(default_factory=list)
+    # ^ human-readable warnings for attachment issues (too large, encode fail,
+    #   text budget exceeded, vision stripped).  Shown in the chat UI after reply.
 
 
 class ConversationAgent:
@@ -434,8 +496,7 @@ class ConversationAgent:
                             None,   # no warning
                         )
                 except Exception as exc:  # noqa: BLE001
-                    import logging as _logging
-                    _logging.getLogger(__name__).warning(
+                    _logger.warning(
                         "Fast-path session restore failed (falling back to full "
                         "re-indexing — this may incur additional API usage): %s",
                         exc, exc_info=True,
@@ -517,6 +578,7 @@ class ConversationAgent:
         # Text-based attachments (PDFs, docs, plain text) are always allowed
         # since they are extracted to text before being sent to the LLM.
         effective_attachments = list(attachments or [])
+        vision_warnings: list[str] = []
         if not _provider_supports_vision(provider_id):
             image_atts = [
                 a for a in effective_attachments
@@ -527,6 +589,14 @@ class ConversationAgent:
                     "Provider '%s' does not support image/vision inputs; "
                     "stripping %d image attachment(s) from the message.",
                     provider_id, len(image_atts),
+                )
+                stripped_names = ", ".join(
+                    f"'{a.get('name', Path(a.get('path', '')).name)}'"
+                    for a in image_atts
+                )
+                vision_warnings.append(
+                    f"Image attachment(s) {stripped_names} were not sent — "
+                    f"the current provider ({provider_id}) does not support images."
                 )
                 effective_attachments = [
                     a for a in effective_attachments
@@ -542,9 +612,11 @@ class ConversationAgent:
         # Use snapshot() to get a consistent, lock-safe copy of history.
         # This prevents a concurrent cancel from mutating the list mid-iteration.
         messages.extend(session.chat_history.snapshot())
-        messages.append(
-            _build_human_message(message, effective_attachments, provider_id)
+        human_msg, att_warnings = _build_human_message(
+            message, effective_attachments, provider_id
         )
+        messages.append(human_msg)
+        all_warnings: list[str] = vision_warnings + att_warnings
 
         # -- 3. Call LLM (use session provider/model if different from default) --
         llm = LLMClient(_settings_for_session(self.settings, session))
@@ -564,7 +636,10 @@ class ConversationAgent:
                 assistant_text = str(content)
         except Exception as exc:  # noqa: BLE001
             error_msg = f"LLM call failed: {exc}"
-            return ChatResponse(text=error_msg, error=error_msg)
+            return ChatResponse(
+                text=error_msg, error=error_msg,
+                attachment_warnings=all_warnings,
+            )
 
         # -- 4. Detect and strip task marker -----------------------------------
         task_type, clean_text = _extract_task_marker(assistant_text)
@@ -606,13 +681,14 @@ class ConversationAgent:
             HumanMessage(content=message),
             AIMessage(content=reply),
         )
-        self._smart_trim_history(session, llm)
+        self._smart_trim_history(session, llm, progress_cb=progress_cb, language=language)
 
         return ChatResponse(
             text=reply,
             output_path=output_path,
             task_type=task_type,
             error=generation_error,
+            attachment_warnings=all_warnings,
         )
 
     # ------------------------------------------------------------------
@@ -646,8 +722,25 @@ class ConversationAgent:
 
             if not docs:
                 return "*(No relevant excerpts found in the uploaded documents.)*"
-            return "\n\n".join(d.page_content for d in docs)
+            # Cap total context size to avoid blowing up smaller-context-window
+            # providers (e.g. DeepSeek).  Each chunk can be several thousand
+            # chars; at High effort with k=12 the uncapped total can exceed
+            # 48 000 chars.  Truncating here keeps the system prompt lean.
+            _MAX_CONTEXT_CHARS = 24_000
+            parts: list[str] = []
+            total = 0
+            for doc in docs:
+                chunk = doc.page_content
+                if total + len(chunk) > _MAX_CONTEXT_CHARS:
+                    remaining = _MAX_CONTEXT_CHARS - total
+                    if remaining > 200:   # worth including a partial chunk
+                        parts.append(chunk[:remaining] + "\n[... context truncated]")
+                    break
+                parts.append(chunk)
+                total += len(chunk)
+            return "\n\n".join(parts)
         except Exception:  # noqa: BLE001
+            _logger.warning("Context retrieval failed; falling back to general knowledge.", exc_info=True)
             return "*(Context retrieval failed — answers are based on general knowledge only.)*"
 
     def _render_system_prompt(
@@ -742,6 +835,8 @@ class ConversationAgent:
         self,
         session: AgentSession,
         llm_client: "LLMClient",
+        progress_cb: "Callable[[str], None] | None" = None,
+        language: str = "en",
     ) -> None:
         """Token-budget trim with LLM summarisation of dropped turns.
 
@@ -788,7 +883,27 @@ class ConversationAgent:
 
         turns: list[tuple] = []
         for i in range(0, len(snapshot) - 1, 2):
-            turns.append((snapshot[i], snapshot[i + 1]))
+            human_msg, ai_msg = snapshot[i], snapshot[i + 1]
+            # Validate pair order — misaligned turns produce garbage summaries.
+            if not isinstance(human_msg, HumanMessage) or not isinstance(ai_msg, AIMessage):
+                _logger.warning(
+                    "Turn pair at index %d is not (HumanMessage, AIMessage) — "
+                    "found (%s, %s).  Dropping misaligned pair and continuing trim.",
+                    i, type(human_msg).__name__, type(ai_msg).__name__,
+                )
+                # Remove the bad pair from the live store so it cannot pollute
+                # subsequent calls.  We do NOT bail out entirely — that would
+                # leave history unbounded if this condition is persistent.
+                # The next save() will persist the corrected store.
+                good_msgs = [m for m in snapshot if m is not human_msg and m is not ai_msg]
+                session.chat_history.replace_all(good_msgs)
+                # Restart trim with the corrected snapshot.
+                self._smart_trim_history(
+                    session, llm_client,
+                    language=language, progress_cb=progress_cb,
+                )
+                return
+            turns.append((human_msg, ai_msg))
 
         min_turns = _KEEP_FIRST_TURNS + _KEEP_LAST_TURNS + 1
         if len(turns) < min_turns:
@@ -820,12 +935,22 @@ class ConversationAgent:
         if not dropped_middle:
             return  # nothing actually needed dropping
 
-        # Summarise dropped turns (merges with any existing summary)
+        # Summarise dropped turns (merges with any existing summary).
+        # Notify the UI so the user understands why another LLM call fires.
+        if progress_cb:
+            try:
+                _summ_msg = _SUMMARISING_HISTORY_MSGS.get(
+                    language, _SUMMARISING_HISTORY_MSGS["en"]
+                )
+                progress_cb(_summ_msg)
+            except Exception:  # noqa: BLE001
+                _logger.debug("progress_cb raised during history compression.", exc_info=True)
         dropped_msgs = [m for t in dropped_middle for m in t]
         new_summary = self._summarise_turns(
             dropped_msgs,
             existing_summary=session.history_summary,
             llm_client=llm_client,
+            language=language,
         )
 
         # Rebuild the in-memory store atomically
@@ -847,12 +972,14 @@ class ConversationAgent:
         messages: list,
         existing_summary: str,
         llm_client: "LLMClient",
+        language: str = "en",
     ) -> str:
         """Return a 3-5 sentence summary of *messages*, merged with *existing_summary*.
 
         Called only when history exceeds the token budget.  Uses a short,
         focused prompt so the call is fast and cheap.  On any failure a plain
-        fallback string is returned so the trim still proceeds.
+        fallback string (in the correct *language*) is returned so the trim
+        still proceeds.
         """
         # Build a condensed transcript of the turns to summarise.
         # Cap individual messages at 800 chars so one massive AI response
@@ -903,6 +1030,13 @@ class ConversationAgent:
             n_turns = len(messages) // 2
             if existing_summary:
                 return existing_summary  # keep what we had rather than losing it
+            # Use a localised fallback so Chinese-locale users don't see an
+            # English placeholder injected into their chat history.
+            if language.startswith("zh"):
+                return (
+                    f"[本次会话早期记录：涵盖了 {n_turns} 轮对话，"
+                    "讨论了课程材料、相关问题和学习主题。]"
+                )
             return (
                 f"[Earlier in this session: {n_turns} conversation turns covered "
                 "course material, questions, and study topics.]"

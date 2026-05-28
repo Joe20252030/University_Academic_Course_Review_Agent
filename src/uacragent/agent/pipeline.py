@@ -278,6 +278,23 @@ def write_section(
     user_prefs: dict | None = None,
     language: str = "en",
 ) -> str:
+    """Write the prose body for a single outline section.
+
+    Retrieves relevant documents from *retriever* using the section title and
+    key topics as the query, then calls *llm_client* with the appropriate task
+    writer prompt to produce the section's Markdown text.
+
+    Args:
+        section:     The :class:`SectionSpec` describing this outline entry.
+        retriever:   A LangChain retriever backed by the session's vectorstore.
+        llm_client:  The configured LLM wrapper for this session.
+        user_prefs:  Optional dict from :meth:`Session.to_user_prefs` carrying
+                     course metadata, task type, and effort level.
+        language:    BCP-47 locale tag forwarded to the writer prompt.
+
+    Returns:
+        The section body as a Markdown string.
+    """
     user_prefs = user_prefs or {}
 
     query = section.title + " " + " ".join(section.key_topics)
@@ -355,7 +372,10 @@ def write_sections_sequential(
     n = len(sections)
     for i, section in enumerate(sections):
         if cancel_event and cancel_event.is_set():
-            return []
+            # Return whatever has been completed so far instead of discarding
+            # all work — a cancellation at 90% completion should still yield
+            # the already-written sections rather than an empty document.
+            return results
         if progress_cb:
             progress_cb(f"Writing section {i + 1}/{n}: {section.title}…")
         text = write_section(section, retriever, llm_client, user_prefs, language=language)
@@ -368,7 +388,7 @@ def write_sections_sequential(
                 )
             # Interruptible sleep before the critic call so cancel is responsive.
             if _interruptible_sleep(request_delay):
-                return []
+                return results  # return partial results, not empty list
             text = apply_critic_pass(
                 section_text=text,
                 section_title=section.title,
@@ -382,7 +402,7 @@ def write_sections_sequential(
             # Interruptible sleep: check cancel every 0.1 s so cancellation is
             # responsive even during long rate-limit delays.
             if _interruptible_sleep(request_delay):
-                return []
+                return results  # return partial results, not empty list
     return results
 
 
@@ -445,6 +465,25 @@ def assemble_markdown(
     paper_text: str = "",
     language: str = "en",
 ) -> str:
+    """Combine a :class:`ReviewPlan` and its written section bodies into a
+    single cohesive Markdown document.
+
+    Builds a rich header (course title, university, major, date) and joins each
+    section body under its title heading.  When *paper_text* is provided it is
+    appended as an appendix.
+
+    Args:
+        plan:        The review plan produced by :func:`generate_plan`.
+        sections:    List of prose bodies in the same order as *plan.sections*.
+        task_type:   Task-type string (e.g. ``"review_summary"`` or
+                     ``"mock_exam"``).  Controls the document title suffix.
+        paper_text:  Optional plain-text content of an uploaded exam paper to
+                     append as an appendix.
+        language:    BCP-47 locale tag used for the title suffix lookup.
+
+    Returns:
+        The assembled document as a single Markdown string.
+    """
     try:
         tt = TaskType(task_type)
     except ValueError:
@@ -636,6 +675,7 @@ class AgentPipeline:
             max_docs=scaled_max_docs,
             chars_per_doc=scaled_chars,
             _outline_override=outline_text,
+            language=language,
         )
 
         if not plan.sections:

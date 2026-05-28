@@ -36,6 +36,8 @@ What is stored locally:
 - When files are copied into a workspace, they are stored under
   `<workspace>/.uacragent/uploads/`.
 - Local embedding models are cached under `<app_data_dir>/models/`.
+- In frozen standalone app builds, the ONNX local embedding model is also kept
+  inside `<app_data_dir>/models/chroma/onnx_models/`.
 
 What is not written to session files:
 
@@ -63,8 +65,8 @@ Provider and deployment notes:
   This still leaves chat/generation requests going to the selected LLM
   provider unless you also choose a different runtime architecture outside the
   current app.
-- Local embeddings download a model on first use from the HuggingFace
-  ecosystem, then reuse the local cache afterward.
+- Local embeddings download their model backend on first use, then reuse the
+  local cache afterward.
 - On first launch, the desktop GUI shows a privacy notice that must be accepted
   before use. You can reopen the notice later from App Settings, and the
   session settings dialog also shows a provider-specific privacy reminder and
@@ -163,7 +165,7 @@ Backend note:
   `sentence-transformers` / HuggingFace stack.
 - In frozen standalone app builds, local embeddings use Chroma's ONNX-based
   `all-MiniLM-L6-v2` path instead of the PyTorch stack for packaging
-  reliability.
+  reliability, but the downloaded model still stays inside `<app_data_dir>/models/`.
 
 ## Exam Types
 
@@ -240,6 +242,10 @@ Notes:
   local cache afterward.
 - Source installs use `sentence-transformers` for local embeddings.
 - Frozen app builds use Chroma's ONNX embedding runtime for local embeddings.
+- Standalone app builds also rely on `onnxruntime` and `tiktoken`, which are
+  listed in `requirements.txt`.
+- Frozen app builds download the ONNX local embedding model into
+  `<app_data_dir>/models/chroma/onnx_models/` on first use.
 
 ## Install
 
@@ -257,6 +263,36 @@ Notes:
 The editable install is recommended because this repository uses a `src/`
 layout. Without it, `python -m uacragent` will not resolve unless you
 manually set `PYTHONPATH=src`.
+
+### Standalone App Builds
+
+The repository also includes PyInstaller spec files for building standalone
+desktop app distributions:
+
+- macOS: `UACRAgent_mac.spec`
+- Windows: `UACRAgent_win.spec`
+
+Typical build setup:
+
+- Install the normal project dependencies first.
+- Install PyInstaller separately:
+  - `pip install pyinstaller`
+  - if you build with Python 3.10, also install `tomli`
+
+Typical build commands:
+
+- macOS: `pyinstaller UACRAgent_mac.spec`
+- Windows: `pyinstaller UACRAgent_win.spec`
+
+Expected outputs:
+
+- macOS: `dist/UACRAgent.app`
+- Windows: `dist/UACRAgent/` containing `UACRAgent.exe` and bundled files
+
+Build note:
+
+- Frozen standalone builds use the ONNX local embedding path rather than the
+  `sentence-transformers` / PyTorch stack for packaging reliability.
 
 ## Configure
 
@@ -312,7 +348,8 @@ Embedding configuration:
 
 For local embeddings, you can choose the downloaded model with
 `LOCAL_EMBEDDING_MODEL` in source installs. Frozen app builds currently use the
-bundled ONNX `all-MiniLM-L6-v2` path for local embeddings.
+bundled ONNX `all-MiniLM-L6-v2` path for local embeddings, downloaded on first
+use into `<app_data_dir>/models/chroma/onnx_models/`.
 
 > Security note: API key fields are excluded from `Settings` repr output, and
 > the desktop session persistence layer intentionally does not write API keys to disk.
@@ -352,11 +389,11 @@ Sections are written **sequentially** (one at a time) to avoid overwhelming the
 API. The app now uses a named `RATE_TIER` by default, which maps to concrete
 delay/retry settings:
 
-| Tier        | Delay | Retries | Base Retry Delay | Typical Use |
-|-------------|-------|---------|------------------|-------------|
-| `free`      | `6.0` | `4`     | `20.0`           | Free and trial plans |
-| `standard`  | `0.5` | `3`     | `8.0`            | Entry paid plans |
-| `pro`       | `0.1` | `2`     | `3.0`            | Higher paid tiers |
+| Tier        | Delay | Retries | Base Retry Delay | Typical Use              |
+|-------------|-------|---------|------------------|--------------------------|
+| `free`      | `6.0` | `4`     | `20.0`           | Free and trial plans     |
+| `standard`  | `0.5` | `3`     | `8.0`            | Entry paid plans         |
+| `pro`       | `0.1` | `2`     | `3.0`            | Higher paid tiers        |
 | `unlimited` | `0.0` | `1`     | `2.0`            | Very high-capacity plans |
 
 If you prefer raw numeric overrides, clear `RATE_TIER` and then set
@@ -577,8 +614,9 @@ Notes:
   app settings button and takes full effect after restarting the app.
 - Global appearance settings are persisted in the bootstrap config and include
   light/dark mode, small/medium/large font size, and `Auto` / `en` / `zh_CN` UI language.
-- Local embedding models are cached under `<app_data_dir>/models/` via
-  HuggingFace cache redirection.
+- Local embedding models are cached under `<app_data_dir>/models/`, including
+  the frozen app's ONNX backend under
+  `<app_data_dir>/models/chroma/onnx_models/`.
 - All agent-generated files inside a workspace are grouped under
   `<workspace>/.uacragent/` so they stay separate from the user’s own files.
 - Once a session has been created and its workspace committed, that workspace
@@ -672,7 +710,8 @@ directory in the same way as the CLI.
 
 The API likewise respects `EMBEDDING_PROVIDER`, `EMBEDDING_MODEL`, and
 `LOCAL_EMBEDDING_MODEL` in source installs. Frozen app builds use the ONNX
-local embedding path instead.
+local embedding path instead, but its downloaded model is still stored under
+`<app_data_dir>/models/chroma/onnx_models/`.
 
 `copy_to_workspace` controls whether uploaded source files are copied into the
 workspace's `.uacragent/uploads/` bundle during API generation. Leave it at
@@ -789,7 +828,7 @@ src/uacragent/
     vectorstore.py       Chroma vector store, manifest tracking, and weighted retriever
     llm.py               Provider-aware LLM client wrapper (Gemini / OpenAI / DeepSeek)
     auth.py              Provider-specific API key validation
-    persistence.py       Desktop session persistence, app-data config, and HF cache management
+    persistence.py       Desktop session persistence, app-data config, and local model cache management
     workspace.py         Workspace directory management with classified folders
   export/
     markdown.py          Markdown export
@@ -806,6 +845,7 @@ src/uacragent/
       _chat_mixin.py     Chat send/receive flow, indexing, and output-link UI
   assets/
     UACRAgent.icns      macOS app-bundle icon asset
+    logo_icns_source.png Source PNG used to generate the macOS ICNS asset
     logo_*.png/svg/ico  Desktop and package icon variants
 tests/
   test_domain.py         Domain model and enum tests
@@ -815,6 +855,8 @@ tests/
   test_workspace.py      Workspace path and directory tests
 app.py                   Lightweight importable helper for direct service calls
 .env.sample              Example environment configuration
+UACRAgent_mac.spec       PyInstaller spec for macOS standalone builds
+UACRAgent_win.spec       PyInstaller spec for Windows standalone builds
 LICENSE                  MIT license text
 ```
 
@@ -824,4 +866,4 @@ Thanks to the volunteer test users who helped exercise the desktop assistant,
 retrieval flow, workspace handling, and study-support UX during development.
 Their feedback helped make this agent better.
 
-- Test-user credits can be listed here once they are confirmed for public acknowledgement.
+- Test-user credits will be listed here once they are confirmed for public acknowledgement.

@@ -85,9 +85,10 @@ def _cli(args: argparse.Namespace) -> None:
     if not args.course_name:
         raise SystemExit("error: --course-name is required for the CLI")
 
-    # ── Startup: must run before any HuggingFace / sentence-transformers import
+    # ── Startup: must run before any local-model backend import
     from dotenv import load_dotenv
-    from uacragent.infra.persistence import configure_hf_cache, get_app_data_dir
+    from uacragent.infra.persistence import configure_hf_cache, configure_logging, get_app_data_dir
+    configure_logging()
     _app_env = get_app_data_dir() / ".env"
     if _app_env.exists():
         load_dotenv(_app_env)

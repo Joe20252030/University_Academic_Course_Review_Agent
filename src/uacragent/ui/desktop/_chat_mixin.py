@@ -439,6 +439,46 @@ class ChatMixin:
             self._agent = ConversationAgent(get_settings())
         return self._agent
 
+    def _make_progress_cb(
+        self,
+        *,
+        update_status_bar: bool = True,
+    ):
+        """Return a thread-safe progress callback for background operations.
+
+        The returned callable accepts a single *msg* string and dispatches two
+        ``after(0, ...)`` calls to the main thread:
+        - Updates the "thinking" bubble text (always).
+        - Updates ``_session_status_var`` (only when *update_status_bar* is True).
+
+        All UI calls are guarded against ``TclError`` (window destroyed) and
+        skipped when ``_cancel_event`` is set, so threads can call this freely
+        without checking cancellation themselves.
+        """
+        def _progress(msg: str) -> None:
+            if self._cancel_event.is_set():
+                return
+            try:
+                self.after(
+                    0,
+                    lambda m=msg: (
+                        self._show_thinking(m)
+                        if self.winfo_exists() else None
+                    ),
+                )
+                if update_status_bar:
+                    self.after(
+                        0,
+                        lambda m=msg: (
+                            self._session_status_var.set(m)
+                            if self.winfo_exists() else None
+                        ),
+                    )
+            except tk.TclError:
+                pass  # window destroyed before after() was queued
+
+        return _progress
+
     # ------------------------------------------------------------------
     # Session list management
     # ------------------------------------------------------------------
@@ -500,6 +540,11 @@ class ChatMixin:
 
         # ── Confirm local model download ───────────────────────────────
         if not self._confirm_model_download():
+            # User cancelled the download dialog.  Files are already committed
+            # to the session (by _sync_session_from_vars before this call) so
+            # they are preserved for the next Apply.  Show a clear notice so the
+            # user understands the session is incomplete and what to do next.
+            self._append_chat("system", self._t("warn_download_cancelled"))
             return
 
         # ── Start background indexing ──────────────────────────────────
@@ -521,7 +566,18 @@ class ChatMixin:
                 self._settings_status_var.set(busy_label)
             except tk.TclError:
                 pass
+        # Show the busy label as a chat bubble so the user can see what is
+        # happening even if they scroll up during a long operation.  The widget
+        # reference is stored so _dismiss_pending_status() can destroy it in
+        # the completion handler, replacing it cleanly with the result message.
+        self._pending_status_widget = None   # clear any stale reference first
         self._append_chat("system", busy_label)
+        # Grab the widget that _append_chat just packed into _msg_frame.
+        try:
+            _children = self._msg_frame.winfo_children()
+            self._pending_status_widget = _children[-1] if _children else None
+        except Exception:
+            self._pending_status_widget = None
 
         _show_err = show_error_dialog
         # Capture agent, language, session, and request token on the main thread.
@@ -531,30 +587,12 @@ class ChatMixin:
         captured_lang  = self._language_var.get()
         captured_token = self._request_token
 
+        _progress = self._make_progress_cb(update_status_bar=True)
+
         def _work() -> None:
             # Capture session at thread-start so a mid-flight session swap
             # (e.g. user clicks "New") cannot redirect this thread's writes.
             session = self._session
-            def _progress(msg: str) -> None:
-                if not self._cancel_event.is_set():
-                    try:
-                        self.after(
-                            0,
-                            lambda m=msg: (
-                                self._show_thinking(m)
-                                if self.winfo_exists() else None
-                            ),
-                        )
-                        self.after(
-                            0,
-                            lambda m=msg: (
-                                self._session_status_var.set(m)
-                                if self.winfo_exists() else None
-                            ),
-                        )
-                    except tk.TclError:
-                        pass  # window destroyed before after() was queued
-
             try:
                 agent = captured_agent
                 # force_reindex=False: let the manifest decide whether re-indexing
@@ -639,30 +677,12 @@ class ChatMixin:
         captured_lang  = self._language_var.get()
         captured_token = self._request_token
 
+        _progress = self._make_progress_cb(update_status_bar=True)
+
         def _work() -> None:
             # Capture session at thread-start so a mid-flight session swap
             # cannot redirect this thread's writes to the wrong session.
             session = self._session
-            def _progress(msg: str) -> None:
-                if not self._cancel_event.is_set():
-                    try:
-                        self.after(
-                            0,
-                            lambda m=msg: (
-                                self._show_thinking(m)
-                                if self.winfo_exists() else None
-                            ),
-                        )
-                        self.after(
-                            0,
-                            lambda m=msg: (
-                                self._session_status_var.set(m)
-                                if self.winfo_exists() else None
-                            ),
-                        )
-                    except tk.TclError:
-                        pass  # window destroyed before after() was queued
-
             try:
                 agent = captured_agent
                 # force_reindex=False: use fast path when Chroma is current.
@@ -697,6 +717,8 @@ class ChatMixin:
         fast_path_warning: str | None = None,
     ) -> None:
         """Completion handler for _attach_session_async."""
+        # Remove the in-progress status bubble before showing the result.
+        self._dismiss_pending_status()
         # Always release the busy lock so the UI is never permanently stuck.
         self._set_busy(False)
         # Discard stale results if the user switched to a different session
@@ -713,16 +735,12 @@ class ChatMixin:
         # Only add a chat notice when actual (re-)indexing was performed.
         # On the fast path the session is silently ready — no noise in chat.
         if not was_cached:
-            # retriever is None for two cases returned by initialize_session:
-            #   • "no_docs"    — no files loaded yet (status = informational msg)
-            #   • "init_failed" — exception caught (status = error string)
-            # Both should be shown as-is; neither gets the "✓ Documents indexed."
-            # wrapper which would be misleading in either case.
-            _no_retriever = getattr(session, "retriever", None) is None
-            if _no_retriever:
-                self._append_chat("system", status)
-            else:
-                self._append_chat("system", self._t("docs_indexed").format(status=status))
+            # Show the status string from initialize_session directly.
+            # All three cases are self-contained:
+            #   • "no_docs"      — informational (no documents loaded)
+            #   • "ready_indexed"— already starts with ✓ (success)
+            #   • "init_failed"  — already starts with ⚠️ (error)
+            self._append_chat("system", status)
         # Skip saving when the fast path was used: the session was loaded from
         # disk unchanged, so re-writing it would only bump last_modified pointlessly.
         if not was_cached:
@@ -735,6 +753,8 @@ class ChatMixin:
         fast_path_warning: str | None = None,
     ) -> None:
         """Completion handler for _start_indexing (the Apply path)."""
+        # Remove the in-progress status bubble before showing the result.
+        self._dismiss_pending_status()
         # Always release the busy lock so the UI is never permanently stuck.
         self._set_busy(False)
         # Discard stale results if the user replaced the session mid-flight.
@@ -748,26 +768,24 @@ class ChatMixin:
         if fast_path_warning:
             self._append_chat("system", fast_path_warning)
         # When the fast path was used (nothing index-relevant changed), show a
-        # lighter "settings saved" notice instead of "documents indexed".
+        # lighter "settings saved" notice instead of the indexing completion msg.
         if was_cached:
             self._append_chat("system", self._t("settings_saved_cached"))
         else:
-            # retriever is None for two cases returned by initialize_session:
-            #   • "no_docs"    — no files loaded yet (status = informational msg)
-            #   • "init_failed" — exception caught (status = error string)
-            # Both should be shown as-is; neither gets the "✓ Documents indexed."
-            # wrapper which would be misleading in either case.
-            _no_retriever = getattr(session, "retriever", None) is None
-            if _no_retriever:
-                self._append_chat("system", status)
-            else:
-                self._append_chat("system", self._t("docs_indexed").format(status=status))
+            # Show the status string returned by initialize_session directly.
+            # All three cases are self-contained:
+            #   • "no_docs"      — informational, no ✓ (no documents loaded)
+            #   • "ready_indexed"— already starts with ✓ (success)
+            #   • "init_failed"  — already starts with ⚠️ (error)
+            self._append_chat("system", status)
         self._save_current_session()
         self._refresh_session_list()
 
     def _on_session_load_error(
         self, error: str, session: object, show_dialog: bool = True
     ) -> None:
+        # Remove the in-progress status bubble before showing the error.
+        self._dismiss_pending_status()
         # Always release the busy lock so the UI is never permanently stuck.
         self._set_busy(False)
         # Discard stale errors from a session that is no longer active.
@@ -813,15 +831,11 @@ class ChatMixin:
         message = self._input_text.get("1.0", tk.END).strip()
         if not message:
             return
-        # Capture and clear attachments/search state before any thread starts
-        captured_attachments = list(self._pending_attachments)
-        captured_search      = self._search_active
-        self._pending_attachments.clear()
-        self._search_active = False
-        self._rebuild_attach_strip()
-        self._refresh_search_btn()
         # Use the committed session state — do NOT read live StringVars here.
         # Settings only take effect after the user clicks Apply.
+        # Pre-condition checks come BEFORE clearing attachments/search so that
+        # any early return (API key missing, course name missing) does not
+        # silently drop the user's pending attachments.
         provider = self._session.llm_provider or "gemini"
         env_var = env_var_for(provider)
         if not os.environ.get(env_var, "").strip():
@@ -836,6 +850,22 @@ class ChatMixin:
                 self._t("mb_course_name_send_body"))
             self._open_settings()
             return
+        # All pre-conditions passed — now capture and clear attachments/search.
+        captured_attachments = list(self._pending_attachments)
+        captured_search      = self._search_active
+        self._pending_attachments.clear()
+        self._search_active = False
+        self._rebuild_attach_strip()
+        self._refresh_search_btn()
+        # If the session has files that were never indexed (e.g. the user
+        # cancelled the model-download dialog), warn before every send so it is
+        # always clear why responses lack document context.  We do not block
+        # sending — the LLM can still give general answers without retrieval.
+        if (
+            self._session.has_files()
+            and getattr(self._session, "retriever", None) is None
+        ):
+            self._append_chat("system", self._t("warn_files_not_indexed"))
         self._input_text.delete("1.0", tk.END)
         self._append_chat("user", message)
         self._set_busy(True, self._t("thinking"))
@@ -857,20 +887,9 @@ class ChatMixin:
         captured_agent   = self._get_agent()
         captured_token   = self._request_token
 
-        def _work() -> None:
-            def _progress(msg: str) -> None:
-                if not self._cancel_event.is_set():
-                    try:
-                        self.after(
-                            0,
-                            lambda m=msg: (
-                                self._show_thinking(m)
-                                if self.winfo_exists() else None
-                            ),
-                        )
-                    except tk.TclError:
-                        pass  # window destroyed before after() was queued
+        _progress = self._make_progress_cb(update_status_bar=False)
 
+        def _work() -> None:
             try:
                 response = captured_agent.chat(
                     message, captured_session,
@@ -920,6 +939,10 @@ class ChatMixin:
         self._append_chat("assistant", response.text)
         if response.output_path:
             self._append_output_link(response.output_path, response.task_type, export_fmt)
+        # Surface any attachment warnings (too large, encode fail, text budget,
+        # vision not supported) as system messages below the assistant reply.
+        for warn in getattr(response, "attachment_warnings", []):
+            self._append_chat("system", f"⚠️ {warn}")
         self._save_current_session()
 
     def _on_chat_error(self, error: str, session: object) -> None:
@@ -958,6 +981,26 @@ class ChatMixin:
                 pass
         self._last_assistant_content = None
         self._thinking_lbl = None
+        self._pending_status_widget = None   # in-progress bubble to be replaced
+
+    def _dismiss_pending_status(self) -> None:
+        """Destroy the in-progress status bubble that was shown while an
+        indexing / loading operation was running.
+
+        Called at the top of every completion handler so the transient
+        "Indexing documents…" / "Loading session…" bubble is removed before
+        the final result message is appended — giving the user one clean
+        outcome message rather than two stacked messages.
+
+        Safe to call even when no pending widget exists.
+        """
+        w = getattr(self, "_pending_status_widget", None)
+        if w is not None:
+            try:
+                w.destroy()
+            except Exception:
+                pass
+            self._pending_status_widget = None
 
     def _show_idle(self) -> None:
         """Blank right panel shown at startup before any session is selected."""
@@ -1035,20 +1078,10 @@ class ChatMixin:
             )
             sys_text.pack(fill="x", pady=(2, 2))
 
-            def _sync_sys_height(_e=None, _w=sys_text):
-                try:
-                    _w.update_idletasks()
-                    n = _w.count("1.0", "end", "displaylines")
-                    if isinstance(n, tuple):
-                        n = n[0] if n else 1
-                    if n and n > 0:
-                        new_h = max(1, n)
-                        if int(str(_w.cget("height"))) != new_h:
-                            _w.configure(height=new_h)
-                except Exception:
-                    pass
-
-            sys_text.bind("<Configure>", _sync_sys_height)
+            sys_text.bind(
+                "<Configure>",
+                lambda _e, _w=sys_text: self._sync_text_height(_w),
+            )
             self._bind_chat_scroll(sys_text)
             self._dnd_register(sys_text)
             self._scroll_chat_to_bottom()
@@ -1060,6 +1093,27 @@ class ChatMixin:
         else:
             self._append_chat_assistant(c, card_bg, sz, text, _H_PAD, _V_PAD)
         self._scroll_chat_to_bottom()
+
+    @staticmethod
+    def _sync_text_height(widget: "tk.Text", _event=None) -> None:
+        """Resize *widget* to exactly fit its display-line count.
+
+        Bound to ``<Configure>`` on every read-only chat ``tk.Text`` widget.
+        Guards against configure-loop re-entrancy by only calling
+        ``configure(height=…)`` when the computed line count differs from the
+        current height setting.
+        """
+        try:
+            widget.update_idletasks()
+            n = widget.count("1.0", "end", "displaylines")
+            if isinstance(n, tuple):
+                n = n[0] if n else 1
+            if n and n > 0:
+                new_h = max(1, n)
+                if int(str(widget.cget("height"))) != new_h:
+                    widget.configure(height=new_h)
+        except Exception:  # noqa: BLE001
+            pass
 
     def _append_chat_user(self, c, card_bg, sz, text, _H_PAD, _V_PAD) -> None:
         """Render a user message inside a rounded box."""
@@ -1108,26 +1162,10 @@ class ChatMixin:
         )
         body_text.pack(fill="x")
 
-        def _sync_body_text_height(_e=None, _w=body_text):
-            """Resize the text widget height to exactly fit its display lines.
-
-            Guards against self-triggering Configure loops by only calling
-            configure() when the computed height actually differs from the
-            current height.
-            """
-            try:
-                _w.update_idletasks()
-                n = _w.count("1.0", "end", "displaylines")
-                if isinstance(n, tuple):
-                    n = n[0] if n else 1
-                if n and n > 0:
-                    new_h = max(1, n)
-                    if int(str(_w.cget("height"))) != new_h:
-                        _w.configure(height=new_h)
-            except Exception:
-                pass
-
-        body_text.bind("<Configure>", _sync_body_text_height)
+        body_text.bind(
+            "<Configure>",
+            lambda _e, _w=body_text: self._sync_text_height(_w),
+        )
 
         def _draw(_r=r, _bg=bubble_bg, _bd=border_col):
             cv.delete("bb")
@@ -1196,25 +1234,10 @@ class ChatMixin:
         )
         body_text.pack(fill="x")
 
-        def _sync_body_text_height(_e=None, _w=body_text):
-            """Resize the text widget height to exactly fit its display lines.
-
-            Guards against self-triggering Configure loops by only calling
-            configure() when the computed height actually differs.
-            """
-            try:
-                _w.update_idletasks()
-                n = _w.count("1.0", "end", "displaylines")
-                if isinstance(n, tuple):
-                    n = n[0] if n else 1
-                if n and n > 0:
-                    new_h = max(1, n)
-                    if int(str(_w.cget("height"))) != new_h:
-                        _w.configure(height=new_h)
-            except Exception:
-                pass
-
-        body_text.bind("<Configure>", _sync_body_text_height)
+        body_text.bind(
+            "<Configure>",
+            lambda _e, _w=body_text: self._sync_text_height(_w),
+        )
 
         self._last_assistant_content   = shell
         self._last_assistant_bubble_bg = card_bg
@@ -1250,7 +1273,7 @@ class ChatMixin:
         link_row.pack(fill="x", padx=12, pady=(0, 4))
 
         tk.Label(
-            link_row, text=f"📄 {label} generated: ",
+            link_row, text=self._t("doc_generated").format(label=label),
             bg=bubble_bg, fg=body_fg,
             font=("TkDefaultFont", sz),
         ).pack(side="left")
@@ -1264,14 +1287,20 @@ class ChatMixin:
             cursor="hand2",
         )
         file_lbl.pack(side="left")
-        file_lbl.bind("<Button-1>", lambda _e, p=output_path: _open_file_in_os(p))
+        file_lbl.bind(
+            "<Button-1>",
+            lambda _e, p=output_path: _open_file_in_os(
+                p,
+                on_error=lambda msg: self._append_chat("system", f"⚠️ {msg}"),
+            ),
+        )
 
         tk.Label(link_row, text="  ", bg=bubble_bg).pack(side="left")
 
         # Clickable open-folder label
         folder_lbl = tk.Label(
             link_row,
-            text="[Open folder]",
+            text=self._t("open_folder"),
             bg=bubble_bg, fg=c.get("link_folder_fg", "#6b7280"),
             font=("TkDefaultFont", sz, "underline"),
             cursor="hand2",
@@ -1279,7 +1308,10 @@ class ChatMixin:
         folder_lbl.pack(side="left")
         folder_lbl.bind(
             "<Button-1>",
-            lambda _e, p=output_path: _open_folder_in_os(str(Path(p).parent)),
+            lambda _e, p=output_path: _open_folder_in_os(
+                str(Path(p).parent),
+                on_error=lambda msg: self._append_chat("system", f"⚠️ {msg}"),
+            ),
         )
 
         # Propagate scroll from link row widgets
@@ -1290,7 +1322,7 @@ class ChatMixin:
         if export_fmt != ExportFormat.markdown.value and output_path.endswith(".md"):
             placeholder_lbl = tk.Label(
                 shell,
-                text=f"⏳ Exporting {export_fmt.upper()}…",
+                text=self._t("exporting_fmt").format(fmt=export_fmt.upper()),
                 bg=bubble_bg, fg=c.get("status_fg", "#6b7280"),
                 font=("TkDefaultFont", max(sz - 1, 10), "italic"),
                 anchor="w", padx=12, pady=4,
@@ -1325,18 +1357,22 @@ class ChatMixin:
                         return
                     if extra_path:
                         placeholder_lbl.configure(
-                            text=f"📥 {export_fmt.upper()} export: {Path(extra_path).name}",
+                            text=self._t("export_done").format(
+                                fmt=export_fmt.upper(), name=Path(extra_path).name),
                             fg=c.get("link_fg", "#1565c0"),
                             font=("TkDefaultFont", sz, "underline"),
                             cursor="hand2",
                         )
                         placeholder_lbl.bind(
                             "<Button-1>",
-                            lambda _e, p=extra_path: _open_file_in_os(p),
+                            lambda _e, p=extra_path: _open_file_in_os(
+                                p,
+                                on_error=lambda msg: self._append_chat("system", f"⚠️ {msg}"),
+                            ),
                         )
                     else:
                         placeholder_lbl.configure(
-                            text=f"⚠️ Export failed: {error}",
+                            text=self._t("export_failed").format(error=error),
                             fg=c.get("status_fg", "#6b7280"),
                         )
                     self._scroll_chat_to_bottom()
@@ -1396,11 +1432,7 @@ class ChatMixin:
         }
         ok = save_session(self._session, ui_extras)
         if not ok:
-            self._append_chat(
-                "system",
-                "⚠️ Session could not be saved — changes may be lost on next launch. "
-                "Check available disk space and folder permissions.",
-            )
+            self._append_chat("system", self._t("session_save_failed"))
         return ok
 
 

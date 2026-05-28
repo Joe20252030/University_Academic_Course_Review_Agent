@@ -1,18 +1,21 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
-from pydantic import AliasChoices, Field, model_validator
+from pydantic import AliasChoices, Field, field_serializer, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
+    # Do NOT set env_file here — the app's main() calls load_dotenv() before
+    # constructing Settings, which populates os.environ.  Having both would
+    # cause the .env to be read twice and, worse, the env_file path resolves
+    # relative to the current working directory at import time (which is "/"
+    # inside a macOS .app bundle), so pydantic-settings would silently find no
+    # file and the user's .env would be ignored in frozen builds.
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
         extra="ignore",
     )
 
@@ -94,6 +97,16 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("LLM_RETRY_BASE_DELAY", "llm_retry_base_delay"),
     )
 
+    # ------------------------------------------------------------------
+    # Security: redact API keys from serialisation (model_dump / JSON)
+    # so they are never written to logs, debug output, or config files.
+    # ------------------------------------------------------------------
+
+    @field_serializer("google_api_key", "openai_api_key", "deepseek_api_key")
+    def _redact_key(self, value: str) -> str:  # noqa: PLR6301
+        """Return a masked placeholder so model_dump() never exposes raw keys."""
+        return "***" if value else ""
+
     @model_validator(mode="after")
     def _apply_rate_tier(self) -> "Settings":
         """Override the three concrete rate fields with the selected tier's values.
@@ -140,12 +153,15 @@ _KNOWN_ALIASES: frozenset[str] = frozenset({
     "LLM_REQUEST_DELAY", "llm_request_delay",
     "LLM_MAX_RETRIES", "llm_max_retries",
     "LLM_RETRY_BASE_DELAY", "llm_retry_base_delay",
+    # Logging — not a pydantic-settings field but a recognised app env var.
+    "UACRAGENT_LOG_LEVEL",
 })
 
 # Only examine env vars whose names suggest they could be uacragent settings.
 _SUSPECT_PREFIXES: tuple[str, ...] = (
     "LLM_", "GOOGLE_", "OPENAI_", "DEEPSEEK_",
     "EMBEDDING_", "LOCAL_EMBEDDING_", "RETRIEVER_", "RATE_",
+    "UACRAGENT_",
 )
 
 

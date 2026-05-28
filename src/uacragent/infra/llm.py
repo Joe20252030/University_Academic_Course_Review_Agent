@@ -88,7 +88,7 @@ _LANGCHAIN_FACTORIES: dict[str, Callable[[Settings, str], Any]] = {
 # factory here, this assertion surfaces the problem immediately on startup.
 _missing_factories = [pid for pid in PROVIDERS if pid not in _LANGCHAIN_FACTORIES]
 if _missing_factories:
-    raise AssertionError(
+    raise ValueError(
         f"LLM factory registry is incomplete — the following providers are "
         f"registered in PROVIDERS but have no entry in _LANGCHAIN_FACTORIES: "
         f"{_missing_factories}. Add a factory function for each missing provider."

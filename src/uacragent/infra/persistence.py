@@ -7,7 +7,8 @@ Layout
 
 <app_data_dir>/                     ← configurable; defaults to ~/.uacragent
     index.json                      ← lightweight session registry
-    models/                         ← HuggingFace model cache (HF_HUB_CACHE)
+    models/                         ← app-managed local model cache root
+        chroma/onnx_models/         ← frozen-app ONNX embedding downloads
     sessions/                       ← auto-created workspaces (no user pick)
         <workspace_id>/
             .uacragent/             ← all agent artefacts in one bundle
@@ -35,6 +36,7 @@ from __future__ import annotations
 
 import json
 import logging
+import logging.handlers
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -65,16 +67,235 @@ def get_hf_cache_dir() -> Path:
     return get_app_data_dir() / "models"
 
 
+def get_chroma_onnx_models_dir() -> Path:
+    """Return the app-managed root for Chroma's ONNX embedding downloads."""
+    return get_hf_cache_dir() / "chroma" / "onnx_models"
+
+
+def get_chroma_onnx_model_dir(model_name: str = "all-MiniLM-L6-v2") -> Path:
+    """Return the app-managed folder for a specific Chroma ONNX model."""
+    return get_chroma_onnx_models_dir() / model_name
+
+
+def _configure_chroma_onnx_cache() -> None:
+    """Redirect Chroma's ONNX embedding download path into the app data dir."""
+    cache_root = get_chroma_onnx_models_dir()
+    cache_root.mkdir(parents=True, exist_ok=True)
+    try:
+        from chromadb.utils.embedding_functions.onnx_mini_lm_l6_v2 import (
+            ONNXMiniLM_L6_V2,
+        )
+    except Exception:
+        return
+
+    ONNXMiniLM_L6_V2.DOWNLOAD_PATH = get_chroma_onnx_model_dir(
+        ONNXMiniLM_L6_V2.MODEL_NAME
+    )
+
+
 def configure_hf_cache() -> None:
-    """Point HuggingFace Hub at the app-managed cache directory.
+    """Point local-model downloads at app-managed cache directories.
 
     Must be called before any ``huggingface_hub`` or ``sentence-transformers``
     import so the env var is in place when those libraries initialise.
+    Also redirects Chroma's frozen-app ONNX model download path into the same
+    app-managed models tree, and disables Chroma's anonymized telemetry so it
+    does not create side files outside the app-managed folders.
     """
     import os
     cache_dir = get_hf_cache_dir()
     cache_dir.mkdir(parents=True, exist_ok=True)
-    os.environ["HF_HUB_CACHE"] = str(cache_dir)
+    # Set all HuggingFace cache env vars so every HF/transformers/sentence-
+    # transformers code path — including legacy ones that pre-date HF_HUB_CACHE
+    # — writes into the app-managed directory rather than ~/.cache/huggingface/.
+    os.environ["HF_HUB_CACHE"]           = str(cache_dir)
+    os.environ["HF_HOME"]                 = str(cache_dir)
+    os.environ["TRANSFORMERS_CACHE"]      = str(cache_dir)
+    os.environ["SENTENCE_TRANSFORMERS_HOME"] = str(cache_dir)
+    os.environ["ANONYMIZED_TELEMETRY"] = "FALSE"
+    # Prevent HuggingFace tokenizer fork-safety warnings / deadlocks when the
+    # app forks (e.g. macOS multiprocessing).  Must be set before tokenisers
+    # are first imported.
+    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+    _configure_chroma_onnx_cache()
+    _redirect_chroma_telemetry_file()
+
+
+def _redirect_chroma_telemetry_file() -> None:
+    """Redirect ChromaDB's telemetry UUID file into the app data directory.
+
+    ChromaDB's ``Posthog`` client writes a one-time UUID to
+    ``~/.cache/chroma/telemetry_user_id`` the first time a ``Chroma(...)``
+    client is constructed — even when ``anonymized_telemetry=False``.
+
+    The root cause: ``_direct_capture`` evaluates ``self.user_id`` as a Python
+    argument expression *before* ``posthog.capture()`` can check
+    ``posthog.disabled`` and short-circuit.  No data is ever transmitted
+    (the network call is suppressed), but the UUID file lands outside the
+    app-managed directory tree.
+
+    Fix: patch the ``USER_ID_PATH`` class attribute to a path inside
+    ``<app_data_dir>/`` so the file stays within the expected boundary.
+    Must be called before any ``Chroma(...)`` construction.
+    """
+    try:
+        from chromadb.telemetry.product.posthog import Posthog
+        Posthog.USER_ID_PATH = str(get_app_data_dir() / "chroma_telemetry_user_id")
+    except Exception:
+        # chromadb not installed or telemetry class moved — safe to ignore.
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Application logging
+# ---------------------------------------------------------------------------
+
+# Third-party loggers that are extremely verbose at DEBUG / INFO.  We clamp
+# them to WARNING so they don't flood the log file with routine HTTP traces,
+# tokeniser progress bars, or ChromaDB heartbeat messages.
+_NOISY_LOGGERS: tuple[str, ...] = (
+    "httpx", "httpcore", "httpcore.http11", "httpcore.connection",
+    "openai", "openai._base_client",
+    "anthropic",
+    "google", "google.auth", "google.api_core",
+    "langchain", "langchain_core", "langchain_community",
+    "langchain_google_genai", "langchain_openai",
+    "chromadb", "chromadb.telemetry",
+    "sentence_transformers",
+    "huggingface_hub", "huggingface_hub.utils",
+    "transformers",
+    "posthog",
+    "PIL",
+    "urllib3", "urllib3.connectionpool",
+    "asyncio",
+)
+
+
+class _ResilientRotatingFileHandler(logging.handlers.RotatingFileHandler):
+    """RotatingFileHandler that reopens the log file if it was deleted at runtime.
+
+    The standard ``RotatingFileHandler`` keeps the file descriptor open.  On
+    Unix/macOS, deleting the file while the app is running leaves the fd valid
+    (the kernel keeps the inode alive), so writes silently succeed but go
+    nowhere on disk — the data is lost when the process closes the fd.
+
+    This subclass checks on every ``emit()`` whether the file still exists on
+    disk under the same path.  If it has been deleted (or moved), the stream
+    is closed and reopened, creating a fresh file.  The overhead is a single
+    ``os.path.exists`` call per log record — negligible for WARNING-level
+    logging.
+    """
+
+    def emit(self, record: logging.LogRecord) -> None:
+        # Only check when the stream is already open (i.e. after the first
+        # write).  Before that, delay=True means self.stream is None and the
+        # normal open path handles creation.
+        if self.stream is not None and not Path(self.baseFilename).exists():
+            try:
+                self.stream.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self.stream = None  # force _open() on next emit via superclass
+        super().emit(record)
+
+
+def configure_logging() -> None:
+    """Configure application-wide logging to a rotating file in the app data dir.
+
+    Layout
+    ------
+    ``<app_data_dir>/logs/uacragent.log``   — current log file
+    ``<app_data_dir>/logs/uacragent.log.1`` — previous rotation
+    ``<app_data_dir>/logs/uacragent.log.2`` — two rotations back
+
+    Each file is capped at 2 MB; three files are kept, giving ~6 MB maximum.
+    If the user deletes the log file while the app is running, the next log
+    message recreates it automatically (no restart required).
+
+    Level
+    -----
+    ``WARNING`` by default — captures all warnings and errors without drowning
+    the file in routine debug traces from LangChain / ChromaDB / httpx etc.
+    Set the environment variable ``UACRAGENT_LOG_LEVEL=DEBUG`` before launch to
+    enable verbose output (useful when diagnosing indexing or embedding issues).
+
+    Third-party noise
+    -----------------
+    Verbose libraries (httpx, langchain, chromadb, huggingface_hub, …) are
+    clamped to ``WARNING`` individually so they don't flood the file even when
+    the root level is set to ``DEBUG``.
+
+    Idempotency
+    -----------
+    Safe to call more than once — subsequent calls are no-ops so test suites
+    that import the app multiple times do not accumulate duplicate handlers.
+    """
+    import os
+
+    root = logging.getLogger()
+
+    # Idempotency: skip if our handler is already attached.
+    if any(isinstance(h, _ResilientRotatingFileHandler) for h in root.handlers):
+        return
+
+    # ── Log directory ─────────────────────────────────────────────────────────
+    log_dir = get_app_data_dir() / "logs"
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        # If we can't create the log directory (e.g. permissions), fall back
+        # to the bootstrap ~/.uacragent/logs so we still get some output.
+        log_dir = _UAR_DIR / "logs"
+        try:
+            log_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return  # truly unable to write logs — give up silently
+
+    log_file = log_dir / "uacragent.log"
+
+    # ── Level ─────────────────────────────────────────────────────────────────
+    level_name = os.environ.get("UACRAGENT_LOG_LEVEL", "WARNING").upper()
+    level = getattr(logging, level_name, logging.WARNING)
+
+    # ── File handler (resilient rotating, 2 MB × 3 files) ────────────────────
+    try:
+        file_handler = _ResilientRotatingFileHandler(
+            log_file,
+            maxBytes=2 * 1024 * 1024,   # 2 MB per file
+            backupCount=3,
+            encoding="utf-8",
+            delay=True,                  # don't create the file until first write
+        )
+    except OSError:
+        return  # can't open the log file — give up silently
+
+    fmt = logging.Formatter(
+        fmt="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    file_handler.setFormatter(fmt)
+    file_handler.setLevel(level)
+
+    # ── Root logger ───────────────────────────────────────────────────────────
+    root.setLevel(level)
+    root.addHandler(file_handler)
+
+    # ── Silence noisy third-party loggers ─────────────────────────────────────
+    # Only clamp to WARNING when the effective level is finer than WARNING so
+    # that DEBUG mode still captures our own app logs while filtering library noise.
+    if level < logging.WARNING:
+        for name in _NOISY_LOGGERS:
+            logging.getLogger(name).setLevel(logging.WARNING)
+
+    # ── First entry ───────────────────────────────────────────────────────────
+    logging.getLogger(__name__).info(
+        "Logging started — level=%s  file=%s", level_name, log_file
+    )
+
+
+def get_log_file() -> Path:
+    """Return the path of the active log file (whether it exists yet or not)."""
+    return get_app_data_dir() / "logs" / "uacragent.log"
 
 
 def _load_config() -> dict:
@@ -91,9 +312,9 @@ def _save_config(cfg: dict) -> None:
     """Write *cfg* to ``~/.uacragent/config.json``, creating the directory if needed."""
     try:
         _UAR_DIR.mkdir(parents=True, exist_ok=True)
-        _CONFIG_FILE.write_text(
+        _atomic_write_text(
+            _CONFIG_FILE,
             json.dumps(cfg, indent=2, ensure_ascii=False),
-            encoding="utf-8",
         )
     except Exception as exc:
         logger.warning("Could not save app config: %s", exc)
@@ -160,6 +381,27 @@ def _now_iso() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
 
 
+def _atomic_write_text(path: Path, text: str, encoding: str = "utf-8") -> None:
+    """Write *text* to *path* atomically using a sibling temp file + os.replace().
+
+    ``os.replace()`` is atomic on POSIX and effectively atomic on Windows (same
+    volume, same directory).  A process crash during the write leaves at most a
+    stale ``.tmp`` file — the original *path* is never partially written.
+    """
+    import os as _os
+    tmp = path.with_suffix(".tmp")
+    try:
+        tmp.write_text(text, encoding=encoding)
+        _os.replace(tmp, path)
+    except Exception:
+        # Clean up the temp file on failure so it doesn't litter the folder.
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:  # noqa: BLE001
+            pass
+        raise
+
+
 def _get_index_file() -> Path:
     """Return the index file path inside the current app data directory."""
     return get_app_data_dir() / "index.json"
@@ -196,15 +438,18 @@ def _deserialise_history(data: list[dict]) -> list[BaseMessage]:
                 role,
             )
     # Guard: history must have an even number of messages (human+ai pairs).
-    # A dangling message (odd length) indicates a serialisation bug; drop the
-    # last message so the history stays correctly paired.
+    # A dangling message (odd length) indicates a serialisation bug.
+    # We keep ALL messages: the dangling tail will be handled by
+    # _smart_trim_history (which already guards against odd-length lists)
+    # and will be re-persisted correctly on the next save.  Silently dropping
+    # the message caused permanent data loss on the next save() call.
     if len(msgs) % 2 != 0:
-        logger.warning(
+        logger.error(
             "Deserialised chat history has odd number of messages (%d); "
-            "dropping last dangling message to keep history paired.",
+            "this indicates a prior serialisation bug.  The dangling message "
+            "is preserved in memory — it will be corrected on the next save.",
             len(msgs),
         )
-        msgs = msgs[:-1]
     return msgs
 
 
@@ -260,9 +505,9 @@ def _save_index(records: list[dict]) -> None:
     try:
         data_dir = get_app_data_dir()
         data_dir.mkdir(parents=True, exist_ok=True)
-        _get_index_file().write_text(
+        _atomic_write_text(
+            _get_index_file(),
             json.dumps(records, indent=2, ensure_ascii=False),
-            encoding="utf-8",
         )
     except Exception as exc:
         logger.warning("Could not write session index: %s", exc)
@@ -375,7 +620,7 @@ def save_session(
         "workspace_folder": str(workspace),
         "extra_instructions": session.extra_instructions,
         "classified_files": _serialise_files(session.classified_files),
-        "chat_history": _serialise_history(session.chat_history),
+        "chat_history": _serialise_history(session.chat_history.snapshot()),
         "history_summary": session.history_summary,
     }
     # Defensive key-name blocklist: cover every name a caller might accidentally
@@ -391,9 +636,9 @@ def save_session(
 
     try:
         session_file = agent_dir / _SESSION_FILENAME
-        session_file.write_text(
+        _atomic_write_text(
+            session_file,
             json.dumps(payload, indent=2, ensure_ascii=False),
-            encoding="utf-8",
         )
         _upsert_index(workspace, session.course_name or str(workspace.name))
         return True
@@ -526,4 +771,10 @@ def _resolve_workspace(session: "AgentSession") -> Path:  # type: ignore[name-de
     """
     if session.workspace_folder:
         return session.workspace_folder.resolve()
-    return (get_app_data_dir() / "sessions" / (session.workspace_id or "default")).resolve()
+    if not session.workspace_id:
+        raise ValueError(
+            "Cannot resolve workspace for session with no workspace_id and no "
+            "workspace_folder.  Every AgentSession must have a non-empty "
+            "workspace_id (normally set by AgentSession.__post_init__)."
+        )
+    return (get_app_data_dir() / "sessions" / session.workspace_id).resolve()

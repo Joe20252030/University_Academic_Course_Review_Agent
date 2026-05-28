@@ -5,18 +5,22 @@ import json
 import logging
 import math
 import shutil
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from chromadb.config import Settings as ChromaClientSettings
 from langchain_chroma import Chroma
 
 from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.vectorstores import VectorStore
+from pydantic import Field as _PydanticField
 
 from uacragent.domain.types import DocumentType, TaskType
+from uacragent.infra.persistence import get_chroma_onnx_model_dir
 from uacragent.infra.settings import Settings
 from uacragent.infra.workspace import WorkspacePaths
 
@@ -32,6 +36,9 @@ _vs_logger = logging.getLogger(__name__)
 # when multiple sessions use the same model.
 # Key: model_name string.  Value: HuggingFaceEmbeddings instance.
 _local_embeddings_cache: dict[str, Any] = {}
+# Protects _local_embeddings_cache against concurrent writes from two
+# background-thread indexing operations that start at the same time.
+_local_embeddings_lock: threading.Lock = threading.Lock()
 
 
 def _build_embeddings(
@@ -56,8 +63,8 @@ def _build_embeddings(
 
     if provider == "local":
         local_model = getattr(settings, "local_embedding_model", _DEFAULT_LOCAL_MODEL)
-        if progress_cb:
-            progress_cb(f"Loading local embedding model ({local_model})…")
+        # progress_cb is forwarded to _build_local_embeddings which manages
+        # all messaging itself (distinguishes download vs cache hit).
         return _build_local_embeddings(local_model, progress_cb=progress_cb)
 
     # ── Attempt cloud embeddings; fall back to local on any failure ───────────
@@ -84,28 +91,291 @@ def _build_embeddings(
         raise
 
 
-def _build_chromadb_onnx_embeddings() -> Any:
+def _hf_model_is_cached(model_name: str) -> bool:
+    """Return True if *model_name* is fully downloaded in the HuggingFace Hub cache.
+
+    Uses the ``HF_HUB_CACHE`` env var set by ``configure_hf_cache()`` so the
+    check targets the app-managed models directory (``<app_data_dir>/models/``),
+    not the system-wide ``~/.cache/huggingface/hub``.
+
+    The check verifies that actual model weight files exist inside the
+    ``snapshots/`` subtree — not just that the model directory was created.
+    HuggingFace Hub creates the ``models--…`` folder as soon as a download
+    begins, so a directory-existence check alone would incorrectly report the
+    model as cached after a failed or partial download.
+    """
+    import os as _os
+    from pathlib import Path as _Path
+
+    cache_root = _os.environ.get("HF_HUB_CACHE") or str(
+        _Path.home() / ".cache" / "huggingface" / "hub"
+    )
+    # HuggingFace Hub stores models as  models--{org}--{name}  directories.
+    # Bare names like "all-MiniLM-L6-v2" are served under "sentence-transformers"
+    # by sentence_transformers.
+    if "/" in model_name:
+        org, name = model_name.split("/", 1)
+    else:
+        org, name = "sentence-transformers", model_name
+
+    snapshots_dir = _Path(cache_root) / f"models--{org}--{name}" / "snapshots"
+    if not snapshots_dir.is_dir():
+        return False
+
+    # Verify that at least one snapshot revision directory contains a model
+    # weight file (pytorch_model.bin, model.safetensors, …).  These files may
+    # be symlinks that point back into the sibling ``blobs/`` directory — that
+    # is normal HuggingFace Hub cache layout; we accept both regular files and
+    # symlinks here.
+    # Also handles sharded formats: pytorch_model-00001-of-00002.bin,
+    # model-00001-of-00002.safetensors, etc.
+    _WEIGHT_NAMES = {"pytorch_model.bin", "model.safetensors", "tf_model.h5"}
+    import re as _re
+    _SHARD_PATTERN = _re.compile(
+        r'^(pytorch_model|model)-\d+-of-\d+\.(bin|safetensors)$'
+    )
+    for revision_dir in snapshots_dir.iterdir():
+        if not revision_dir.is_dir():
+            continue
+        for entry in revision_dir.iterdir():
+            if not (entry.is_file() or entry.is_symlink()):
+                continue
+            if entry.name in _WEIGHT_NAMES or _SHARD_PATTERN.match(entry.name):
+                return True
+    return False
+
+
+def _onnx_model_is_cached() -> bool:
+    """Return True if chromadb's ONNX model file is fully extracted on disk.
+
+    ChromaDB's ``ONNXMiniLM_L6_V2`` considers the model ready only when
+    ``<cache>/onnx/model.onnx`` exists (it does the same check internally
+    before deciding whether to trigger a download).  Checking that specific
+    file — and verifying it has a plausible size — avoids false positives from
+    an empty directory or a truncated partial download.
+    """
+    model_file = get_chroma_onnx_model_dir() / "onnx" / "model.onnx"
+    # The extracted model.onnx is ~79 MB; treat anything under 10 MB as corrupt.
+    _MIN_BYTES = 10_485_760  # 10 MB
+    return model_file.is_file() and model_file.stat().st_size >= _MIN_BYTES
+
+
+def _configure_chromadb_onnx_download_path() -> Path:
+    """Redirect Chroma's ONNX embedding download path into the app data dir."""
+    from chromadb.utils.embedding_functions.onnx_mini_lm_l6_v2 import (
+        ONNXMiniLM_L6_V2,
+    )
+
+    cache_dir = get_chroma_onnx_model_dir(ONNXMiniLM_L6_V2.MODEL_NAME)
+    cache_dir.parent.mkdir(parents=True, exist_ok=True)
+    ONNXMiniLM_L6_V2.DOWNLOAD_PATH = cache_dir
+    return cache_dir
+
+
+def _poll_download_progress(
+    blocking_fn: "Callable[[], Any]",
+    cache_dir: Path,
+    total_bytes: int,
+    progress_cb: "Callable[[str], None] | None",
+    label: str,
+    track_file: "Path | None" = None,
+) -> Any:
+    """Run *blocking_fn()* while polling download progress to report %.
+
+    Fires *progress_cb* roughly every 1.5 s with a live message such as::
+
+        "Downloading model files… 34% (30/88 MB)"
+
+    *blocking_fn* executes in the **calling** thread (already a background
+    worker from the UI's perspective).  A lightweight daemon thread does
+    only the size polling so the download itself is never blocked.  The
+    polling thread exits cleanly when *blocking_fn* returns or raises.
+
+    Parameters
+    ----------
+    track_file:
+        When set, poll the size of this single file instead of the whole
+        *cache_dir* tree.  Use this when the download target is a single
+        archive file whose path is known in advance (e.g. the chromadb
+        ONNX ``onnx.tar.gz``).  This avoids inflated counts from partially
+        extracted siblings and prevents double-counting.
+
+        When *None*, the function sums every **non-symlink** regular file
+        under *cache_dir* recursively.  Symlinks are excluded because the
+        HuggingFace Hub cache places the same blob once in ``blobs/`` and
+        again as a symlink in ``snapshots/<rev>/`` — following symlinks
+        would count each model file twice and produce impossible percentages
+        such as "175 / 88 MB".
+    """
+    import threading as _threading
+
+    if not progress_cb:
+        return blocking_fn()
+
+    _stop = _threading.Event()
+
+    def _poll() -> None:
+        while not _stop.is_set():
+            try:
+                if track_file is not None:
+                    _done = track_file.stat().st_size if track_file.is_file() else 0
+                else:
+                    # Exclude symlinks — HF Hub mirrors every blob as a symlink
+                    # in snapshots/, so following them doubles the apparent size.
+                    _done = sum(
+                        f.stat().st_size
+                        for f in cache_dir.rglob("*")
+                        if f.is_file() and not f.is_symlink()
+                    )
+                _pct = min(99, int(_done * 100 / max(total_bytes, 1)))
+                _done_mb  = _done        / 1_048_576
+                _total_mb = total_bytes  / 1_048_576
+                progress_cb(
+                    f"{label}… {_pct}% ({_done_mb:.0f}/{_total_mb:.0f} MB)"
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            _stop.wait(1.5)
+
+    _poll_t = _threading.Thread(target=_poll, daemon=True)
+    _poll_t.start()
+    try:
+        return blocking_fn()
+    finally:
+        _stop.set()
+        _poll_t.join(timeout=3.0)
+
+
+def _is_network_error(exc: BaseException) -> bool:
+    """Return True when *exc* looks like a connectivity / download failure.
+
+    Checks the exception type name and message for common network-error
+    indicators so callers can raise a user-friendly :class:`ConfigurationError`
+    instead of exposing a raw Python traceback.
+    """
+    _NETWORK_TYPE_NAMES = {
+        "ConnectionError", "HTTPError", "URLError", "RequestException",
+        "ConnectTimeout", "ReadTimeout", "Timeout",
+    }
+    _NETWORK_KEYWORDS = (
+        "connection", "network", "timeout", "offline",
+        "unreachable", "refused", "socket", "nodename",
+        "name or service not known", "failed to establish",
+    )
+    if isinstance(exc, (OSError, TimeoutError)):
+        return True
+    if type(exc).__name__ in _NETWORK_TYPE_NAMES:
+        return True
+    _msg = str(exc).lower()
+    return any(kw in _msg for kw in _NETWORK_KEYWORDS)
+
+
+_NETWORK_ERROR_HINT = (
+    "Could not download the embedding model — "
+    "please check your internet connection and try again.\n\n"
+    "If the problem persists you can switch to a cloud embedding provider:\n"
+    "  • Open Session Settings  →  Embedding Provider\n"
+    "  • Choose  Gemini  or  OpenAI  instead of  Local"
+)
+
+
+def _build_chromadb_onnx_embeddings(
+    progress_cb: "Callable[[str], None] | None" = None,
+) -> Any:
     """Wrap chromadb's built-in ONNX embedding as a LangChain Embeddings object.
 
     ChromaDB ships ``all-MiniLM-L6-v2`` in ONNX format and bundles the
     ``onnxruntime`` and ``tokenizers`` runtimes as direct dependencies.
     No PyTorch is needed, making this the reliable path for the frozen .app.
 
-    The ONNX model file (~23 MB) is downloaded on first use and cached in
-    ``~/.cache/chroma/onnx_models/`` — the same pattern as HuggingFace Hub
-    caching, but without requiring the full torch stack.
+    The ONNX model file (~80 MB) is downloaded on first use into the
+    app-managed models tree under ``<app_data_dir>/models/chroma/onnx_models/``.
+    This keeps frozen-app local embeddings inside the same visible app data
+    folder used by source installs.
+
+    Download progress is reported via *progress_cb* as percentage updates
+    (e.g. ``"Downloading embedding model… 45% (36/80 MB)"``).  When the model
+    is already cached, a single "Loading from cache" message is emitted instead.
+
+    Implementation note
+    -------------------
+    ``DefaultEmbeddingFunction.__call__`` creates a fresh ``ONNXMiniLM_L6_V2``
+    instance on **every** invocation, which reloads the tokenizer and ONNX
+    ``InferenceSession`` from disk on every batch (both are ``@cached_property``
+    on the instance, so per-instance not per-class).  This function instead
+    creates **one** ``ONNXMiniLM_L6_V2`` instance, forces the download eagerly
+    so real progress can be reported, and shares that instance across all
+    subsequent ``embed_documents`` / ``embed_query`` calls via the closure.
     """
     from langchain_core.embeddings import Embeddings
-    from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
+    from chromadb.utils.embedding_functions.onnx_mini_lm_l6_v2 import ONNXMiniLM_L6_V2
 
-    _ef = DefaultEmbeddingFunction()
+    _ONNX_CACHE = _configure_chromadb_onnx_download_path()
+    # ChromaDB downloads onnx.tar.gz then extracts it.  Track only the archive
+    # file while it is downloading so the percentage reflects the download phase
+    # (0 → 99 %) rather than a confusing mix of archive + extracted sizes.
+    # Measured on disk: onnx.tar.gz = 79 MB.
+    _ONNX_ARCHIVE       = _ONNX_CACHE / "onnx.tar.gz"
+    _ONNX_ARCHIVE_BYTES = 82_837_504  # 79 MB
 
+    # The model name shown to the user is always "all-MiniLM-L6-v2" — ONNX is
+    # the file format the weights are stored in, not a separate product.  Avoid
+    # mentioning "ONNX" or "archive" in progress messages so users understand
+    # they are downloading the embedding model, not a runtime tool.
+    _MODEL_DISPLAY_NAME = "all-MiniLM-L6-v2"
+
+    # ── Create a single ONNXMiniLM_L6_V2 instance ─────────────────────────────
+    # Constructing this object imports onnxruntime, tokenizers, and tqdm — all
+    # of which are bundled in the frozen .app.  Any ImportError surfaces here
+    # (fast-fail) rather than silently at the first embed call.
+    # The download is then triggered eagerly via _download_model_if_not_exists()
+    # inside the progress-polling wrapper so the user sees real live progress.
+    if _onnx_model_is_cached():
+        if progress_cb:
+            progress_cb(f"Loading embedding model ({_MODEL_DISPLAY_NAME}) from cache…")
+        _onnx_instance = ONNXMiniLM_L6_V2()
+    else:
+        if progress_cb:
+            progress_cb(
+                f"Downloading embedding model ({_MODEL_DISPLAY_NAME}, ~79 MB) — "
+                "first-time setup, this may take a minute…"
+            )
+        try:
+            # Build the instance FIRST so __init__ can validate that onnxruntime
+            # and tokenizers are importable before we start polling.
+            _onnx_instance = ONNXMiniLM_L6_V2()
+
+            # Now force the download synchronously inside the progress poller.
+            # DefaultEmbeddingFunction() was used here before, but it defers the
+            # download to its first __call__ — no download happens at construction
+            # time, so the progress bar never updated and the actual download
+            # would silently block the first indexing batch instead.
+            _poll_download_progress(
+                blocking_fn=_onnx_instance._download_model_if_not_exists,
+                cache_dir=_ONNX_CACHE,
+                total_bytes=_ONNX_ARCHIVE_BYTES,
+                progress_cb=progress_cb,
+                label=f"Downloading {_MODEL_DISPLAY_NAME}",
+                track_file=_ONNX_ARCHIVE,  # track archive only, not extracted files
+            )
+        except Exception as _dl_exc:
+            if _is_network_error(_dl_exc):
+                from uacragent.domain.errors import ConfigurationError
+                raise ConfigurationError(_NETWORK_ERROR_HINT) from _dl_exc
+            raise
+
+    if progress_cb:
+        progress_cb(f"✓ Embedding model ({_MODEL_DISPLAY_NAME}) ready — indexing documents…")
+
+    # Wrap the shared instance as a LangChain Embeddings object.  All calls
+    # share the same _onnx_instance so the tokenizer and InferenceSession are
+    # loaded from disk only once (they are @cached_property on the instance).
     class _OnnxWrapper(Embeddings):
         def embed_documents(self, texts: list[str]) -> list[list[float]]:
-            return [list(v) for v in _ef(texts)]
+            return [list(v) for v in _onnx_instance(texts)]
 
         def embed_query(self, text: str) -> list[float]:
-            return list(_ef([text])[0])
+            return list(_onnx_instance([text])[0])
 
     return _OnnxWrapper()
 
@@ -143,12 +413,16 @@ def _build_local_embeddings(
     # ChromaDB's DefaultEmbeddingFunction ships onnxruntime + tokenizers as
     # direct dependencies — both are far more PyInstaller-friendly than torch.
     if getattr(_sys, "frozen", False):
-        if progress_cb:
-            progress_cb(f"Loading local embedding model ({model_name})…")
         try:
-            return _build_chromadb_onnx_embeddings()
+            return _build_chromadb_onnx_embeddings(progress_cb=progress_cb)
         except Exception as _onnx_exc:
             from uacragent.domain.errors import ConfigurationError
+            # ConfigurationError already carries a user-friendly message
+            # (e.g. the network-error hint from _build_chromadb_onnx_embeddings).
+            # Re-raise it unchanged so the UI shows the specific diagnosis
+            # rather than the generic "Local embedding is not available" fallback.
+            if isinstance(_onnx_exc, ConfigurationError):
+                raise
             raise ConfigurationError(
                 "Local embedding is not available in this build.\n\n"
                 "Please switch to a cloud embedding provider:\n"
@@ -202,28 +476,76 @@ def _build_local_embeddings(
 
     # Return the cached instance if this model was already loaded this session.
     # This avoids the ~1–3 s reload cost on every session open within one run.
-    if model_name in _local_embeddings_cache:
+    # The lock prevents two concurrent indexing threads from both entering the
+    # slow HuggingFace load path simultaneously.
+    with _local_embeddings_lock:
+        _cached_instance = _local_embeddings_cache.get(model_name)
+    if _cached_instance is not None:
         _vs_logger.debug("Local embedding model '%s' served from in-memory cache.", model_name)
-        return _local_embeddings_cache[model_name]
+        return _cached_instance
 
     try:
         import os as _os
-        # Suppress the "Loading weights" tqdm bar and the unauthenticated-HF-Hub
-        # warning.  The model is already cached locally so no download occurs;
-        # the bar is pure noise.  We restore the env vars after instantiation so
-        # other code in the process is not affected.
+
+        _cached = _hf_model_is_cached(model_name)
+
+        # Resolve the HF Hub cache directory for this model so the download
+        # progress poller knows where to watch for growing files.
+        if "/" in model_name:
+            _hf_org, _hf_name = model_name.split("/", 1)
+        else:
+            _hf_org, _hf_name = "sentence-transformers", model_name
+        _hf_cache_dir = Path(
+            _os.environ.get("HF_HUB_CACHE")
+            or str(Path.home() / ".cache" / "huggingface" / "hub")
+        ) / f"models--{_hf_org}--{_hf_name}"
+        # Measured on disk (blobs only, symlinks excluded):
+        #   pytorch_model.bin  ~87 MB  +  vocab / tokenizer / config  ~0.7 MB
+        # Total: ~88 MB.  The HF Hub cache also creates symlinks in snapshots/
+        # that mirror each blob — those are excluded from both the size estimate
+        # and the polling loop to avoid double-counting (which previously caused
+        # the display to show impossible values like "175 / 92 MB").
+        _HF_TOTAL_BYTES = 92_274_688  # 88 MB (non-symlink blobs only)
+
+        if _cached:
+            if progress_cb:
+                progress_cb("Loading embedding model from cache…")
+        else:
+            if progress_cb:
+                progress_cb(
+                    f"Downloading embedding model files ({model_name}, ~88 MB) — "
+                    "first-time setup, this may take a minute…"
+                )
+
         _prev_bars    = _os.environ.get("HF_HUB_DISABLE_PROGRESS_BARS")
         _prev_hf_warn = _os.environ.get("HF_HUB_DISABLE_IMPLICIT_TOKEN")
-        _os.environ["HF_HUB_DISABLE_PROGRESS_BARS"]    = "1"
-        _os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"]   = "1"
+        # Only suppress the tqdm download bar when the model is already cached —
+        # on first use the bar is the only live progress feedback in the terminal.
+        if _cached:
+            _os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+        _os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
         try:
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=DeprecationWarning)
-                warnings.filterwarnings("ignore", message=".*huggingface.*")
-                warnings.filterwarnings("ignore", message=".*HF Hub.*")
-                instance = HuggingFaceEmbeddings(model_name=model_name)
+            def _load_hf() -> Any:
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", category=DeprecationWarning)
+                    warnings.filterwarnings("ignore", message=".*huggingface.*")
+                    warnings.filterwarnings("ignore", message=".*HF Hub.*")
+                    return HuggingFaceEmbeddings(model_name=model_name)
+
+            if _cached:
+                instance = _load_hf()
+            else:
+                # First-time download: poll the cache directory size so the UI
+                # can display live percentage progress instead of a static "…".
+                instance = _poll_download_progress(
+                    blocking_fn=_load_hf,
+                    cache_dir=_hf_cache_dir,
+                    total_bytes=_HF_TOTAL_BYTES,
+                    progress_cb=progress_cb,
+                    label="Downloading model files",
+                    # track_file=None → sum non-symlink blobs in cache dir
+                )
         finally:
-            # Restore previous values (or remove the keys if they were absent).
             if _prev_bars is None:
                 _os.environ.pop("HF_HUB_DISABLE_PROGRESS_BARS", None)
             else:
@@ -232,12 +554,23 @@ def _build_local_embeddings(
                 _os.environ.pop("HF_HUB_DISABLE_IMPLICIT_TOKEN", None)
             else:
                 _os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = _prev_hf_warn
-        _local_embeddings_cache[model_name] = instance
+
+        if progress_cb:
+            progress_cb(f"✓ Embedding model ({model_name}) ready — indexing documents…")
+        with _local_embeddings_lock:
+            _local_embeddings_cache[model_name] = instance
         return instance
     except Exception as exc:
-        # Catches ModuleNotFoundError("No module named 'sentence_transformers'")
-        # or ModuleNotFoundError("No module named 'torch'") raised during
-        # instantiation when the required ML packages are absent.
+        # ── Network / connectivity failure during download ─────────────────────
+        # Surface a user-friendly message instead of a raw Python traceback.
+        # There is no automatic fallback provider — the user must either fix
+        # their connection or switch to a cloud embedding provider manually.
+        if _is_network_error(exc):
+            from uacragent.domain.errors import ConfigurationError
+            raise ConfigurationError(_NETWORK_ERROR_HINT) from exc
+        # ── Missing ML dependencies (no torch / sentence_transformers) ─────────
+        # Catches ModuleNotFoundError raised during instantiation when the
+        # required ML packages are absent from the environment.
         if (
             "sentence_transformers" in str(exc)
             or "torch" in str(exc)
@@ -326,6 +659,11 @@ def _load_manifest(workspace_paths: WorkspacePaths) -> dict:
     try:
         return json.loads(mp.read_text(encoding="utf-8"))
     except Exception:
+        _vs_logger.warning(
+            "Manifest file at %s is unreadable or corrupt — treating as empty. "
+            "All documents will be re-indexed on the next run.",
+            mp, exc_info=True,
+        )
         return {}
 
 
@@ -345,11 +683,15 @@ def _save_manifest(
     if settings is not None:
         data["embedding_config"] = _embedding_fingerprint(settings)
     try:
-        mp.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        import os as _os
+        tmp = mp.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        _os.replace(tmp, mp)
     except Exception as exc:  # noqa: BLE001
+        try:
+            tmp.unlink(missing_ok=True)  # type: ignore[possibly-undefined]
+        except Exception:  # noqa: BLE001
+            pass
         # Non-fatal but important: a failed manifest write means the next session
         # open cannot detect which files are already indexed, so it will trigger a
         # full re-embedding run (burning API quota) instead of the fast path.
@@ -437,6 +779,10 @@ def get_or_create_vectorstore(
     db = Chroma(
         persist_directory=str(chroma_dir),
         embedding_function=embeddings,
+        client_settings=ChromaClientSettings(
+            anonymized_telemetry=False,
+            is_persistent=True,
+        ),
     )
 
     # ── Add only new chunks (content-hash dedup) ──────────────────────
@@ -500,7 +846,7 @@ class WeightedDocTypeRetriever(BaseRetriever):
     # used by different LangChain versions).
     vectorstore: Any  # VectorStore — declared as Any to avoid Pydantic issues
     k: int = 8
-    weights: dict = {}  # {doc_type_value: float}
+    weights: dict = _PydanticField(default_factory=dict)  # {doc_type_value: float}
 
     # model_config replaces the deprecated inner class Config (Pydantic v2 style).
     # arbitrary_types_allowed is required because `vectorstore` is typed as Any
@@ -609,12 +955,16 @@ def reset_manifest(workspace_paths: WorkspacePaths) -> None:
     """
     mp = _manifest_path(workspace_paths)
     try:
-        mp.write_text(
-            json.dumps({"files": []}, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        import os as _os
+        tmp = mp.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"files": []}, indent=2, ensure_ascii=False), encoding="utf-8")
+        _os.replace(tmp, mp)
     except Exception:  # noqa: BLE001
-        pass  # non-fatal; worst case the next run rebuilds unnecessarily
+        try:
+            tmp.unlink(missing_ok=True)  # type: ignore[possibly-undefined]
+        except Exception:  # noqa: BLE001
+            pass
+        # non-fatal; worst case the next run rebuilds unnecessarily
 
 
 def chroma_is_current(
