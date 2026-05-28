@@ -153,8 +153,9 @@ _KNOWN_ALIASES: frozenset[str] = frozenset({
     "LLM_REQUEST_DELAY", "llm_request_delay",
     "LLM_MAX_RETRIES", "llm_max_retries",
     "LLM_RETRY_BASE_DELAY", "llm_retry_base_delay",
-    # Logging — not a pydantic-settings field but a recognised app env var.
+    # Logging / API hardening — not pydantic-settings fields but recognised app env vars.
     "UACRAGENT_LOG_LEVEL",
+    "UACRAGENT_ALLOWED_BASE_DIR",
 })
 
 # Only examine env vars whose names suggest they could be uacragent settings.

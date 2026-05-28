@@ -1,5 +1,5 @@
-# UACRAgent.spec  — PyInstaller build spec for macOS
-# Run with:  pyinstaller UACRAgent.spec
+# UACRAgent_mac.spec  — PyInstaller build spec for macOS
+# Run with:  pyinstaller UACRAgent_mac.spec
 # ---------------------------------------------------------------------------
 import sys
 from pathlib import Path

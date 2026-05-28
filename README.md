@@ -414,6 +414,11 @@ Current raw-setting defaults:
 | `LLM_MAX_RETRIES`      | `3`     | Max retry attempts on transient 503/429/quota errors (keep low — retries generate more requests) |
 | `LLM_RETRY_BASE_DELAY` | `15.0`  | Initial backoff delay in seconds before the first retry (doubles each attempt, capped at 60 s)   |
 
+Note: these raw values are only effective when `RATE_TIER` is explicitly cleared
+(`RATE_TIER=`). When `RATE_TIER` is set to a named tier (the default is `free`),
+the tier's own values take precedence — for example, `free` sets `LLM_MAX_RETRIES`
+to `4`, not the raw default of `3`.
+
 ## Run (Desktop GUI)
 
 - `python -m uacragent --gui`
@@ -633,7 +638,9 @@ Notes:
 - Once a session has been created and its workspace committed, that workspace
   is treated as fixed for the lifetime of the session.
 - Deleting a session removes the `<workspace>/.uacragent/` bundle. Original
-  source files outside that folder are not affected.
+  source files outside that folder are not affected. For auto-created workspaces
+  (those under `<app_data_dir>/sessions/`), the workspace folder itself is also
+  removed when it contains no other files after the bundle is deleted.
 
 ### Changing the App Data Folder
 

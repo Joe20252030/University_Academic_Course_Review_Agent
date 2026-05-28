@@ -24,11 +24,11 @@ Layout
         outputs/
         uploads/
 
-Rule: the global data folder root contains ONLY index.json and config.json.
-All session working data lives inside a workspace's ``.uacragent/`` subdir —
-either one the user chose explicitly or one auto-created under
-<app_data_dir>/sessions/.  This keeps agent files clearly separated from
-any pre-existing files in user-chosen folders.
+Rule: the global data folder root contains only index.json, logs/, models/,
+and chroma_telemetry_user_id.  All session working data lives inside a
+workspace's ``.uacragent/`` subdir — either one the user chose explicitly or
+one auto-created under <app_data_dir>/sessions/.  This keeps agent files
+clearly separated from any pre-existing files in user-chosen folders.
 
 The API key is intentionally excluded from all saved data.
 """
@@ -692,9 +692,18 @@ def delete_session(workspace: Path) -> None:
     All agent artefacts live inside ``<workspace>/.uacragent/``, so deletion
     is simply a matter of wiping that single subdirectory.
 
-    The workspace folder itself is removed only when it is empty afterwards
-    (i.e. it was auto-created solely by the agent).  User-chosen folders that
-    contain other files are left in place.
+    The workspace folder itself is removed only when **both** conditions hold:
+
+    1. It resolves under the managed app-data directory (``get_app_data_dir()``),
+       meaning it was auto-created by the agent, not chosen explicitly by the
+       user.
+    2. It is effectively empty after the bundle is removed — "effectively empty"
+       means no items remain other than OS-generated metadata files such as
+       ``.DS_Store`` and ``Thumbs.db``, which are invisible to the user and safe
+       to delete together with the parent folder.
+
+    User-chosen workspace folders (``workspace_folder`` set to an external path)
+    are never auto-deleted, even when they appear empty.
     """
     import shutil
     from uacragent.infra.workspace import AGENT_SUBDIR

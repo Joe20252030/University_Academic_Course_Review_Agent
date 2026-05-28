@@ -703,6 +703,12 @@ class ConversationAgent:
         Uses the vectorstore directly with an effort-calibrated *k* so that
         Low/Medium/High effort controls how many chunks are injected into the
         system prompt without rebuilding the retriever.
+
+        Security: every retrieved chunk is sanitised before being injected into
+        the system prompt.  Any ``[TASK:xxx]`` pattern found in document text is
+        neutralised by inserting a zero-width word-joiner (U+2060) between
+        ``[TASK`` and ``:``, preventing a maliciously crafted document from
+        triggering the generation pipeline via prompt injection.
         """
         if session.retriever is None:
             return "*(No documents loaded — answers are based on general knowledge only.)*"

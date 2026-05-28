@@ -29,11 +29,12 @@ _PAD = 8
 _SESSION_LIST_WIDTH = 220
 
 _SUPPORTED_FILETYPES = [
-    ("All supported", "*.pdf *.txt *.md *.docx"),
+    ("All supported", "*.pdf *.txt *.md *.docx *.csv"),
     ("PDF files", "*.pdf"),
     ("Word documents", "*.docx"),
     ("Text files", "*.txt"),
     ("Markdown files", "*.md"),
+    ("CSV files", "*.csv"),
 ]
 _DOC_TYPE_LABELS = {
     DocumentType.syllabus: "Syllabus",
