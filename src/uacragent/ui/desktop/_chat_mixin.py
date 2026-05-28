@@ -1,6 +1,7 @@
 """Chat panel, send/receive, and document-indexing methods."""
 from __future__ import annotations
 
+import logging
 import os
 import threading
 import tkinter as tk
@@ -18,6 +19,21 @@ from uacragent.infra.persistence import get_app_data_dir, save_session
 from uacragent.infra.workspace import workspace_paths, ensure_workspace_dirs
 
 from ._ui_constants import _strip_markdown, _open_file_in_os, _open_folder_in_os
+
+
+_logger = logging.getLogger(__name__)
+
+# Maximum characters of an exception message shown in the chat / dialog.
+# Long error strings (e.g. raw numpy array dumps from ChromaDB) are truncated
+# before reaching the UI so the chat area is never flooded with raw data.
+_MAX_ERROR_DISPLAY_CHARS = 400
+
+
+def _truncate_error(msg: str) -> str:
+    """Return *msg* truncated to _MAX_ERROR_DISPLAY_CHARS with an ellipsis."""
+    if len(msg) <= _MAX_ERROR_DISPLAY_CHARS:
+        return msg
+    return msg[:_MAX_ERROR_DISPLAY_CHARS] + "…"
 
 
 class ChatMixin:
@@ -784,6 +800,8 @@ class ChatMixin:
     def _on_session_load_error(
         self, error: str, session: object, show_dialog: bool = True
     ) -> None:
+        # Log the full error (untruncated) so diagnostics are never lost.
+        _logger.error("Session load / indexing error: %s", error)
         # Remove the in-progress status bubble before showing the error.
         self._dismiss_pending_status()
         # Always release the busy lock so the UI is never permanently stuck.
@@ -791,7 +809,10 @@ class ChatMixin:
         # Discard stale errors from a session that is no longer active.
         if self._session is not session:
             return
-        _err_status = self._t("error_status").format(error=error)
+        # Truncate before any UI display so a verbose exception (e.g. a raw
+        # numpy array dump from ChromaDB) cannot flood the chat area.
+        display_error = _truncate_error(error)
+        _err_status = self._t("error_status").format(error=display_error)
         self._session_status_var.set(_err_status)
         # Mirror the error in the settings dialog status bar so it never gets
         # stuck on "Applying settings and re-indexing…" after a failure.
@@ -800,7 +821,7 @@ class ChatMixin:
                 self._settings_status_var.set(_err_status)
             except tk.TclError:
                 pass
-        self._append_chat("system", self._t("indexing_failed").format(error=error))
+        self._append_chat("system", self._t("indexing_failed").format(error=display_error))
         if not show_dialog:
             return
         error_lower = error.lower()
@@ -812,7 +833,7 @@ class ChatMixin:
             detail = self._t("mb_indexing_other_detail")
         self._show_info_dialog(
             self._t("mb_indexing_failed_title"),
-            self._t("mb_indexing_failed_body").format(error=error, detail=detail),
+            self._t("mb_indexing_failed_body").format(error=display_error, detail=detail),
         )
 
     # ------------------------------------------------------------------
@@ -946,11 +967,14 @@ class ChatMixin:
         self._save_current_session()
 
     def _on_chat_error(self, error: str, session: object) -> None:
+        # Log the full error (untruncated) so diagnostics are never lost.
+        _logger.error("Chat response error: %s", error)
         self._set_busy(False)
         # Same session-staleness guard as _on_chat_response.
         if self._session is not session:
             return
-        self._append_chat("system", self._t("chat_error").format(error=error))
+        display_error = _truncate_error(error)
+        self._append_chat("system", self._t("chat_error").format(error=display_error))
         error_lower = error.lower()
         if any(k in error_lower for k in ("api key", "api_key", "invalid_argument",
                                            "authentication", "permission_denied",
@@ -960,7 +984,7 @@ class ChatMixin:
             detail = self._t("mb_response_other_detail")
         self._show_info_dialog(
             self._t("mb_response_failed_title"),
-            self._t("mb_response_failed_body").format(error=error, detail=detail),
+            self._t("mb_response_failed_body").format(error=display_error, detail=detail),
         )
 
     # ------------------------------------------------------------------

@@ -372,10 +372,14 @@ def _build_chromadb_onnx_embeddings(
     # loaded from disk only once (they are @cached_property on the instance).
     class _OnnxWrapper(Embeddings):
         def embed_documents(self, texts: list[str]) -> list[list[float]]:
-            return [list(v) for v in _onnx_instance(texts)]
+            # .tolist() recursively converts np.float32 → Python float so
+            # ChromaDB's type validator accepts the result.  list() alone
+            # would leave numpy scalar objects in the list and raise:
+            # "Expected embeddings to be a list of floats or ints …"
+            return _onnx_instance(texts).tolist()
 
         def embed_query(self, text: str) -> list[float]:
-            return list(_onnx_instance([text])[0])
+            return _onnx_instance([text])[0].tolist()
 
     return _OnnxWrapper()
 
