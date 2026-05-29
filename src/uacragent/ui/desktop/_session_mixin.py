@@ -117,20 +117,35 @@ class SessionMixin:
         ):
             return
         ws = Path(rec["workspace"])
-        delete_session(ws)
-        # If the deleted session is the active one, return to a clean idle state.
-        # _workspace_committed MUST be reset here — without it, _on_close() would
-        # call _save_current_session() on the blank AgentSession(), creating a
-        # phantom entry in the index that re-appears on the next launch.
-        #
-        # Compute the effective workspace for the currently active session using
-        # _resolve_workspace, which encapsulates the priority logic (explicit
-        # workspace_folder first, then auto-path from workspace_id).
+
+        # Determine whether the session being deleted is the currently active
+        # one BEFORE calling delete_session(), so we can release the ChromaDB
+        # connection first.  On Windows, SQLite WAL files inside chroma_db/ are
+        # held open by the active retriever; calling shutil.rmtree() while they
+        # are locked raises PermissionError and leaves orphaned files on disk
+        # while the session entry is already removed from the index.
+        # Releasing the handles first prevents this on Windows and also gives
+        # cleaner resource teardown on macOS.
         try:
             active_ws: Path | None = _resolve_workspace(self._session)
         except Exception:
             active_ws = None
-        if active_ws is not None and active_ws == ws.resolve():
+        _deleting_active = active_ws is not None and active_ws == ws.resolve()
+
+        if _deleting_active:
+            # Release ChromaDB file handles before deletion.
+            self._session.retriever = None
+            if hasattr(self, "_agent"):
+                self._agent = None
+
+        delete_session(ws)
+
+        # If the deleted session was the active one, return to a clean idle
+        # state.  _workspace_committed MUST be reset here — without it,
+        # _on_close() would call _save_current_session() on the blank
+        # AgentSession(), creating a phantom entry in the index that
+        # re-appears on the next launch.
+        if _deleting_active:
             self._session = AgentSession()
             self._workspace_committed = False
             self._show_idle()

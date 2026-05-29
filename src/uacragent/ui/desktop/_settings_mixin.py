@@ -2357,7 +2357,13 @@ class SettingsMixin:
             _src_path = Path(_exam_src)
             _ws_folder = self._session.workspace_folder
             _exam_uploads = _ws_folder / ".uacragent" / "uploads" / "exam_info"
-            if _src_path.exists() and not str(_src_path).startswith(str(_ws_folder)):
+            # is_relative_to() on resolved paths is separator-agnostic so this
+            # works correctly on Windows (where filedialog returns forward-slash
+            # paths but str(Path) uses backslashes) and also handles
+            # case differences on case-insensitive file systems.
+            if _src_path.exists() and not _src_path.resolve().is_relative_to(
+                _ws_folder.resolve()
+            ):
                 import shutil as _shutil, hashlib as _hashlib, threading as _threading
 
                 def _file_sha256(p: Path) -> bytes:
