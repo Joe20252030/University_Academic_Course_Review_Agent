@@ -258,7 +258,11 @@ Notes:
 
 - `python3 -m venv .venv`
 - macOS/Linux: `source .venv/bin/activate`
-- Windows: `.venv\Scripts\activate`
+- Windows PowerShell: `.\.venv\Scripts\Activate.ps1`
+- Windows `cmd.exe`: `.\.venv\Scripts\activate.bat`
+- If PowerShell blocks activation, run:
+  `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`
+  and then `.\.venv\Scripts\Activate.ps1`
 
 2) Install dependencies and the package
 
@@ -268,6 +272,25 @@ Notes:
 The editable install is recommended because this repository uses a `src/`
 layout. Without it, `python -m uacragent` will not resolve unless you
 manually set `PYTHONPATH=src`.
+
+### Windows quick setup
+
+For a normal Windows source install after cloning from GitHub:
+
+```powershell
+git clone <repo-url>
+cd UACRAgent
+py -m venv .venv
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\.venv\Scripts\Activate.ps1
+pip install --upgrade pip
+pip install -r requirements.txt
+pip install -e .
+copy .env.sample .env
+```
+
+Then edit `.env` and set the provider/API keys you want before running the
+desktop app, CLI, or API.
 
 ### Standalone App Builds
 
@@ -576,6 +599,10 @@ The CLI is an interactive terminal assistant, not a one-shot generator.
 5. Ask questions or request generated study documents in natural language.
 6. Exit with `exit`, `quit`, `Ctrl-C`, or `Ctrl-D`.
 
+CLI working files are stored under `<app_data_dir>/cli_run/<workspace_id>/`.
+Inside that workspace, the app keeps its own bundle under
+`<workspace>/.uacragent/`.
+
 Example:
 
 ```bash
@@ -611,6 +638,10 @@ The FastAPI layer is the programmatic one-shot generation interface.
    - absolute file paths for every source document
 3. Send a `POST /review` request.
 4. Read the returned plan plus the saved markdown path.
+
+API working files are stored under `<app_data_dir>/api_run/<workspace_id>/`.
+Inside that workspace, the app keeps its own bundle under
+`<workspace>/.uacragent/`.
 
 Use the API when you want to integrate generation into another app, script, or service. Use the desktop GUI when you want persistent sessions, interactive study chat, and richer controls.
 
