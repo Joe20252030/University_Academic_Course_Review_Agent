@@ -379,7 +379,19 @@ EMBEDDING_MODEL=gemini-embedding-001
 LOCAL_EMBEDDING_MODEL=all-MiniLM-L6-v2
 RETRIEVER_K=8
 RATE_TIER=free
+OPENAI_STORE_RESPONSES=false
 ```
+
+**OpenAI conversation storage (`OPENAI_STORE_RESPONSES`):**
+
+OpenAI's Responses API (used by newer models such as GPT-4o and later) stores
+every request on the OpenAI platform dashboard by default. UACRAgent sets
+`store=false` on every request to opt out and protect privacy. Set
+`OPENAI_STORE_RESPONSES=true` only if you want OpenAI to retain your
+conversations (e.g. for fine-tuning or evals purposes). This setting can also
+be toggled without a restart from **App Settings → Privacy → Provider data
+storage**. Has no effect on Gemini or DeepSeek (those providers do not expose
+a per-request storage opt-out in their APIs).
 
 API-only optional hardening:
 
@@ -446,7 +458,7 @@ The GUI lets you:
 - Use quick actions to generate a Review Summary, Practice Booklet, Mock Exam, or Exam Prediction
 - Open generated outputs directly from the chat transcript
 - Cancel an in-flight indexing or chat request from the main panel
-- Open global app settings to change color mode, font size, language (`Auto`, `en`, or `zh_CN`), and the shared app data directory (see [Changing the App Data Folder](#changing-the-app-data-folder) before doing so)
+- Open global app settings to change color mode, font size, language (`Auto`, `en`, or `zh_CN`), the shared app data directory (see [Changing the App Data Folder](#changing-the-app-data-folder) before doing so), and provider data-storage preferences (opt out of OpenAI's server-side conversation logging)
 - Use the selected desktop language to steer assistant replies and generated document headings in English or Simplified Chinese
 - Review the first-launch privacy notice and reopen it later from App Settings when needed
 
@@ -634,7 +646,12 @@ Notes:
   the frozen app’s ONNX backend under
   `<app_data_dir>/models/chroma/onnx_models/`.
 - Desktop and API logs are written under
-  `<app_data_dir>/logs/uacragent.log`.
+  `<app_data_dir>/logs/uacragent.log`. The default log level is `WARNING` —
+  only warnings, errors, and security events are captured; routine operations
+  are silent. Set `UACRAGENT_LOG_LEVEL=DEBUG` before launch for verbose output.
+  Verbose third-party libraries (LangChain, ChromaDB, httpx, etc.) are always
+  clamped to `WARNING` even in DEBUG mode. API keys and message content are
+  never written to the log.
 - All agent-generated files inside a workspace are grouped under
   `<workspace>/.uacragent/` so they stay separate from the user’s own files.
 - Once a session has been created and its workspace committed, that workspace
