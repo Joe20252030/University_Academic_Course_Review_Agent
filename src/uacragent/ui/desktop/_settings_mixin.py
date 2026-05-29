@@ -1436,10 +1436,19 @@ class SettingsMixin:
                         return
                     import shutil as _shutil
                     dest = Path(dest_dir) / src.name
-                    # Avoid overwriting: append _1, _2 … if the file exists
+                    # Avoid overwriting: append _1, _2 … if the file exists.
+                    # Cap at 1 000 to match the rest of the codebase and
+                    # prevent hanging the GUI thread on a pathological
+                    # destination directory.
                     stem, suffix = src.stem, src.suffix
                     counter = 1
                     while dest.exists():
+                        if counter > 1_000:
+                            self._show_info_dialog(
+                                self._t("mb_copy_fail_title"),
+                                self._t("mb_copy_fail_too_many"),
+                            )
+                            return
                         dest = Path(dest_dir) / f"{stem}_{counter}{suffix}"
                         counter += 1
                     try:
