@@ -610,7 +610,9 @@ The desktop app persists session state so you can return to previous work.
 - Default app data directory: `~/.uacragent/`
 - Session index: `<app_data_dir>/index.json`
 - Local embedding model cache: `<app_data_dir>/models/`
-- Auto-created workspaces: `<app_data_dir>/sessions/<workspace_id>/`
+- Auto-created GUI workspaces: `<app_data_dir>/sessions/<workspace_id>/`
+- CLI workspaces: `<app_data_dir>/cli_run/<workspace_id>/`
+- API workspaces: `<app_data_dir>/api_run/<workspace_id>/`
 - Per-session agent bundle: `<workspace>/.uacragent/`
 - Per-session state file: `<workspace>/.uacragent/session.json`
 
@@ -760,6 +762,11 @@ local embedding path instead:
 workspace's `.uacragent/uploads/` bundle during API generation. Leave it at
 `true` for the normal self-contained workspace behavior.
 
+`markdown_path` in the API response is the absolute local path to the saved
+Markdown file on the same machine that is running the API server. In the
+current local-only design, this is intended for trusted local callers that can
+open the returned file directly.
+
 Security note:
 
 - Without `UACRAGENT_ALLOWED_BASE_DIR`, the API accepts any absolute existing
@@ -820,6 +827,8 @@ optional.
 ## Output
 
 - Canonical output is written to `<workspace>/.uacragent/outputs/review_<timestamp>.md`
+- API responses return that saved Markdown location as an absolute local
+  `markdown_path`
 - When using the desktop GUI, optional DOCX/PDF exports are written to the same output folder
 - Uploaded file copies are organized under `<workspace>/.uacragent/uploads/<doc_type>/`
 - Vector DB is persisted under `<workspace>/.uacragent/chroma_db/`

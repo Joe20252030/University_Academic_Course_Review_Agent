@@ -143,8 +143,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         # --- Session Settings dialog ---
         "settings_dialog_title":    "Session Settings",
         "settings_banner":          (
-            "✏️  Edit any setting below, then scroll down and click  ✓ Apply  "
-            "to save and re-index."
+            "✏️  Edit any setting below, then click  ✓ Apply  to save and re-index."
         ),
         "settings_model_section":   "Model",
         "settings_provider_label":  "Provider:",
@@ -555,7 +554,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         # --- Session Settings dialog ---
         "settings_dialog_title":    "会话设置",
         "settings_banner":          (
-            "✏️  在下方编辑任意设置，然后滚动到底部点击  ✓ 应用  以保存并重新索引。"
+            "✏️  在下方编辑任意设置，然后点击  ✓ 应用  以保存并重新索引。"
         ),
         "settings_model_section":   "模型",
         "settings_provider_label":  "提供商:",

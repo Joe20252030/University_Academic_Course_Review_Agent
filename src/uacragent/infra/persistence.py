@@ -775,10 +775,22 @@ def dict_to_session(data: dict[str, Any]) -> "AgentSession":  # type: ignore[nam
     workspace_folder = Path(wf_str) if wf_str else None
 
     import uuid as _uuid
-    # Guard against empty workspace_id (e.g. a session.json written with
-    # "workspace_id": "").  An empty string would collapse in _resolve_workspace
-    # to the shared sessions/default path, corrupting unrelated sessions.
+    import re as _re
+    # Guard against empty workspace_id — an empty string would collapse in
+    # _resolve_workspace to the shared sessions/default path, corrupting
+    # unrelated sessions.
     workspace_id = data.get("workspace_id", "") or _uuid.uuid4().hex[:12]
+    # Guard against path-traversal via a tampered session.json.  A value like
+    # "../../etc" is non-empty so the empty-string guard above won't catch it,
+    # but it would let _resolve_workspace() build an arbitrary absolute path.
+    # Regenerate a safe random id when the stored id is malformed.
+    _SAFE_ID_RE = _re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+    if not _SAFE_ID_RE.match(workspace_id):
+        logger.warning(
+            "Unsafe workspace_id %r in session data; replacing with a fresh id.",
+            workspace_id,
+        )
+        workspace_id = _uuid.uuid4().hex[:12]
 
     # Allowlist-validate llm_provider so a tampered session.json cannot inject
     # an arbitrary string into os.environ["LLM_PROVIDER"] via _inject_api_keys.

@@ -64,6 +64,10 @@ class ReviewRequest(BaseModel):
 
 
 class ReviewResponse(BaseModel):
-    """Response from review generation."""
+    """Response from review generation.
+
+    ``markdown_path`` is the absolute local path to the generated Markdown
+    file on the machine running the API server.
+    """
     markdown_path: str
     plan: ReviewPlan

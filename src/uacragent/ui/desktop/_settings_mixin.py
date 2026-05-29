@@ -2386,6 +2386,14 @@ class SettingsMixin:
                             dest = uploads_dir / f"{src.stem}_{counter}{src.suffix}"
                             counter += 1
                         if not dest.exists():
+                            # Guard: refuse to copy a symlink.  shutil.copy2
+                            # follows symlinks, so copying one would write the
+                            # symlink target's content under the workspace name.
+                            if src.is_symlink():
+                                raise ValueError(
+                                    f"Refusing to copy exam info file: "
+                                    f"'{src}' is a symlink."
+                                )
                             _shutil.copy2(str(src), str(dest))
                         dest_str = str(dest)
                         # Update session + UI from the main thread.
