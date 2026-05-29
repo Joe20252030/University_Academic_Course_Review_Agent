@@ -666,10 +666,11 @@ class AppearanceMixin:
         win.configure(bg=_wbg)
         win.resizable(False, False)
 
-        # Snapshot current appearance so Cancel can revert live previews.
+        # Snapshot current values so Cancel can revert all changes.
         _saved_color = self._color_mode_var.get()
         _saved_font  = self._font_size_var.get()
         _saved_lang  = self._language_var.get()
+        _saved_store = self._openai_store_var.get()
 
         _cbg   = c.get("text_bg", "#ffffff")    # card fill
         _brd   = c.get("input_border", "#cdd4e8")
@@ -824,8 +825,56 @@ class AppearanceMixin:
             font=("TkDefaultFont", _sz, "underline"),
             cursor="hand2", anchor="w",
         )
-        _privacy_link.grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 4))
+        _privacy_link.grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 10))
         _privacy_link.bind("<Button-1>", lambda _e: self._show_privacy_dialog())
+        row += 1
+
+        # ── Provider data storage subsection ─────────────────────────
+        tk.Label(frm, text=self._t("provider_data_section"),
+                 bg=_cbg, fg=_fg,
+                 font=("TkDefaultFont", _sz, "bold"),
+                 anchor="w").grid(row=row, column=0, columnspan=3,
+                                  sticky="w", pady=(0, 6))
+        row += 1
+
+        # OpenAI — programmatic opt-out via store=false
+        _openai_cb = tk.Checkbutton(
+            frm,
+            text=self._t("openai_store_label"),
+            variable=self._openai_store_var,
+            bg=_cbg, fg=_fg,
+            activebackground=_cbg, activeforeground=_fg,
+            selectcolor=_cbg,
+            relief="flat", bd=0, highlightthickness=0,
+            font=("TkDefaultFont", _sz),
+            anchor="w",
+        )
+        _openai_cb.grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 2))
+        row += 1
+        tk.Label(frm, text=self._t("openai_store_hint"),
+                 bg=_cbg, fg=_sfg,
+                 font=("TkDefaultFont", _nsz),
+                 justify="left", anchor="w",
+                 wraplength=420,
+                 ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 10))
+        row += 1
+
+        # Gemini — informational only
+        tk.Label(frm, text=self._t("gemini_store_hint"),
+                 bg=_cbg, fg=_sfg,
+                 font=("TkDefaultFont", _nsz),
+                 justify="left", anchor="w",
+                 wraplength=420,
+                 ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 6))
+        row += 1
+
+        # DeepSeek — informational only
+        tk.Label(frm, text=self._t("deepseek_store_hint"),
+                 bg=_cbg, fg=_sfg,
+                 font=("TkDefaultFont", _nsz),
+                 justify="left", anchor="w",
+                 wraplength=420,
+                 ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 4))
         row += 1
 
         # Separator before buttons
@@ -846,6 +895,18 @@ class AppearanceMixin:
             )
             # Apply language now (was not applied live to avoid mid-dialog churn)
             self._apply_language()
+            # Persist provider privacy settings and apply immediately.
+            # Updating os.environ alone is not enough — the cached LLM client
+            # (self._agent) was built with the old store= value.  Nulling it
+            # forces a fresh ChatOpenAI construction on the next chat request,
+            # picking up the new setting without requiring a restart.
+            from uacragent.infra.persistence import set_provider_privacy
+            import os as _os
+            _store = self._openai_store_var.get()
+            set_provider_privacy(openai_store_responses=_store)
+            _os.environ["OPENAI_STORE_RESPONSES"] = "true" if _store else "false"
+            if hasattr(self, "_agent"):
+                self._agent = None
             # Persist app data dir if changed
             chosen = path_var.get().strip()
             if chosen:
@@ -878,10 +939,12 @@ class AppearanceMixin:
             win.destroy()
 
         def _cancel() -> None:
-            # Revert live-preview appearance changes
+            # Revert all changes — appearance live-previews and the
+            # privacy checkbox which is not live but must also be rolled back.
             self._color_mode_var.set(_saved_color)
             self._font_size_var.set(_saved_font)
             self._language_var.set(_saved_lang)
+            self._openai_store_var.set(_saved_store)
             self._apply_theme()
             self._apply_font_size()
             win.destroy()

@@ -258,6 +258,24 @@ _STRINGS: dict[str, dict[str, str]] = {
         "privacy_quit":            "Quit",
         "privacy_section":         "Privacy",
         "privacy_view_btn":        "View Privacy Notice",
+        "provider_data_section":   "Provider data storage",
+        "openai_store_label":      "Allow OpenAI to store my conversations on their platform",
+        "openai_store_hint": (
+            "OpenAI's Responses API (used by newer models such as GPT-4o and later) "
+            "stores every conversation on your OpenAI platform dashboard by default. "
+            "When unchecked, each request is sent with store=false so nothing is logged. "
+            "Enable this only if you want OpenAI to retain your data (e.g. for fine-tuning). "
+            "Has no effect on Gemini or DeepSeek."
+        ),
+        "gemini_store_hint": (
+            "Gemini: Google may use API traffic to improve their services. "
+            "Data retention is managed at the account level in Google AI Studio "
+            "or Google Cloud — there is no per-request opt-out in the API itself."
+        ),
+        "deepseek_store_hint": (
+            "DeepSeek: data retention is governed by DeepSeek's privacy policy "
+            "and managed at the account level on their platform."
+        ),
         "privacy_reminder":        "Your prompts and uploaded content are sent to {provider} for processing.",
         "privacy_policy_btn":      "View {provider} Privacy Policy",
         # API key labels / hints
@@ -667,6 +685,23 @@ _STRINGS: dict[str, dict[str, str]] = {
         "privacy_quit":            "退出",
         "privacy_section":         "隐私",
         "privacy_view_btn":        "查看隐私声明",
+        "provider_data_section":   "提供商数据存储",
+        "openai_store_label":      "允许 OpenAI 在其平台上存储我的对话",
+        "openai_store_hint": (
+            "OpenAI 的 Responses API（用于 GPT-4o 等较新模型）默认将每次对话记录在 "
+            "OpenAI 平台控制台中。取消勾选后，每次请求将附带 store=false 以阻止记录。"
+            "仅在需要保留数据（例如用于微调）时启用此选项。"
+            "对 Gemini 或 DeepSeek 无影响。"
+        ),
+        "gemini_store_hint": (
+            "Gemini：Google 可能会使用 API 流量来改进其服务。"
+            "数据保留策略在 Google AI Studio 或 Google Cloud 账户层面进行管理，"
+            "API 本身不支持单次请求的退出设置。"
+        ),
+        "deepseek_store_hint": (
+            "DeepSeek：数据保留受 DeepSeek 隐私政策约束，"
+            "请在其平台账户层面进行管理。"
+        ),
         "privacy_reminder":        "您的提示词和上传内容将发送给 {provider} 进行处理。",
         "privacy_policy_btn":      "查看 {provider} 隐私政策",
         # API key labels / hints

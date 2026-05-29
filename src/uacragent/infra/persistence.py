@@ -389,6 +389,47 @@ def set_privacy_accepted(accepted: bool) -> None:
     _save_config(cfg)
 
 
+def get_provider_privacy() -> dict:
+    """Return provider-level data-storage privacy settings with safe defaults.
+
+    Keys
+    ----
+    ``openai_store_responses`` (bool, default False)
+        Whether to allow OpenAI to store API conversations on their platform.
+        OpenAI's Responses API defaults to ``store=True``; the app overrides
+        this to ``False`` unless the user explicitly opts in.
+    """
+    cfg = _load_config()
+    return {
+        "openai_store_responses": bool(cfg.get("openai_store_responses", False)),
+    }
+
+
+def set_provider_privacy(*, openai_store_responses: bool) -> None:
+    """Persist provider privacy settings to ``~/.uacragent/config.json``."""
+    cfg = _load_config()
+    cfg["openai_store_responses"] = bool(openai_store_responses)
+    _save_config(cfg)
+
+
+def apply_provider_privacy_to_env() -> None:
+    """Inject UI-persisted provider privacy settings into ``os.environ``.
+
+    Called at startup *after* ``load_dotenv()`` so the UI-saved preference
+    takes precedence over the ``.env`` file for these privacy settings.
+    Only overrides env vars that the user has explicitly set via the UI
+    (i.e. the key exists in ``config.json``).  If the user has never opened
+    the App Settings privacy controls, the ``.env`` value (or the pydantic
+    default) continues to apply.
+    """
+    import os as _os
+    cfg = _load_config()
+    if "openai_store_responses" in cfg:
+        _os.environ["OPENAI_STORE_RESPONSES"] = (
+            "true" if cfg["openai_store_responses"] else "false"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------

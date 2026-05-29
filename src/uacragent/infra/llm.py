@@ -56,11 +56,29 @@ def _gemini_factory(settings: Settings, model: str) -> Any:
 
 def _openai_factory(settings: Settings, model: str) -> Any:
     from langchain_openai import ChatOpenAI
-    return ChatOpenAI(
-        model=model,
-        api_key=settings.openai_api_key,  # type: ignore[arg-type]
-        temperature=0,
-    )
+    # Opt out of OpenAI's server-side conversation storage.
+    # The Responses API (used by newer models such as GPT-4o and later)
+    # defaults to store=True, which logs every request on the OpenAI platform
+    # dashboard.  We pass store= as an explicit top-level argument because
+    # current langchain-openai recognises it natively and warns when it is
+    # placed inside model_kwargs instead.
+    # On older langchain-openai versions that do not accept store=, we fall
+    # back gracefully so the app does not crash — in that case the older
+    # Chat Completions API path is used anyway, which has no logging.
+    try:
+        return ChatOpenAI(
+            model=model,
+            api_key=settings.openai_api_key,  # type: ignore[arg-type]
+            temperature=0,
+            store=settings.openai_store_responses,
+        )
+    except TypeError:
+        # langchain-openai too old to accept store= — fall back without it.
+        return ChatOpenAI(
+            model=model,
+            api_key=settings.openai_api_key,  # type: ignore[arg-type]
+            temperature=0,
+        )
 
 
 def _deepseek_factory(settings: Settings, model: str) -> Any:
@@ -190,7 +208,14 @@ class LLMClient:
                     )
                     if _key:
                         _kw["openai_api_key"] = _key
-                    llm_s = _ChatOpenAI(**_kw)
+                    # Inherit the same store setting as the primary client.
+                    _store_val = getattr(self.llm, "store", False)
+                    try:
+                        _kw["store"] = _store_val
+                        llm_s = _ChatOpenAI(**_kw)
+                    except TypeError:
+                        _kw.pop("store", None)
+                        llm_s = _ChatOpenAI(**_kw)
                     return self._call_with_retry(llm_s.invoke, prompt)
             except Exception:  # noqa: BLE001
                 pass

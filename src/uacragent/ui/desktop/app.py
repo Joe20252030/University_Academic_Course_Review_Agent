@@ -291,6 +291,13 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         # Global app data dir (shown/edited in the App Settings dialog)
         self._app_data_dir_var = tk.StringVar(value=str(get_app_data_dir()))
 
+        # Provider privacy settings — loaded from config so UI reflects
+        # the persisted value even after the app is restarted.
+        from uacragent.infra.persistence import get_provider_privacy as _gpp
+        _priv = _gpp()
+        self._openai_store_var = tk.BooleanVar(
+            value=_priv["openai_store_responses"])
+
         # Per-provider API key vars (pre-populate from env)
         self._gemini_key_var   = tk.StringVar(
             value=os.environ.get("GOOGLE_API_KEY", "").strip())
@@ -1853,6 +1860,12 @@ def main() -> None:
     if _app_env.exists():
         load_dotenv(_app_env)
     load_dotenv()   # cwd fallback; won't override keys already loaded above
+
+    # Apply UI-persisted provider privacy settings into os.environ so that
+    # Settings() picks them up with higher priority than the .env file.
+    # Must run after load_dotenv() and before Settings() is first constructed.
+    from uacragent.infra.persistence import apply_provider_privacy_to_env
+    apply_provider_privacy_to_env()
 
     # Redirect local model downloads into the app data folder so all agent
     # data lives in one place.  Must run before any local-model backend import.

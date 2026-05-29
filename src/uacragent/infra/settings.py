@@ -68,6 +68,22 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("RETRIEVER_K", "retriever_k"),
     )
 
+    # ── OpenAI server-side conversation storage ────────────────────────────────
+    # OpenAI's Responses API (used by newer models such as gpt-4o and later)
+    # defaults to store=True, which logs every request on the OpenAI platform
+    # dashboard under "Stored outputs".  This is a privacy concern for users
+    # who upload sensitive course materials.
+    #
+    # The app defaults to False (opt-out / privacy-first).  Set this to True
+    # only if you explicitly want OpenAI to store your conversations (e.g. for
+    # fine-tuning or evals purposes).
+    openai_store_responses: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "OPENAI_STORE_RESPONSES", "openai_store_responses"
+        ),
+    )
+
     # ── Rate limiting ──────────────────────────────────────────────────────────
     # Named tier: "free" | "standard" | "pro" | "unlimited".
     # When set to a known tier the three concrete fields below are overridden
@@ -156,6 +172,8 @@ _KNOWN_ALIASES: frozenset[str] = frozenset({
     # Logging / API hardening — not pydantic-settings fields but recognised app env vars.
     "UACRAGENT_LOG_LEVEL",
     "UACRAGENT_ALLOWED_BASE_DIR",
+    # OpenAI conversation storage opt-in.
+    "OPENAI_STORE_RESPONSES", "openai_store_responses",
 })
 
 # Only examine env vars whose names suggest they could be uacragent settings.
