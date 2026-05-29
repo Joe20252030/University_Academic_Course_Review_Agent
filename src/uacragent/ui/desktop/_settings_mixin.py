@@ -1452,6 +1452,10 @@ class SettingsMixin:
                         dest = Path(dest_dir) / f"{stem}_{counter}{suffix}"
                         counter += 1
                     try:
+                        if src.is_symlink():
+                            raise OSError(
+                                f"'{src.name}' is a symlink and cannot be copied."
+                            )
                         _shutil.copy2(str(src), str(dest))
                         self._show_info_dialog(
                             self._t("mb_copy_title"),

@@ -398,7 +398,7 @@ Optional overrides (see defaults in [src/uacragent/infra/settings.py](src/uacrag
 LLM_PROVIDER=gemini
 LLM_MODEL=gemini-2.5-flash
 EMBEDDING_PROVIDER=gemini
-EMBEDDING_MODEL=gemini-embedding-001
+EMBEDDING_MODEL=gemini-embedding-001   # Gemini only — ignored for OpenAI or local
 LOCAL_EMBEDDING_MODEL=all-MiniLM-L6-v2
 RETRIEVER_K=8
 RATE_TIER=free

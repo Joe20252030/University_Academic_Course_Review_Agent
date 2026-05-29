@@ -291,12 +291,15 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         # Global app data dir (shown/edited in the App Settings dialog)
         self._app_data_dir_var = tk.StringVar(value=str(get_app_data_dir()))
 
-        # Provider privacy settings — loaded from config so UI reflects
-        # the persisted value even after the app is restarted.
-        from uacragent.infra.persistence import get_provider_privacy as _gpp
-        _priv = _gpp()
+        # Provider privacy — read from os.environ, which already has the
+        # effective value after load_dotenv() AND apply_provider_privacy_to_env()
+        # have both run (UI-saved config.json value takes precedence over .env).
+        # This matches the pattern used by the API key vars below and ensures
+        # the checkbox reflects the actual setting regardless of source.
         self._openai_store_var = tk.BooleanVar(
-            value=_priv["openai_store_responses"])
+            value=os.environ.get("OPENAI_STORE_RESPONSES", "false").lower()
+                  in ("true", "1", "yes")
+        )
 
         # Per-provider API key vars (pre-populate from env)
         self._gemini_key_var   = tk.StringVar(
