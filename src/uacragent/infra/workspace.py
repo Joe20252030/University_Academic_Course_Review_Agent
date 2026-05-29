@@ -59,6 +59,7 @@ def workspace_paths(
     workspace_id: str | None = None,
     *,
     workspace_folder: Path | None = None,
+    workspace_base_dir: Path | None = None,
 ) -> WorkspacePaths:
     """Build workspace path structure.
 
@@ -66,8 +67,11 @@ def workspace_paths(
     ----------------
     1. *workspace_folder* — used directly as the workspace root when provided.
        This is the normal path for any session that has been committed.
-    2. ``get_app_data_dir()`` / *workspace_id* — default: auto folder inside
-       the user-configured app data directory.
+    2. *workspace_base_dir* / *workspace_id* — managed auto folder inside a
+       caller-selected app-owned subdirectory such as ``sessions/``,
+       ``cli_run/``, or ``api_run/``.
+    3. ``get_app_data_dir()`` / *workspace_id* — legacy default when no
+       explicit base directory is supplied.
 
     All agent artefacts (uploads, chroma_db, outputs, session.json) are
     placed inside ``<workspace>/.uacragent/`` so they form a single,
@@ -86,7 +90,8 @@ def workspace_paths(
                 f"Invalid workspace_id {safe_id!r}: only letters, digits, "
                 "hyphens, and underscores are allowed (max 128 chars)."
             )
-        ws = get_app_data_dir() / safe_id
+        base_dir = Path(workspace_base_dir).resolve() if workspace_base_dir is not None else get_app_data_dir()
+        ws = base_dir / safe_id
 
     agent_dir = ws / AGENT_SUBDIR
     uploads = agent_dir / "uploads"

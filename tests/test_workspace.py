@@ -44,6 +44,14 @@ def test_workspace_paths_empty_id(tmp_path: Path):
     assert ws.root.name == "default"
 
 
+def test_workspace_paths_with_managed_base_dir(tmp_path: Path):
+    """Managed callers can place workspaces under a dedicated app-owned root."""
+    base = tmp_path / "cli_run"
+    ws = workspace_paths(workspace_id="abc123", workspace_base_dir=base)
+    assert ws.root == base / "abc123"
+    assert ws.agent_dir == base / "abc123" / AGENT_SUBDIR
+
+
 def test_ensure_workspace_dirs_creates_all(tmp_path: Path):
     ws = workspace_paths(workspace_folder=tmp_path / "myws")
     ensure_workspace_dirs(ws)

@@ -67,6 +67,16 @@ def get_hf_cache_dir() -> Path:
     return get_app_data_dir() / "models"
 
 
+def get_cli_run_dir() -> Path:
+    """Return the managed root for interactive CLI workspaces."""
+    return get_app_data_dir() / "cli_run"
+
+
+def get_api_run_dir() -> Path:
+    """Return the managed root for FastAPI generation workspaces."""
+    return get_app_data_dir() / "api_run"
+
+
 def get_chroma_onnx_models_dir() -> Path:
     """Return the app-managed root for Chroma's ONNX embedding downloads."""
     return get_hf_cache_dir() / "chroma" / "onnx_models"
@@ -710,7 +720,14 @@ def delete_session(workspace: Path) -> None:
 
     agent_dir = workspace / AGENT_SUBDIR
     try:
-        if agent_dir.is_dir():
+        if agent_dir.is_symlink():
+            # Refuse to follow a symlink — rmtree would wipe the target
+            # directory (potentially anywhere on disk), not the bundle.
+            logger.warning(
+                "Refusing to remove agent dir '%s': path is a symlink. "
+                "Manual cleanup may be required.", agent_dir,
+            )
+        elif agent_dir.is_dir():
             shutil.rmtree(agent_dir)
     except Exception as exc:
         logger.warning("Could not remove agent dir %s: %s", agent_dir, exc)
@@ -763,8 +780,19 @@ def dict_to_session(data: dict[str, Any]) -> "AgentSession":  # type: ignore[nam
     # to the shared sessions/default path, corrupting unrelated sessions.
     workspace_id = data.get("workspace_id", "") or _uuid.uuid4().hex[:12]
 
+    # Allowlist-validate llm_provider so a tampered session.json cannot inject
+    # an arbitrary string into os.environ["LLM_PROVIDER"] via _inject_api_keys.
+    _KNOWN_LLM_PROVIDERS: frozenset[str] = frozenset({"gemini", "openai", "deepseek"})
+    _raw_provider = data.get("llm_provider", "gemini")
+    if _raw_provider not in _KNOWN_LLM_PROVIDERS:
+        logger.warning(
+            "Unknown llm_provider %r in session data; falling back to 'gemini'.",
+            _raw_provider,
+        )
+        _raw_provider = "gemini"
+
     return AgentSession(
-        llm_provider=data.get("llm_provider", "gemini"),
+        llm_provider=_raw_provider,
         llm_model=data.get("llm_model", "gemini-2.5-flash"),
         course_name=data.get("course_name", ""),
         university_name=data.get("university_name", ""),

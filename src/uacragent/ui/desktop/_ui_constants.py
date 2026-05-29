@@ -362,6 +362,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
         # Exam info file missing at Apply time
         "exam_file_not_found": "Warning: Exam info file not found: {path}",
+        "exam_copy_failed":    "Warning: Could not copy exam info file to workspace. Check the file is accessible.",
         "course_name_too_long": "Warning: Course name is very long and has been trimmed to 200 characters.",
         "error_status":       "Error: {error}",
         "indexing_failed":    "⚠️ Indexing failed: {error}",
@@ -757,6 +758,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
         # Exam info file missing at Apply time
         "exam_file_not_found": "警告：找不到考试信息文件：{path}",
+        "exam_copy_failed":    "警告：无法将考试信息文件复制到工作区，请检查文件是否可访问。",
         "course_name_too_long": "警告：课程名称过长，已自动截断至 200 个字符。",
         "error_status":       "错误：{error}",
         "indexing_failed":    "⚠️ 索引失败：{error}",

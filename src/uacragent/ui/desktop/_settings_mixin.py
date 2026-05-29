@@ -2377,6 +2377,12 @@ class SettingsMixin:
                         dest = uploads_dir / src.name
                         counter = 1
                         while dest.exists() and _file_sha256(dest) != _file_sha256(src):
+                            if counter > 1_000:
+                                import logging as _logging
+                                _logging.getLogger(__name__).warning(
+                                    "Exam info copy: exceeded 1 000 collision candidates "
+                                    "for '%s'; aborting copy.", src.name)
+                                return
                             dest = uploads_dir / f"{src.stem}_{counter}{src.suffix}"
                             counter += 1
                         if not dest.exists():
@@ -2407,6 +2413,22 @@ class SettingsMixin:
                         import logging as _logging
                         _logging.getLogger(__name__).warning(
                             "Could not copy exam info file to workspace: %s", exc)
+                        # Surface the failure in the settings status bar so the
+                        # user knows exam info is still pointing to the original
+                        # path (not a workspace-local copy) and may break if the
+                        # original file is moved or deleted.
+                        def _show_copy_error(
+                            _session=session,
+                        ) -> None:
+                            if self._session is not _session:
+                                return
+                            if hasattr(self, "_settings_status_var"):
+                                self._settings_status_var.set(
+                                    self._t("exam_copy_failed"))
+                        try:
+                            self.after(0, _show_copy_error)
+                        except Exception:  # noqa: BLE001
+                            pass
 
                 _threading.Thread(target=_do_copy, daemon=True).start()
 

@@ -87,7 +87,12 @@ def _cli(args: argparse.Namespace) -> None:
 
     # ── Startup: must run before any local-model backend import
     from dotenv import load_dotenv
-    from uacragent.infra.persistence import configure_hf_cache, configure_logging, get_app_data_dir
+    from uacragent.infra.persistence import (
+        configure_hf_cache,
+        configure_logging,
+        get_app_data_dir,
+        get_cli_run_dir,
+    )
     configure_logging()
     _app_env = get_app_data_dir() / ".env"
     if _app_env.exists():
@@ -134,6 +139,9 @@ def _cli(args: argparse.Namespace) -> None:
         extra_instructions=args.extra_instructions or "",
         classified_files=classified_files,
     )
+    # Keep CLI-created artefacts under a dedicated app-managed root rather
+    # than mixing them with desktop auto sessions or app-global metadata.
+    session.workspace_folder = (get_cli_run_dir() / session.workspace_id).resolve()
 
     agent = ConversationAgent(settings)
 

@@ -792,6 +792,22 @@ class ConversationAgent:
         if prefs is None:
             prefs = session.to_user_prefs()
 
+        def _sanitise(value: str) -> str:
+            """Prepare a user-supplied string for safe injection into the system prompt.
+
+            Two threats are addressed:
+            1. ``{`` / ``}`` brace injection — Python's ``str.format()`` treats
+               unmatched braces as ``KeyError`` / ``ValueError``.  Escaping them
+               to ``{{`` / ``}}`` makes them literal in the output.
+            2. ``[TASK:xxx]`` prompt injection — a user could paste this marker
+               into a free-text field (e.g. ``extra_instructions``) and trick the
+               LLM into triggering an unintended generation pipeline.  Inserting
+               a zero-width word-joiner (U+2060) between ``[TASK`` and ``:``
+               neutralises the regex that the response parser uses, identical to
+               the sanitisation already applied to retrieved document chunks.
+            """
+            return value.replace("{", "{{").replace("}", "}}").replace("[TASK:", "[TASK⁠:")
+
         # Build a compact course meta suffix for the opening line
         meta_parts = []
         if prefs.get("course_code"):
@@ -812,21 +828,21 @@ class ConversationAgent:
         response_language = _get_language_instruction(language)
 
         rendered = template.format(
-            course_name=prefs.get("course_name") or "this course",
-            course_meta=course_meta,
-            university_name=prefs.get("university_name") or "Not specified",
-            major=prefs.get("major") or "Not specified",
-            course_code=prefs.get("course_code") or "Not specified",
-            professor_name=prefs.get("professor_name") or "Not specified",
-            semester=prefs.get("semester") or "Not specified",
-            exam_type=prefs.get("exam_type") or "other",
-            exam_format=prefs.get("exam_format") or "written",
-            exam_duration=prefs.get("exam_duration") or "Not specified",
-            exam_info=prefs.get("exam_info") or "None provided",
-            extra_instructions=prefs.get("extra_instructions") or "None",
-            has_files=has_files_text,
-            context=context,
-            response_language=response_language,
+            course_name=_sanitise(prefs.get("course_name") or "this course"),
+            course_meta=_sanitise(course_meta),
+            university_name=_sanitise(prefs.get("university_name") or "Not specified"),
+            major=_sanitise(prefs.get("major") or "Not specified"),
+            course_code=_sanitise(prefs.get("course_code") or "Not specified"),
+            professor_name=_sanitise(prefs.get("professor_name") or "Not specified"),
+            semester=_sanitise(prefs.get("semester") or "Not specified"),
+            exam_type=prefs.get("exam_type") or "other",        # enum value — safe
+            exam_format=prefs.get("exam_format") or "written",  # enum value — safe
+            exam_duration=_sanitise(prefs.get("exam_duration") or "Not specified"),
+            exam_info=_sanitise(prefs.get("exam_info") or "None provided"),
+            extra_instructions=_sanitise(prefs.get("extra_instructions") or "None"),
+            has_files=has_files_text,   # computed from enum keys + counts — safe
+            context=context,            # already sanitised in _retrieve_context()
+            response_language=response_language,  # fixed dict value — safe
         )
 
         if history_summary:

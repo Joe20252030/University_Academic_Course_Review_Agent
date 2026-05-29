@@ -674,10 +674,10 @@ The CLI examples below assume you completed `pip install -e .` during setup.
 The CLI uses the provider configured through `LLM_PROVIDER`/`LLM_MODEL` and the
 matching API key from your environment.
 
-`--workspace-id` controls the workspace folder name under the app data
-directory. Reusing the same ID lets the CLI reuse the same persisted Chroma
-store and outputs for unchanged files, which can avoid re-embedding work and
-additional embedding API calls on later runs.
+`--workspace-id` controls the workspace folder name under
+`<app_data_dir>/cli_run/`. Reusing the same ID lets the CLI reuse the same
+persisted Chroma store and outputs for unchanged files, which can avoid
+re-embedding work and additional embedding API calls on later runs.
 
 CLI runs also respect `EMBEDDING_PROVIDER`. For example, you can use DeepSeek
 for chat/generation together with `EMBEDDING_PROVIDER=local` to avoid cloud
@@ -747,8 +747,8 @@ Start the server:
 The API also uses the provider configured through `LLM_PROVIDER`/`LLM_MODEL`
 and the matching API key from the environment.
 
-`workspace_id` in API requests resolves to a folder under the app data
-directory in the same way as the CLI.
+`workspace_id` in API requests resolves to a folder under
+`<app_data_dir>/api_run/`.
 
 The API likewise respects `EMBEDDING_PROVIDER`, `EMBEDDING_MODEL`, and
 `LOCAL_EMBEDDING_MODEL` in source installs. Frozen app builds use the ONNX
@@ -829,7 +829,8 @@ Workspace resolution:
 
 - Desktop GUI with a custom workspace folder: `<workspace>` is the chosen folder
 - Desktop GUI with auto workspace: `<workspace>` is `<app_data_dir>/sessions/<workspace_id>/`
-- CLI / API: `<workspace>` is `<app_data_dir>/<workspace_id>/`
+- CLI: `<workspace>` is `<app_data_dir>/cli_run/<workspace_id>/`
+- API: `<workspace>` is `<app_data_dir>/api_run/<workspace_id>/`
 
 ## Project structure
 

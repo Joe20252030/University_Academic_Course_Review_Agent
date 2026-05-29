@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from uacragent.agent.service import AgentService
 from uacragent.api.deps import get_agent_service
 from uacragent.api.schemas import ReviewRequest, ReviewResponse
+from uacragent.infra.persistence import get_api_run_dir
 
 
 router = APIRouter()
@@ -132,6 +133,7 @@ def generate_review(
         semester=req.semester,
         exam_duration=req.exam_duration,
         exam_info=req.exam_info,
+        workspace_folder=(get_api_run_dir() / req.workspace_id).resolve(),
         effort_level=req.effort_level,
         reasoning_mode=req.reasoning_mode,
     )
