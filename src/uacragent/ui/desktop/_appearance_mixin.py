@@ -605,6 +605,23 @@ class AppearanceMixin:
                 _btn.update_style(font=("TkDefaultFont", max(_ctrl_size, 12)))
         except Exception as exc:  # noqa: BLE001
             logger.debug("_apply_theme: widget not ready or update failed: %s", exc)
+        # Session list items carry explicit font tuples so the named-font
+        # update above does not reach them — propagate the new size explicitly.
+        try:
+            self._session_list.update_font(size)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("_apply_theme: widget not ready or update failed: %s", exc)
+        # Placeholder label (shown when no session is active)
+        try:
+            self._ph_lbl.configure(font=("TkDefaultFont", size + 1))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("_apply_theme: widget not ready or update failed: %s", exc)
+        # Drag-and-drop overlay label
+        try:
+            self._dnd_overlay_lbl.configure(font=("TkDefaultFont", size + 5, "bold"))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("_apply_theme: widget not ready or update failed: %s", exc)
+
         # Re-apply tag fonts with the new size
         self._reconfigure_chat_tags()
 
@@ -788,14 +805,14 @@ class AppearanceMixin:
 
         def _browse() -> None:
             folder = filedialog.askdirectory(
-                title="Select app data folder",
+                title=self._t("app_data_browse_title"),
                 initialdir=path_var.get() or str(Path.home()),
             )
             if folder:
                 path_var.set(folder)
 
         _browse_chip = _RoundedChip(
-            frm, text="Browse…",
+            frm, text=self._t("app_data_browse_btn"),
             chip_bg=_cbg, chip_fg=_fg,
             parent_bg=_cbg,
             font=("TkDefaultFont", _sz),

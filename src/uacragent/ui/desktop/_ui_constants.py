@@ -103,7 +103,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "font_medium":        "Medium",
         "font_large":         "Large",
         "language_label":     "Language:",
-        "app_data_label":     "App data folder:",
+        "app_data_label":          "App data folder:",
+        "app_data_browse_btn":     "Browse…",
+        "app_data_browse_title":   "Select app data folder",
         "app_data_hint":      (
             "The index.json and any auto-created session workspaces\n"
             "are stored here.  Changes take effect on next launch."
@@ -537,7 +539,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "font_medium":        "中",
         "font_large":         "大",
         "language_label":     "语言:",
-        "app_data_label":     "应用数据目录:",
+        "app_data_label":          "应用数据目录:",
+        "app_data_browse_btn":     "浏览…",
+        "app_data_browse_title":   "选择应用数据目录",
         "app_data_hint":      (
             "索引文件及自动创建的会话工作空间将存储在此处。\n"
             "更改将在下次启动后生效。"

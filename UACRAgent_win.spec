@@ -26,8 +26,8 @@ HERE = Path(SPECPATH)       # directory this .spec file lives in
 #    This populates the Properties → Details tab of the .exe on Windows.
 # ---------------------------------------------------------------------------
 _ver_parts = [int(x) for x in _APP_VERSION.split(".")[:3]] + [0]
-_ver_tuple = tuple(_ver_parts)                            # e.g. (0, 1, 0, 0)
-_ver_str   = ".".join(str(x) for x in _ver_parts)        # e.g. "0.1.0.0"
+_ver_tuple = tuple(_ver_parts)                            # e.g. (0, 1, 2, 0)
+_ver_str   = ".".join(str(x) for x in _ver_parts)        # e.g. "0.1.2.0"
 
 _version_info_content = f"""\
 VSVersionInfo(

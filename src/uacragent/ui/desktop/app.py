@@ -1040,15 +1040,15 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         # ── Placeholder (shown when no session is active) ─────────────────
         # Grids at row=0 (the only row in `right`) so it fills the full pane.
         self._placeholder_frame = ttk.Frame(right)
-        _ph_lbl = ttk.Label(
+        self._ph_lbl = ttk.Label(
             self._placeholder_frame,
             text=self._t("placeholder"),
             foreground="#aaaaaa",
             font=("TkDefaultFont", 14),
             justify="center",
         )
-        _ph_lbl.place(relx=0.5, rely=0.5, anchor="center")
-        self._i18n_widgets.append((_ph_lbl, "text", "placeholder"))
+        self._ph_lbl.place(relx=0.5, rely=0.5, anchor="center")
+        self._i18n_widgets.append((self._ph_lbl, "text", "placeholder"))
 
         # Start in blank state — activated by session select or + New.
         self._set_chat_active(False)
@@ -1620,12 +1620,13 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
             _mode = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
             c = _THEME_COLORS.get(_mode, _THEME_COLORS["light"])
             elapsed = time.monotonic() - getattr(self, "_busy_start_time", time.monotonic())
+            _tsz = max(self._font_size() - 1, 10) if hasattr(self, "_font_size") else 11
             lbl = tk.Label(
                 self._msg_frame,
                 text=self._format_thinking_text(label, elapsed),
                 bg=c.get("text_bg", "#ffffff"),
                 fg=c.get("status_fg", "#9aa5be"),
-                font=("TkDefaultFont", 11, "italic"),
+                font=("TkDefaultFont", _tsz, "italic"),
                 anchor="w", padx=20, pady=6,
             )
             lbl.pack(fill="x", pady=(0, 4))

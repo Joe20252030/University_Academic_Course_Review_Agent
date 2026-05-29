@@ -936,6 +936,19 @@ class _SessionItemFrame(tk.Frame):
             w.bind("<Leave>",    self._on_leave,  add="+")
             w.bind("<Button-1>", self._on_click,  add="+")
 
+    def update_font(self, size: int) -> None:
+        """Update both labels to the given body font *size*.
+
+        Session-item labels use the same size as the body font so they scale
+        with the global font-size setting.  Called by ``_CustomSessionList``
+        when the user changes the font size in App Settings.
+        """
+        try:
+            self._label_name.configure(font=("TkDefaultFont", size))
+            self._btn_more.configure(font=("TkDefaultFont", size))
+        except Exception:  # noqa: BLE001
+            pass
+
     # ------------------------------------------------------------------
     # Background canvas helpers
     # ------------------------------------------------------------------
@@ -1254,6 +1267,11 @@ class CustomSessionList:
         self._delete_label = delete
         for item in self._items:
             item.update_labels(rename, delete)
+
+    def update_font(self, size: int) -> None:
+        """Propagate a font-size change to all currently-rendered session items."""
+        for item in self._items:
+            item.update_font(size)
 
     def refresh(self, records: list[dict], active_workspace: "str | None") -> None:
         """Rebuild all list items from *records*; re-select the active session."""
