@@ -322,6 +322,39 @@ Build note:
 - Frozen standalone builds use the ONNX local embedding path rather than the
   `sentence-transformers` / PyTorch stack for packaging reliability.
 
+### Opening unsigned builds
+
+The standalone builds are not code-signed or notarized. Your operating system
+will block the app on first launch — this is expected behaviour for unsigned
+third-party software. You only need to do this once per installation.
+
+**macOS — Gatekeeper**
+
+The first time you open `UACRAgent.app`, macOS will show:
+*"UACRAgent cannot be opened because the developer cannot be verified."*
+
+To allow it:
+
+1. Right-click (or Control-click) `UACRAgent.app` and choose **Open**
+2. Click **Open** in the confirmation dialog
+
+Alternatively: open **System Settings → Privacy & Security**, scroll to the
+blocked-app notice at the bottom, and click **Open Anyway**.
+
+**Windows — SmartScreen**
+
+The first time you run `UACRAgent.exe`, Windows will show:
+*"Windows protected your PC."*
+
+To allow it:
+
+1. Click **More info**
+2. Click **Run anyway**
+
+Note: code signing and notarization are planned for a future release. Until
+then, these one-time manual steps are required for standalone builds downloaded
+from GitHub Releases.
+
 ## Configure
 
 ### API Keys
