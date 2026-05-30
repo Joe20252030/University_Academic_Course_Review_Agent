@@ -32,18 +32,26 @@
           <a href="#getting-started" data-en="Get Started" data-zh="开始使用">Get Started</a>
         </nav>
         <div class="header-actions">
+          <a
+            class="button secondary header-download"
+            href="https://github.com/Joe20252030/University_Academic_Course_Review_Agent/releases"
+            target="_blank"
+            rel="noreferrer"
+            data-en="Download"
+            data-zh="下载"
+          >Download</a>
           <div class="lang-switch" aria-label="Language switch">
             <button type="button" class="lang-btn is-active" data-lang="en">EN</button>
             <button type="button" class="lang-btn" data-lang="zh-Hans">简体中文</button>
           </div>
-        <a
-          class="github-link"
-          href="https://github.com/Joe20252030/University_Academic_Course_Review_Agent"
-          target="_blank"
-          rel="noreferrer"
-          data-en="GitHub"
-          data-zh="GitHub"
-        >GitHub</a>
+          <a
+            class="github-link"
+            href="https://github.com/Joe20252030/University_Academic_Course_Review_Agent"
+            target="_blank"
+            rel="noreferrer"
+            data-en="GitHub"
+            data-zh="GitHub"
+          >GitHub</a>
         </div>
       </header>
 
@@ -261,31 +269,78 @@
         <section id="getting-started" class="section getting-started">
           <div class="section-heading">
             <p class="eyebrow" data-en="Get started" data-zh="开始使用">Get started</p>
-            <h2 data-en="Source install, desktop launch, or local API." data-zh="从源码安装、启动桌面应用，或运行本地 API。">Source install, desktop launch, or local API.</h2>
+            <h2 data-en="Pick the setup path that matches how you want to use it." data-zh="根据你的使用方式，选择最合适的安装路径。">Pick the setup path that matches how you want to use it.</h2>
+            <p data-en="Most users should start with the packaged desktop app. Use the source install only if you want development control, the CLI, or the local API." data-zh="大多数用户建议直接使用打包好的桌面应用。只有在你需要开发环境控制、CLI 或本地 API 时，再选择源码安装。">
+              Most users should start with the packaged desktop app. Use the source
+              install only if you want development control, the CLI, or the local API.
+            </p>
           </div>
           <div class="install-grid">
             <article class="install-card">
-              <h3 data-en="Install from source" data-zh="从源码安装">Install from source</h3>
+              <h3 data-en="Desktop app: macOS" data-zh="桌面应用：macOS">Desktop app: macOS</h3>
+              <ol class="install-steps">
+                <li data-en="Open the Releases page and download the latest macOS build." data-zh="打开 Releases 页面并下载最新的 macOS 版本。">Open the Releases page and download the latest macOS build.</li>
+                <li data-en="Move the app to Applications if you want a normal installed location." data-zh="如果你希望像普通应用一样使用，可将应用拖到 Applications 文件夹。">Move the app to Applications if you want a normal installed location.</li>
+                <li data-en="Launch the app. If macOS blocks it because it is from an unidentified developer, open System Settings → Privacy &amp; Security and choose Open Anyway." data-zh="启动应用。如果 macOS 因“未识别的开发者”而阻止打开，请前往“系统设置 → 隐私与安全性”，选择“仍要打开”。">Launch the app. If macOS blocks it because it is from an unidentified developer, open System Settings → Privacy &amp; Security and choose Open Anyway.</li>
+                <li data-en="On first use, add your provider/API settings and create a session." data-zh="首次使用时，先填写 provider / API 设置，然后创建一个会话。">On first use, add your provider/API settings and create a session.</li>
+              </ol>
+            </article>
+            <article class="install-card">
+              <h3 data-en="Desktop app: Windows" data-zh="桌面应用：Windows">Desktop app: Windows</h3>
+              <ol class="install-steps">
+                <li data-en="Open the Releases page and download the latest Windows zip." data-zh="打开 Releases 页面并下载最新的 Windows zip 压缩包。">Open the Releases page and download the latest Windows zip.</li>
+                <li data-en="Extract the zip, then keep the full app folder together. Do not move only the .exe by itself." data-zh="解压压缩包，并保留完整的应用文件夹。不要只单独移动 .exe 文件。">Extract the zip, then keep the full app folder together. Do not move only the <code>.exe</code> by itself.</li>
+                <li data-en="Run UACRAgent.exe. If Windows SmartScreen warns that the app is from an unknown publisher, click More info → Run anyway." data-zh="运行 UACRAgent.exe。如果 Windows SmartScreen 提示应用来自未知发布者，请点击“更多信息 → 仍要运行”。">Run <code>UACRAgent.exe</code>. If Windows SmartScreen warns that the app is from an unknown publisher, click <strong>More info → Run anyway</strong>.</li>
+                <li data-en="On first use, add your provider/API settings and create a session." data-zh="首次使用时，先填写 provider / API 设置，然后创建一个会话。">On first use, add your provider/API settings and create a session.</li>
+              </ol>
+            </article>
+            <article class="install-card">
+              <h3 data-en="Source install: macOS / Linux" data-zh="源码安装：macOS / Linux">Source install: macOS / Linux</h3>
+              <ol class="install-steps">
+                <li data-en="Clone the repository and open a terminal in the project root." data-zh="克隆仓库，并在项目根目录打开终端。">Clone the repository and open a terminal in the project root.</li>
+                <li data-en="Create and activate a virtual environment." data-zh="创建并激活虚拟环境。">Create and activate a virtual environment.</li>
+                <li data-en="Install dependencies and the editable package." data-zh="安装依赖和可编辑包。">Install dependencies and the editable package.</li>
+                <li data-en="Copy .env.sample to .env, then add your provider/API settings." data-zh="将 .env.sample 复制为 .env，然后填写 provider / API 设置。">Copy <code>.env.sample</code> to <code>.env</code>, then add your provider/API settings.</li>
+              </ol>
               <pre><code>python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-pip install -e .</code></pre>
+pip install -e .
+cp .env.sample .env</code></pre>
             </article>
             <article class="install-card">
-              <h3 data-en="Windows PowerShell" data-zh="Windows PowerShell">Windows PowerShell</h3>
+              <h3 data-en="Source install: Windows PowerShell" data-zh="源码安装：Windows PowerShell">Source install: Windows PowerShell</h3>
+              <ol class="install-steps">
+                <li data-en="Clone the repository and open PowerShell in the project root." data-zh="克隆仓库，并在项目根目录打开 PowerShell。">Clone the repository and open PowerShell in the project root.</li>
+                <li data-en="Create the virtual environment." data-zh="创建虚拟环境。">Create the virtual environment.</li>
+                <li data-en="If script execution is blocked, temporarily allow activation in the current PowerShell session." data-zh="如果脚本执行被阻止，请临时允许当前 PowerShell 会话中的激活脚本运行。">If script execution is blocked, temporarily allow activation in the current PowerShell session.</li>
+                <li data-en="Activate the environment, install dependencies, then copy .env.sample to .env." data-zh="激活环境、安装依赖，然后将 .env.sample 复制为 .env。">Activate the environment, install dependencies, then copy <code>.env.sample</code> to <code>.env</code>.</li>
+              </ol>
               <pre><code>py -m venv .venv
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-pip install -e .</code></pre>
+pip install -e .
+copy .env.sample .env</code></pre>
             </article>
             <article class="install-card">
-              <h3 data-en="Launch the desktop app" data-zh="启动桌面应用">Launch the desktop app</h3>
+              <h3 data-en="After installation" data-zh="安装后下一步">After installation</h3>
+              <ol class="install-steps">
+                <li data-en="Desktop users: launch the GUI and create a session." data-zh="桌面应用用户：启动 GUI 并创建一个会话。">Desktop users: launch the GUI and create a session.</li>
+                <li data-en="Add course info and course files, then click Apply to index them." data-zh="添加课程信息和课程文件，然后点击 Apply 进行索引。">Add course info and course files, then click <strong>Apply</strong> to index them.</li>
+                <li data-en="Ask grounded study questions or use the quick actions for Review Summary, Practice Booklet, Mock Exam, or Exam Prediction." data-zh="提出基于资料的学习问题，或使用快捷操作生成 Review Summary、Practice Booklet、Mock Exam、Exam Prediction。">Ask grounded study questions or use the quick actions for Review Summary, Practice Booklet, Mock Exam, or Exam Prediction.</li>
+              </ol>
               <pre><code>python -m uacragent --gui</code></pre>
             </article>
             <article class="install-card">
-              <h3 data-en="Run the local API" data-zh="运行本地 API">Run the local API</h3>
-              <pre><code>uvicorn uacragent.api.main:app --reload</code></pre>
+              <h3 data-en="CLI or local API" data-zh="CLI 或本地 API">CLI or local API</h3>
+              <ol class="install-steps">
+                <li data-en="Use the CLI if you want a terminal-first study loop after indexing." data-zh="如果你希望在索引后通过终端进行持续学习交互，请使用 CLI。">Use the CLI if you want a terminal-first study loop after indexing.</li>
+                <li data-en="Use the FastAPI layer only for local trusted one-shot generation workflows." data-zh="只有在本地可信的一次性生成流程中才建议使用 FastAPI 接口。">Use the FastAPI layer only for local trusted one-shot generation workflows.</li>
+              </ol>
+              <pre><code>python -m uacragent your_file.pdf --course-name "Your Course Name"
+
+uvicorn uacragent.api.main:app --reload</code></pre>
             </article>
           </div>
           <div class="resource-links">
