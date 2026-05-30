@@ -62,6 +62,28 @@ class _HistoryStore:
                 return True
             return False
 
+    def pop_last_ai_only(self) -> bool:
+        """Atomically remove only the last AI message, keeping the human message.
+
+        Used on cancellation so the user's request is preserved in history even
+        though no AI reply was committed.  Returns ``True`` when a message was
+        removed, ``False`` when the store was empty (no-op).
+        """
+        with self._lock:
+            if self._messages:
+                del self._messages[-1]
+                return True
+            return False
+
+    def append_human_only(self, human: BaseMessage) -> None:
+        """Atomically append a single human message with no AI counterpart.
+
+        Used on cancellation when the pipeline raised before ``append_turn``
+        was ever called, so the user's request still lands in history.
+        """
+        with self._lock:
+            self._messages.append(human)
+
     def replace_all(self, messages: list) -> None:
         """Atomically replace the entire message list.
 

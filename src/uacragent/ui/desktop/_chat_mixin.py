@@ -932,9 +932,9 @@ class ChatMixin:
                     # The LLM finished but the user cancelled before the response
                     # was dispatched to the UI (or a new operation started).
                     # chat() already appended the turn (human + AI) to
-                    # session.chat_history — undo it so the invisible response
-                    # doesn't silently persist on disk.
-                    captured_session.chat_history.pop_last_turn()
+                    # session.chat_history — keep the human message so the request
+                    # is preserved in history, but drop the AI reply.
+                    captured_session.chat_history.pop_last_ai_only()
                     # Release busy lock since the completion handler won't run.
                     self.after(0, lambda: self._set_busy(False))
                 else:
@@ -945,7 +945,12 @@ class ChatMixin:
                     self.after(0, lambda e=str(exc), s=captured_session:
                                self._on_chat_error(e, s))
                 else:
-                    # Cancelled; release busy lock from thread's finally path.
+                    # Cancelled before chat() could call append_turn — add the
+                    # human message on its own so the request survives in history.
+                    from langchain_core.messages import HumanMessage
+                    captured_session.chat_history.append_human_only(
+                        HumanMessage(content=message)
+                    )
                     self.after(0, lambda: self._set_busy(False))
 
         threading.Thread(target=_work, daemon=True).start()
