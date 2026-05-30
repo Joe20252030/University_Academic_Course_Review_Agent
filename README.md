@@ -1,8 +1,13 @@
 # University Academic Course Review Agent (UACRAgent)
 
+[![Website](https://img.shields.io/badge/website-joe20252030.github.io-blue)](https://joe20252030.github.io/University_Academic_Course_Review_Agent/)
+[![GitHub](https://img.shields.io/badge/github-Joe20252030-lightgrey)](https://github.com/Joe20252030/University_Academic_Course_Review_Agent)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 > **Latest release: v0.2.0** — responsive cancellation, attachment visibility in
 > chat history, tooltip UX, and robustness fixes.
 > See [CHANGELOG.md](CHANGELOG.md) for the full release history.
+> Visit the **[project website](https://joe20252030.github.io/University_Academic_Course_Review_Agent/)** for an overview.
 
 Study from course documents with a grounded academic assistant, and generate
 review materials when you need them through a persistent desktop chat workflow.
@@ -1012,7 +1017,21 @@ app.py                   Lightweight importable helper for direct service calls
 UACRAgent_mac.spec       PyInstaller spec for macOS standalone builds
 UACRAgent_win.spec       PyInstaller spec for Windows standalone builds
 LICENSE                  MIT license text
+docs/
+  index.html             GitHub Pages project website
+  styles.css             Website stylesheet
+  assets/                Website assets (logo SVG)
+  .nojekyll              Disables Jekyll processing on GitHub Pages
 ```
+
+## Links
+
+| | |
+|---|---|
+| Project website | <https://joe20252030.github.io/University_Academic_Course_Review_Agent/> |
+| GitHub repository | <https://github.com/Joe20252030/University_Academic_Course_Review_Agent> |
+| Releases & downloads | <https://github.com/Joe20252030/University_Academic_Course_Review_Agent/releases> |
+| Changelog | [CHANGELOG.md](CHANGELOG.md) |
 
 ## Credits
 

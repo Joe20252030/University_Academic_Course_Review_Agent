@@ -1,5 +1,8 @@
 # Changelog
 
+**Project website:** <https://joe20252030.github.io/University_Academic_Course_Review_Agent/>  
+**Repository:** <https://github.com/Joe20252030/University_Academic_Course_Review_Agent>
+
 All notable changes to UACRAgent are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).

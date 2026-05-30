@@ -25,7 +25,9 @@ classifiers = [
 dynamic = ["dependencies"]
 
 [project.urls]
-"Changelog" = "https://github.com/xlzuvekas/UACRAgent/blob/main/CHANGELOG.md"
+"Homepage"   = "https://joe20252030.github.io/University_Academic_Course_Review_Agent/"
+"Repository" = "https://github.com/Joe20252030/University_Academic_Course_Review_Agent"
+"Changelog"  = "https://github.com/Joe20252030/University_Academic_Course_Review_Agent/blob/main/CHANGELOG.md"
 
 [project.scripts]
 uacragent = "uacragent.__main__:main"
