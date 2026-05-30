@@ -35,6 +35,10 @@ body {
     linear-gradient(180deg, #f6f8fd 0%, #eef2fa 100%);
 }
 
+html.lang-zh body {
+  font-family: "IBM Plex Sans", "Noto Sans SC", sans-serif;
+}
+
 a {
   color: inherit;
 }
@@ -92,6 +96,40 @@ a {
 .nav-links a,
 .github-link {
   text-decoration: none;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.lang-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(15, 28, 63, 0.06);
+  border: 1px solid rgba(15, 28, 63, 0.08);
+}
+
+.lang-btn {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 8px 12px;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.lang-btn.is-active {
+  background: white;
+  color: var(--navy-900);
+  box-shadow: 0 6px 16px rgba(17, 26, 54, 0.10);
 }
 
 .nav-links a:hover,
@@ -293,6 +331,12 @@ a {
   font-size: clamp(2rem, 3vw, 3rem);
 }
 
+html.lang-zh .hero h1,
+html.lang-zh .section h2 {
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+
 .section-heading p:last-child {
   max-width: 60ch;
   margin: 12px 0 0;
@@ -425,6 +469,25 @@ code {
   line-height: 1.7;
 }
 
+.footer-meta {
+  margin-top: 8px !important;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  font-size: 0.96rem;
+}
+
+.footer-meta a {
+  color: var(--navy-700);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.footer-sep {
+  color: rgba(24, 35, 63, 0.28);
+}
+
 @media (max-width: 1080px) {
   .hero,
   .feature-grid,
@@ -455,6 +518,12 @@ code {
 
   .nav-links {
     order: 3;
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .header-actions {
     width: 100%;
     justify-content: center;
     flex-wrap: wrap;

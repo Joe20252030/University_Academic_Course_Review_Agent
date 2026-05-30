@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap"
       rel="stylesheet"
     >
     <link rel="icon" href="./assets/logo.svg" type="image/svg+xml">
@@ -25,26 +25,34 @@
           <span>UACRAgent</span>
         </a>
         <nav class="nav-links" aria-label="Primary">
-          <a href="#features">Features</a>
-          <a href="#workflow">Workflow</a>
-          <a href="#interfaces">Interfaces</a>
-          <a href="#privacy">Privacy</a>
-          <a href="#getting-started">Get Started</a>
+          <a href="#features" data-en="Features" data-zh="功能">Features</a>
+          <a href="#workflow" data-en="Workflow" data-zh="流程">Workflow</a>
+          <a href="#interfaces" data-en="Interfaces" data-zh="使用方式">Interfaces</a>
+          <a href="#privacy" data-en="Privacy" data-zh="隐私">Privacy</a>
+          <a href="#getting-started" data-en="Get Started" data-zh="开始使用">Get Started</a>
         </nav>
+        <div class="header-actions">
+          <div class="lang-switch" aria-label="Language switch">
+            <button type="button" class="lang-btn is-active" data-lang="en">EN</button>
+            <button type="button" class="lang-btn" data-lang="zh-Hans">简体中文</button>
+          </div>
         <a
           class="github-link"
           href="https://github.com/Joe20252030/University_Academic_Course_Review_Agent"
           target="_blank"
           rel="noreferrer"
+          data-en="GitHub"
+          data-zh="GitHub"
         >GitHub</a>
+        </div>
       </header>
 
       <main id="top">
         <section class="hero">
           <div class="hero-copy">
-            <p class="eyebrow">v0.2.0 · desktop-first · local-trusted API</p>
-            <h1>Study from course documents with a grounded academic assistant.</h1>
-            <p class="hero-text">
+            <p class="eyebrow" data-en="v0.2.0 · desktop-first · local-trusted API" data-zh="v0.2.0 · 桌面优先 · 本地可信 API">v0.2.0 · desktop-first · local-trusted API</p>
+            <h1 data-en="Study from course documents with a grounded academic assistant." data-zh="通过有依据的学术助手，从课程资料中高效学习。">Study from course documents with a grounded academic assistant.</h1>
+            <p class="hero-text" data-en="UACRAgent helps students chat over class materials, reuse persistent study sessions, and generate structured review artefacts only when they actually need them." data-zh="UACRAgent 帮助学生围绕课程资料进行对话式学习、复用持久化学习会话，并在真正需要时生成结构化复习材料。">
               UACRAgent helps students chat over class materials, reuse persistent study
               sessions, and generate structured review artefacts only when they actually
               need them.
@@ -55,28 +63,32 @@
                 href="https://github.com/Joe20252030/University_Academic_Course_Review_Agent"
                 target="_blank"
                 rel="noreferrer"
+                data-en="View Repository"
+                data-zh="查看仓库"
               >View Repository</a>
-              <a class="button secondary" href="#getting-started">Quick Start</a>
+              <a class="button secondary" href="#getting-started" data-en="Quick Start" data-zh="快速开始">Quick Start</a>
             </div>
             <ul class="hero-points">
-              <li>Persistent desktop sessions with saved history and workspace reuse</li>
-              <li>RAG-based retrieval with document-type-aware chunking</li>
-              <li>Review summaries, practice booklets, mock exams, and exam predictions</li>
+              <li data-en="Persistent desktop sessions with saved history and workspace reuse" data-zh="持久化桌面会话，支持历史记录保存与工作区复用">Persistent desktop sessions with saved history and workspace reuse</li>
+              <li data-en="RAG-based retrieval with document-type-aware chunking" data-zh="基于 RAG 的检索，并针对不同文档类型采用专门的切分策略">RAG-based retrieval with document-type-aware chunking</li>
+              <li data-en="Review summaries, practice booklets, mock exams, and exam predictions" data-zh="支持生成复习总结、练习册、模拟考试和考试预测">Review summaries, practice booklets, mock exams, and exam predictions</li>
             </ul>
           </div>
           <aside class="hero-card">
             <div class="release-card">
-              <span class="release-label">Latest Release</span>
+              <span class="release-label" data-en="Latest Release" data-zh="最新版本">Latest Release</span>
               <h2>UACRAgent v0.2.0</h2>
               <ul>
-                <li>Responsive cancellation across the full generation pipeline</li>
-                <li>Attachment chips preserved in chat history</li>
-                <li>Tooltip and DOCX extraction reliability fixes</li>
+                <li data-en="Responsive cancellation across the full generation pipeline" data-zh="整个生成流程都支持快速响应的取消操作">Responsive cancellation across the full generation pipeline</li>
+                <li data-en="Attachment chips preserved in chat history" data-zh="附件标签会保留在聊天历史中">Attachment chips preserved in chat history</li>
+                <li data-en="Tooltip and DOCX extraction reliability fixes" data-zh="改进了工具提示与 DOCX 提取可靠性">Tooltip and DOCX extraction reliability fixes</li>
               </ul>
               <a
                 href="https://github.com/Joe20252030/University_Academic_Course_Review_Agent/releases"
                 target="_blank"
                 rel="noreferrer"
+                data-en="Release notes"
+                data-zh="发行说明"
               >Release notes</a>
             </div>
           </aside>
@@ -84,52 +96,52 @@
 
         <section id="features" class="section">
           <div class="section-heading">
-            <p class="eyebrow">What it does</p>
-            <h2>Built for studying first, generation second.</h2>
-            <p>
+            <p class="eyebrow" data-en="What it does" data-zh="项目定位">What it does</p>
+            <h2 data-en="Built for studying first, generation second." data-zh="先服务学习，再支持生成。">Built for studying first, generation second.</h2>
+            <p data-en="The current version is centered on guided course review through a persistent assistant workflow, with document generation available as a strong secondary tool." data-zh="当前版本以持久化助手工作流下的课程复习支持为核心，同时将文档生成功能作为强有力的辅助能力。">
               The current version is centered on guided course review through a persistent
               assistant workflow, with document generation available as a strong secondary tool.
             </p>
           </div>
           <div class="feature-grid">
             <article class="feature-card">
-              <h3>Grounded study chat</h3>
-              <p>
+              <h3 data-en="Grounded study chat" data-zh="有依据的学习对话">Grounded study chat</h3>
+              <p data-en="Chat over uploaded course documents with task-aware retrieval and weighted document priorities." data-zh="围绕上传的课程资料展开对话，并结合任务感知检索与文档优先级加权。">
                 Chat over uploaded course documents with task-aware retrieval and weighted
                 document priorities.
               </p>
             </article>
             <article class="feature-card">
-              <h3>Structured outputs</h3>
-              <p>
+              <h3 data-en="Structured outputs" data-zh="结构化输出">Structured outputs</h3>
+              <p data-en="Generate review summaries, practice booklets, mock exams, and exam predictions when you ask for them." data-zh="在需要时生成复习总结、练习册、模拟考试和考试预测。">
                 Generate review summaries, practice booklets, mock exams, and exam predictions
                 when you ask for them.
               </p>
             </article>
             <article class="feature-card">
-              <h3>Persistent workspaces</h3>
-              <p>
+              <h3 data-en="Persistent workspaces" data-zh="持久化工作区">Persistent workspaces</h3>
+              <p data-en="Desktop sessions, CLI runs, and API runs each keep their own predictable managed workspace roots." data-zh="桌面会话、CLI 运行和 API 运行各自拥有独立且可预期的托管工作区根目录。">
                 Desktop sessions, CLI runs, and API runs each keep their own predictable
                 managed workspace roots.
               </p>
             </article>
             <article class="feature-card">
-              <h3>Multiple providers</h3>
-              <p>
+              <h3 data-en="Multiple providers" data-zh="多模型提供商支持">Multiple providers</h3>
+              <p data-en="Use Gemini, OpenAI, or DeepSeek for chat and generation, with cloud or local embeddings depending on your setup." data-zh="可使用 Gemini、OpenAI 或 DeepSeek 进行对话和生成，并根据配置选择云端或本地嵌入。">
                 Use Gemini, OpenAI, or DeepSeek for chat and generation, with cloud or local
                 embeddings depending on your setup.
               </p>
             </article>
             <article class="feature-card">
-              <h3>Desktop-first controls</h3>
-              <p>
+              <h3 data-en="Desktop-first controls" data-zh="桌面优先控制体验">Desktop-first controls</h3>
+              <p data-en="Choose effort level, reasoning mode, web search, attachments, export format, and session-specific settings from the GUI." data-zh="在桌面界面中选择 effort level、reasoning mode、网页搜索、附件、导出格式以及会话级设置。">
                 Choose effort level, reasoning mode, web search, attachments, export format,
                 and session-specific settings from the GUI.
               </p>
             </article>
             <article class="feature-card">
-              <h3>Local retrieval store</h3>
-              <p>
+              <h3 data-en="Local retrieval store" data-zh="本地检索存储">Local retrieval store</h3>
+              <p data-en="Chroma vector indexes stay on your machine, and unchanged workspaces can be reused across session reloads." data-zh="Chroma 向量索引保留在本地，未变化的工作区可在会话重新打开时继续复用。">
                 Chroma vector indexes stay on your machine, and unchanged workspaces can be
                 reused across session reloads.
               </p>
@@ -139,38 +151,38 @@
 
         <section id="workflow" class="section workflow-section">
           <div class="section-heading">
-            <p class="eyebrow">How it works</p>
-            <h2>A course-material workflow that stays inspectable.</h2>
+            <p class="eyebrow" data-en="How it works" data-zh="工作方式">How it works</p>
+            <h2 data-en="A course-material workflow that stays inspectable." data-zh="一个可理解、可检查的课程资料工作流。">A course-material workflow that stays inspectable.</h2>
           </div>
           <div class="workflow-steps">
             <article>
               <span>1</span>
-              <h3>Collect</h3>
-              <p>
+              <h3 data-en="Collect" data-zh="收集">Collect</h3>
+              <p data-en="Add syllabi, lecture notes, textbooks, assignments, past exams, and other files in the interface that fits your workflow." data-zh="在适合你工作流的界面中加入 syllabus、lecture notes、textbooks、assignments、past exams 及其他文件。">
                 Add syllabi, lecture notes, textbooks, assignments, past exams, and other
                 files in the interface that fits your workflow.
               </p>
             </article>
             <article>
               <span>2</span>
-              <h3>Split</h3>
-              <p>
+              <h3 data-en="Split" data-zh="切分">Split</h3>
+              <p data-en="Each document type uses a different chunking strategy so retrieval matches the structure of academic material more closely." data-zh="不同文档类型采用不同的切分策略，使检索结果更贴近学术资料的真实结构。">
                 Each document type uses a different chunking strategy so retrieval matches
                 the structure of academic material more closely.
               </p>
             </article>
             <article>
               <span>3</span>
-              <h3>Retrieve</h3>
-              <p>
+              <h3 data-en="Retrieve" data-zh="检索">Retrieve</h3>
+              <p data-en="Chroma stores local vectors and the assistant retrieves weighted context for chat or study-document generation." data-zh="Chroma 在本地保存向量索引，助手基于加权上下文进行对话或学习文档生成。">
                 Chroma stores local vectors and the assistant retrieves weighted context for
                 chat or study-document generation.
               </p>
             </article>
             <article>
               <span>4</span>
-              <h3>Study</h3>
-              <p>
+              <h3 data-en="Study" data-zh="学习">Study</h3>
+              <p data-en="Ask grounded questions, request study artefacts, reopen sessions later, and reuse existing indexes when files have not changed." data-zh="提出基于资料的问题、请求学习产物、稍后重新打开会话，并在文件未变化时复用已有索引。">
                 Ask grounded questions, request study artefacts, reopen sessions later, and
                 reuse existing indexes when files have not changed.
               </p>
@@ -180,35 +192,35 @@
 
         <section id="interfaces" class="section">
           <div class="section-heading">
-            <p class="eyebrow">Interfaces</p>
-            <h2>Three ways to use the same core pipeline.</h2>
+            <p class="eyebrow" data-en="Interfaces" data-zh="使用方式">Interfaces</p>
+            <h2 data-en="Three ways to use the same core pipeline." data-zh="用三种方式访问同一套核心流程。">Three ways to use the same core pipeline.</h2>
           </div>
           <div class="interface-grid">
             <article class="interface-card">
-              <h3>Desktop GUI</h3>
-              <p>The primary interface for most users.</p>
+              <h3 data-en="Desktop GUI" data-zh="桌面图形界面">Desktop GUI</h3>
+              <p data-en="The primary interface for most users." data-zh="面向大多数用户的主要入口。">The primary interface for most users.</p>
               <ul>
-                <li>Persistent sessions and saved workspaces</li>
-                <li>Chat, quick actions, export controls, and app settings</li>
-                <li>macOS, Windows, and Linux support</li>
+                <li data-en="Persistent sessions and saved workspaces" data-zh="持久化会话与保存的工作区">Persistent sessions and saved workspaces</li>
+                <li data-en="Chat, quick actions, export controls, and app settings" data-zh="聊天、快捷操作、导出控制和应用设置">Chat, quick actions, export controls, and app settings</li>
+                <li data-en="macOS, Windows, and Linux support" data-zh="支持 macOS、Windows 和 Linux">macOS, Windows, and Linux support</li>
               </ul>
             </article>
             <article class="interface-card">
-              <h3>Interactive CLI</h3>
-              <p>A terminal-first study assistant.</p>
+              <h3 data-en="Interactive CLI" data-zh="交互式 CLI">Interactive CLI</h3>
+              <p data-en="A terminal-first study assistant." data-zh="面向终端用户的学习助手。">A terminal-first study assistant.</p>
               <ul>
-                <li>Indexes once, then enters a chat loop</li>
-                <li>Managed workspaces under <code>cli_run/</code></li>
-                <li>Best for scriptable local workflows without the GUI</li>
+                <li data-en="Indexes once, then enters a chat loop" data-zh="先索引一次，再进入聊天循环">Indexes once, then enters a chat loop</li>
+                <li data-en="Managed workspaces under cli_run/" data-zh="托管工作区位于 cli_run/ 下">Managed workspaces under <code>cli_run/</code></li>
+                <li data-en="Best for scriptable local workflows without the GUI" data-zh="适合不使用 GUI 的本地脚本化工作流">Best for scriptable local workflows without the GUI</li>
               </ul>
             </article>
             <article class="interface-card">
-              <h3>Local FastAPI API</h3>
-              <p>Programmatic one-shot generation for trusted local use.</p>
+              <h3 data-en="Local FastAPI API" data-zh="本地 FastAPI API">Local FastAPI API</h3>
+              <p data-en="Programmatic one-shot generation for trusted local use." data-zh="面向本地可信环境的程序化一次性生成接口。">Programmatic one-shot generation for trusted local use.</p>
               <ul>
-                <li>Managed workspaces under <code>api_run/</code></li>
-                <li>Absolute local <code>markdown_path</code> response</li>
-                <li>Not intended for public or multi-user deployment</li>
+                <li data-en="Managed workspaces under api_run/" data-zh="托管工作区位于 api_run/ 下">Managed workspaces under <code>api_run/</code></li>
+                <li data-en="Absolute local markdown_path response" data-zh="返回本地绝对路径形式的 markdown_path">Absolute local <code>markdown_path</code> response</li>
+                <li data-en="Not intended for public or multi-user deployment" data-zh="不适用于公网或多用户部署">Not intended for public or multi-user deployment</li>
               </ul>
             </article>
           </div>
@@ -216,30 +228,30 @@
 
         <section id="privacy" class="section privacy-section">
           <div class="section-heading">
-            <p class="eyebrow">Privacy</p>
-            <h2>Local-first working data, provider-dependent requests.</h2>
+            <p class="eyebrow" data-en="Privacy" data-zh="隐私">Privacy</p>
+            <h2 data-en="Local-first working data, provider-dependent requests." data-zh="工作数据优先保留在本地，请求是否外发取决于所选提供商。">Local-first working data, provider-dependent requests.</h2>
           </div>
           <div class="privacy-layout">
             <div class="privacy-card">
-              <h3>What stays local</h3>
+              <h3 data-en="What stays local" data-zh="哪些内容保留在本地">What stays local</h3>
               <ul>
-                <li>Session state and chat history</li>
-                <li>Workspace uploads, outputs, and Chroma indexes</li>
-                <li>Local model cache under the app data directory</li>
-                <li>Logs under <code>&lt;app_data_dir&gt;/logs/</code></li>
+                <li data-en="Session state and chat history" data-zh="会话状态与聊天历史">Session state and chat history</li>
+                <li data-en="Workspace uploads, outputs, and Chroma indexes" data-zh="工作区上传内容、输出结果和 Chroma 索引">Workspace uploads, outputs, and Chroma indexes</li>
+                <li data-en="Local model cache under the app data directory" data-zh="位于应用数据目录下的本地模型缓存">Local model cache under the app data directory</li>
+                <li data-en="Logs under <app_data_dir>/logs/" data-zh="位于 <app_data_dir>/logs/ 下的日志">Logs under <code>&lt;app_data_dir&gt;/logs/</code></li>
               </ul>
             </div>
             <div class="privacy-card">
-              <h3>What may leave the machine</h3>
+              <h3 data-en="What may leave the machine" data-zh="哪些内容可能离开本机">What may leave the machine</h3>
               <ul>
-                <li>Chat requests sent to the selected LLM provider</li>
-                <li>Retrieved document excerpts used in generation</li>
-                <li>Cloud embedding requests when local embeddings are not used</li>
-                <li>Provider-backed web search or attachment processing</li>
+                <li data-en="Chat requests sent to the selected LLM provider" data-zh="发送给所选 LLM 提供商的聊天请求">Chat requests sent to the selected LLM provider</li>
+                <li data-en="Retrieved document excerpts used in generation" data-zh="生成过程中使用的检索文档片段">Retrieved document excerpts used in generation</li>
+                <li data-en="Cloud embedding requests when local embeddings are not used" data-zh="未使用本地嵌入时发送到云端的嵌入请求">Cloud embedding requests when local embeddings are not used</li>
+                <li data-en="Provider-backed web search or attachment processing" data-zh="由提供商处理的网页搜索或附件处理请求">Provider-backed web search or attachment processing</li>
               </ul>
             </div>
           </div>
-          <p class="privacy-note">
+          <p class="privacy-note" data-en="The current API is intended for local trusted use only. If you use the FastAPI layer, set UACRAGENT_ALLOWED_BASE_DIR when you want an extra local filesystem boundary." data-zh="当前 API 仅面向本地可信使用场景。如果你使用 FastAPI 接口并希望增加额外的本地文件系统边界，请设置 UACRAGENT_ALLOWED_BASE_DIR。">
             The current API is intended for local trusted use only. If you use the
             FastAPI layer, set <code>UACRAGENT_ALLOWED_BASE_DIR</code> when you want an
             extra local filesystem boundary.
@@ -248,19 +260,19 @@
 
         <section id="getting-started" class="section getting-started">
           <div class="section-heading">
-            <p class="eyebrow">Get started</p>
-            <h2>Source install, desktop launch, or local API.</h2>
+            <p class="eyebrow" data-en="Get started" data-zh="开始使用">Get started</p>
+            <h2 data-en="Source install, desktop launch, or local API." data-zh="从源码安装、启动桌面应用，或运行本地 API。">Source install, desktop launch, or local API.</h2>
           </div>
           <div class="install-grid">
             <article class="install-card">
-              <h3>Install from source</h3>
+              <h3 data-en="Install from source" data-zh="从源码安装">Install from source</h3>
               <pre><code>python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 pip install -e .</code></pre>
             </article>
             <article class="install-card">
-              <h3>Windows PowerShell</h3>
+              <h3 data-en="Windows PowerShell" data-zh="Windows PowerShell">Windows PowerShell</h3>
               <pre><code>py -m venv .venv
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\.venv\Scripts\Activate.ps1
@@ -268,11 +280,11 @@ pip install -r requirements.txt
 pip install -e .</code></pre>
             </article>
             <article class="install-card">
-              <h3>Launch the desktop app</h3>
+              <h3 data-en="Launch the desktop app" data-zh="启动桌面应用">Launch the desktop app</h3>
               <pre><code>python -m uacragent --gui</code></pre>
             </article>
             <article class="install-card">
-              <h3>Run the local API</h3>
+              <h3 data-en="Run the local API" data-zh="运行本地 API">Run the local API</h3>
               <pre><code>uvicorn uacragent.api.main:app --reload</code></pre>
             </article>
           </div>
@@ -282,30 +294,100 @@ pip install -e .</code></pre>
               href="https://github.com/Joe20252030/University_Academic_Course_Review_Agent/wiki"
               target="_blank"
               rel="noreferrer"
+              data-en="Open Wiki"
+              data-zh="打开 Wiki"
             >Open Wiki</a>
             <a
               class="button secondary"
               href="https://github.com/Joe20252030/University_Academic_Course_Review_Agent/blob/main/README.md"
               target="_blank"
               rel="noreferrer"
+              data-en="Read README"
+              data-zh="阅读 README"
             >Read README</a>
             <a
               class="button secondary"
               href="https://github.com/Joe20252030/University_Academic_Course_Review_Agent/releases"
               target="_blank"
               rel="noreferrer"
+              data-en="Downloads"
+              data-zh="下载版本"
             >Downloads</a>
           </div>
         </section>
       </main>
 
       <footer class="site-footer">
-        <p>
+        <p data-en="UACRAgent is an independent open-source educational study-assistance tool. Generated content should be verified against official course materials and instructor guidance." data-zh="UACRAgent 是一个独立的开源学习辅助项目。生成内容应始终与官方课程资料和授课教师指导进行核对。">
           UACRAgent is an independent open-source educational study-assistance tool.
           Generated content should be verified against official course materials and
           instructor guidance.
         </p>
+        <p class="footer-meta">
+          <span data-en="Copyright (c) 2026 Lizhuo Xu." data-zh="Copyright (c) 2026 Lizhuo Xu.">Copyright (c) 2026 Lizhuo Xu.</span>
+          <span class="footer-sep" aria-hidden="true">·</span>
+          <span data-en="Licensed under the MIT License." data-zh="采用 MIT License 许可。">Licensed under the MIT License.</span>
+          <a
+            href="https://github.com/Joe20252030/University_Academic_Course_Review_Agent/blob/main/LICENSE"
+            target="_blank"
+            rel="noreferrer"
+            data-en="View license"
+            data-zh="查看许可协议"
+          >View license</a>
+        </p>
       </footer>
     </div>
+    <script>
+      (function () {
+        const STORAGE_KEY = "uacragent-site-lang";
+        const root = document.documentElement;
+        const translatable = document.querySelectorAll("[data-en][data-zh]");
+        const buttons = document.querySelectorAll(".lang-btn");
+        const metaDescription = document.querySelector('meta[name="description"]');
+        const pageTitle = document.querySelector("title");
+
+        const descriptions = {
+          en: "Desktop-first academic course assistant for studying from course materials with grounded AI support.",
+          "zh-Hans": "一个桌面优先的学术课程助手，帮助你围绕课程资料进行有依据的学习与复习。"
+        };
+
+        const titles = {
+          en: "UACRAgent · Course Review Assistant",
+          "zh-Hans": "UACRAgent · 课程复习助手"
+        };
+
+        function applyLanguage(lang) {
+          const safeLang = lang === "zh-Hans" ? "zh-Hans" : "en";
+          root.lang = safeLang;
+          root.classList.toggle("lang-zh", safeLang === "zh-Hans");
+          translatable.forEach((el) => {
+            const value = el.dataset[safeLang === "zh-Hans" ? "zh" : "en"];
+            if (value) {
+              el.innerHTML = value;
+            }
+          });
+          if (metaDescription) {
+            metaDescription.setAttribute("content", descriptions[safeLang]);
+          }
+          if (pageTitle) {
+            pageTitle.textContent = titles[safeLang];
+          }
+          buttons.forEach((btn) => {
+            btn.classList.toggle("is-active", btn.dataset.lang === safeLang);
+          });
+          localStorage.setItem(STORAGE_KEY, safeLang);
+        }
+
+        buttons.forEach((btn) => {
+          btn.addEventListener("click", () => applyLanguage(btn.dataset.lang));
+        });
+
+        const saved = localStorage.getItem(STORAGE_KEY);
+        const browserLang = navigator.language && navigator.language.toLowerCase().startsWith("zh")
+          ? "zh-Hans"
+          : "en";
+        applyLanguage(saved || browserLang);
+      }());
+    </script>
   </body>
 </html>
