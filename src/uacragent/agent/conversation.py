@@ -75,11 +75,59 @@ _TEXT_MIMES = {
 }
 
 
+def _extract_docx_text(path: str) -> str:
+    """Extract text from a .docx file, trying two libraries in order.
+
+    ``python-docx`` is attempted first — it handles a wider range of real-world
+    Word documents (complex XML, newer format features, embedded objects) than
+    ``docx2txt``.  ``Docx2txtLoader`` (backed by ``docx2txt``) is kept as a
+    secondary attempt in case ``python-docx`` itself has trouble with a file.
+    Raises the last exception if both paths fail.
+    """
+    last_exc: Exception | None = None
+
+    # Primary: python-docx — robust against complex Word documents
+    try:
+        import docx as _docx  # python-docx
+        doc = _docx.Document(path)
+        parts: list[str] = []
+        # Paragraphs
+        for para in doc.paragraphs:
+            if para.text.strip():
+                parts.append(para.text)
+        # Table cells
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    if cell.text.strip():
+                        parts.append(cell.text)
+        text = "\n".join(parts)
+        if text.strip():
+            return text
+        # If python-docx returned empty text it may have silently failed on
+        # the format — let docx2txt have a go before giving up.
+    except Exception as exc:  # noqa: BLE001
+        last_exc = exc
+        _logger.debug("python-docx failed for '%s': %s", path, exc)
+
+    # Secondary: Docx2txtLoader / docx2txt
+    try:
+        from langchain_community.document_loaders import Docx2txtLoader
+        docs = Docx2txtLoader(path).load()
+        return "\n\n".join(d.page_content for d in docs)
+    except Exception as exc:  # noqa: BLE001
+        last_exc = exc
+        _logger.debug("Docx2txtLoader failed for '%s': %s", path, exc)
+
+    raise last_exc or RuntimeError("DOCX extraction produced no output")
+
+
 def _extract_file_text(path: str, mime: str) -> str:
     """Extract text from a file given its path and MIME type.
 
-    Uses PyPDFLoader for PDFs, Docx2txtLoader for Word documents, and
-    plain utf-8 text reading for known text-based formats (``_TEXT_MIMES``).
+    Uses PyPDFLoader for PDFs, a two-library DOCX extractor for Word documents
+    (python-docx primary, Docx2txtLoader secondary), and plain utf-8 text
+    reading for known text-based formats (``_TEXT_MIMES``).
     Returns extracted text, or an error/notice string on failure.
 
     Unknown / binary MIME types (e.g. ``application/octet-stream``, Excel
@@ -93,9 +141,7 @@ def _extract_file_text(path: str, mime: str) -> str:
             docs = PyPDFLoader(path).load()
             return "\n\n".join(d.page_content for d in docs)
         elif mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-            from langchain_community.document_loaders import Docx2txtLoader
-            docs = Docx2txtLoader(path).load()
-            return "\n\n".join(d.page_content for d in docs)
+            return _extract_docx_text(path)
         elif mime in _TEXT_MIMES:
             return Path(path).read_text(encoding="utf-8", errors="replace")
         else:
