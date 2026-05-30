@@ -260,10 +260,11 @@ class ChatMixin:
             chip.pack(side="left", padx=(0, 4), pady=2)
 
             def _on_chip_click(event, _i=idx, _p=path, _c=chip):
-                # The trailing "  ×" occupies roughly the last 26 px of the chip.
-                # Clicks inside that zone remove the attachment; clicks elsewhere
-                # open the file in the OS default application.
-                if event.x >= _c.winfo_width() - 26:
+                # The trailing "  ×" occupies roughly the last 26 px of the chip
+                # at the default font size.  A 32 px margin gives comfortable
+                # headroom when the user has selected a larger font in App Settings
+                # (which shifts the × leftward as the text expands).
+                if event.x >= _c.winfo_width() - 32:
                     self._remove_attachment(_i)
                 else:
                     _open_file_in_os(_p)
@@ -1259,14 +1260,20 @@ class ChatMixin:
         att_widgets = []
         if attachments:
             from ._ui_constants import _open_file_in_os
+            import pathlib as _pl
             att_row = tk.Frame(shell, bg=bubble_bg)
             att_row.pack(fill="x", padx=_H_PAD, pady=(2, _V_PAD))
             for att in attachments:
                 icon  = self._mime_icon(att.get("mime", ""))
                 name  = att.get("name", "file")
                 path  = att.get("path", "")
-                label = f"{icon} {name[:24]}{'…' if len(name) > 24 else ''}"
-                cursor = "hand2" if path else "arrow"
+                label = f"{icon} {name[:9] + '…' + name[-8:] if len(name) > 20 else name}"
+                # Only bind a click handler when the path points to an
+                # existing regular file.  This guards against tampered
+                # session files that store arbitrary paths, and also
+                # provides clean UX when a file has been moved or deleted.
+                path_valid = bool(path) and _pl.Path(path).is_file()
+                cursor = "hand2" if path_valid else "arrow"
                 chip = tk.Label(
                     att_row, text=label,
                     bg=chip_bg, fg=chip_fg,
@@ -1275,7 +1282,7 @@ class ChatMixin:
                     cursor=cursor,
                 )
                 chip.pack(side="left", padx=(0, 4), pady=0)
-                if path:
+                if path_valid:
                     chip.bind("<Button-1>",
                               lambda _e, p=path: _open_file_in_os(p))
                 att_widgets.append(chip)

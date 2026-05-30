@@ -6,7 +6,7 @@ import threading
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.retrievers import BaseRetriever
 
 logger = logging.getLogger(__name__)
@@ -67,10 +67,12 @@ class _HistoryStore:
 
         Used on cancellation so the user's request is preserved in history even
         though no AI reply was committed.  Returns ``True`` when a message was
-        removed, ``False`` when the store was empty (no-op).
+        removed, ``False`` when the store was empty or the last message is not
+        an ``AIMessage`` (guards against accidental human-message removal if
+        history is in an unexpected state).
         """
         with self._lock:
-            if self._messages:
+            if self._messages and isinstance(self._messages[-1], AIMessage):
                 del self._messages[-1]
                 return True
             return False

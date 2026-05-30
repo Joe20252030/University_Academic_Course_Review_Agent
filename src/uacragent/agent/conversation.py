@@ -155,11 +155,15 @@ def _extract_file_text(path: str, mime: str) -> str:
     except Exception as exc:  # noqa: BLE001
         # Return a clearly-marked error block so the LLM treats it as a signal
         # rather than as file content, and can tell the user what went wrong.
+        # Only expose the exception *type* — the full message may contain
+        # internal file paths, library version strings, or other details that
+        # should not reach the LLM or the user.
+        _logger.debug("_extract_file_text failed for '%s': %s", path, exc)
         return (
             f"[FILE EXTRACTION ERROR: Could not read '{Path(path).name}'. "
-            f"Reason: {exc}. "
+            f"Reason: {type(exc).__name__}. "
             f"Please inform the user that this file could not be processed "
-            f"and ask them to check the file or try a different format.]"
+            f"and suggest they check the file is not corrupted or try a different format.]"
         )
 
 
