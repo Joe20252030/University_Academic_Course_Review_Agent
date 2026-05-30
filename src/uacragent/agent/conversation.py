@@ -692,8 +692,15 @@ class ConversationAgent:
         # message are preserved across session reloads.
         # append_turn() inserts both messages atomically so a concurrent cancel
         # can never observe one message without the other.
+        _att_meta = [
+            {"name": a["name"], "mime": a.get("mime", ""), "path": a.get("path", "")}
+            for a in (attachments or [])
+        ]
         session.chat_history.append_turn(
-            HumanMessage(content=message),
+            HumanMessage(
+                content=message,
+                additional_kwargs={"attachments": _att_meta} if _att_meta else {},
+            ),
             AIMessage(content=reply),
         )
         self._smart_trim_history(session, llm, progress_cb=progress_cb, language=language)

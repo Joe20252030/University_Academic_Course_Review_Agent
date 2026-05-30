@@ -468,7 +468,10 @@ def _serialise_history(history: list[BaseMessage]) -> list[dict]:
     out = []
     for msg in history:
         if isinstance(msg, HumanMessage):
-            out.append({"role": "human", "content": msg.content})
+            entry: dict = {"role": "human", "content": msg.content}
+            if msg.additional_kwargs:
+                entry["additional_kwargs"] = msg.additional_kwargs
+            out.append(entry)
         elif isinstance(msg, AIMessage):
             out.append({"role": "ai", "content": msg.content})
         else:
@@ -486,7 +489,8 @@ def _deserialise_history(data: list[dict]) -> list[BaseMessage]:
         role = item.get("role", "")
         content = item.get("content", "")
         if role == "human":
-            msgs.append(HumanMessage(content=content))
+            kwargs = item.get("additional_kwargs") or {}
+            msgs.append(HumanMessage(content=content, additional_kwargs=kwargs))
         elif role == "ai":
             msgs.append(AIMessage(content=content))
         else:

@@ -229,6 +229,8 @@ class ChatMixin:
             ).pack(side="left", padx=(0, 6), pady=2)
 
         # ── File attachment chips ─────────────────────────────────────────────
+        from ._ui_constants import _open_file_in_os
+
         for idx, att in enumerate(self._pending_attachments):
             mime = att.get("mime", "")
             if mime.startswith("image/"):
@@ -241,8 +243,11 @@ class ChatMixin:
             name = att["name"]
             if len(name) > 20:
                 name = name[:9] + "…" + name[-8:]
+            path = att.get("path", "")
 
-            _RoundedChip(
+            # command=None so the chip's built-in handler is a no-op;
+            # the custom binding below routes clicks by zone.
+            chip = _RoundedChip(
                 strip,
                 text=f"{icon}  {name}  ×",
                 chip_bg=chip_bg, chip_fg=chip_fg,
@@ -250,8 +255,20 @@ class ChatMixin:
                 font=("TkDefaultFont", 10),
                 padx=10, pady=4,
                 hover_bg=hov_bg,
-                command=lambda i=idx: self._remove_attachment(i),
-            ).pack(side="left", padx=(0, 4), pady=2)
+                command=None,
+            )
+            chip.pack(side="left", padx=(0, 4), pady=2)
+
+            def _on_chip_click(event, _i=idx, _p=path, _c=chip):
+                # The trailing "  ×" occupies roughly the last 26 px of the chip.
+                # Clicks inside that zone remove the attachment; clicks elsewhere
+                # open the file in the OS default application.
+                if event.x >= _c.winfo_width() - 26:
+                    self._remove_attachment(_i)
+                else:
+                    _open_file_in_os(_p)
+
+            chip.bind("<Button-1>", _on_chip_click, add="+")
 
     # ------------------------------------------------------------------
     # Drag-and-drop file support
@@ -894,7 +911,8 @@ class ChatMixin:
         ):
             self._append_chat("system", self._t("warn_files_not_indexed"))
         self._input_text.delete("1.0", tk.END)
-        self._append_chat("user", message)
+        self._append_chat("user", message,
+                          attachments=captured_attachments if captured_attachments else None)
         self._set_busy(True, self._t("thinking"))
 
         # Capture export format, effort level, reasoning mode, language, session,
@@ -939,8 +957,13 @@ class ChatMixin:
                         # chat() returned early (cancelled before append_turn) —
                         # add just the human message so the request survives.
                         from langchain_core.messages import HumanMessage
+                        _att = [{"name": a["name"], "mime": a.get("mime", "")}
+                                for a in captured_attachments]
                         captured_session.chat_history.append_human_only(
-                            HumanMessage(content=message)
+                            HumanMessage(
+                                content=message,
+                                additional_kwargs={"attachments": _att} if _att else {},
+                            )
                         )
                     # Release busy lock since the completion handler won't run.
                     self.after(0, lambda: self._set_busy(False))
@@ -955,8 +978,13 @@ class ChatMixin:
                     # Cancelled before chat() could call append_turn — add the
                     # human message on its own so the request survives in history.
                     from langchain_core.messages import HumanMessage
+                    _att = [{"name": a["name"], "mime": a.get("mime", ""), "path": a.get("path", "")}
+                            for a in captured_attachments]
                     captured_session.chat_history.append_human_only(
-                        HumanMessage(content=message)
+                        HumanMessage(
+                            content=message,
+                            additional_kwargs={"attachments": _att} if _att else {},
+                        )
                     )
                     self.after(0, lambda: self._set_busy(False))
 
@@ -1079,11 +1107,13 @@ class ChatMixin:
         from langchain_core.messages import HumanMessage, AIMessage
         for msg in self._session.chat_history.snapshot():
             if isinstance(msg, HumanMessage):
-                self._append_chat("user", self._content_to_str(msg.content))
+                attachments = msg.additional_kwargs.get("attachments") or None
+                self._append_chat("user", self._content_to_str(msg.content),
+                                  attachments=attachments)
             elif isinstance(msg, AIMessage):
                 self._append_chat("assistant", self._content_to_str(msg.content))
 
-    def _append_chat(self, role: str, text: str) -> None:
+    def _append_chat(self, role: str, text: str, attachments: list | None = None) -> None:
         """Append a flat message widget to the chat scroll area."""
         if not hasattr(self, "_msg_frame"):
             return
@@ -1132,7 +1162,8 @@ class ChatMixin:
 
         # ── User message: rounded box; Assistant: flat text, no box ─────────
         if role == "user":
-            self._append_chat_user(c, card_bg, sz, text, _H_PAD, _V_PAD)
+            self._append_chat_user(c, card_bg, sz, text, _H_PAD, _V_PAD,
+                                   attachments=attachments)
         else:
             self._append_chat_assistant(c, card_bg, sz, text, _H_PAD, _V_PAD)
         self._scroll_chat_to_bottom()
@@ -1158,7 +1189,18 @@ class ChatMixin:
         except Exception:  # noqa: BLE001
             pass
 
-    def _append_chat_user(self, c, card_bg, sz, text, _H_PAD, _V_PAD) -> None:
+    @staticmethod
+    def _mime_icon(mime: str) -> str:
+        if mime.startswith("image/"):
+            return "🖼"
+        if mime == "application/pdf":
+            return "📄"
+        if mime.startswith("text/"):
+            return "📝"
+        return "📎"
+
+    def _append_chat_user(self, c, card_bg, sz, text, _H_PAD, _V_PAD,
+                          attachments: list | None = None) -> None:
         """Render a user message inside a rounded box."""
         from ._custom_widgets import draw_rounded_rect
 
@@ -1210,6 +1252,35 @@ class ChatMixin:
             lambda _e, _w=body_text: self._sync_text_height(_w),
         )
 
+        # ── Attachment chips (shown when files were attached to this message) ─
+        chip_bg     = c.get("user_bubble_border", "#c5d5f0")
+        chip_fg     = c.get("user_fg", "#1b3167")
+        chip_sz     = max(sz - 2, 9)
+        att_widgets = []
+        if attachments:
+            from ._ui_constants import _open_file_in_os
+            att_row = tk.Frame(shell, bg=bubble_bg)
+            att_row.pack(fill="x", padx=_H_PAD, pady=(2, _V_PAD))
+            for att in attachments:
+                icon  = self._mime_icon(att.get("mime", ""))
+                name  = att.get("name", "file")
+                path  = att.get("path", "")
+                label = f"{icon} {name[:24]}{'…' if len(name) > 24 else ''}"
+                cursor = "hand2" if path else "arrow"
+                chip = tk.Label(
+                    att_row, text=label,
+                    bg=chip_bg, fg=chip_fg,
+                    font=("TkDefaultFont", chip_sz),
+                    relief="flat", padx=5, pady=2,
+                    cursor=cursor,
+                )
+                chip.pack(side="left", padx=(0, 4), pady=0)
+                if path:
+                    chip.bind("<Button-1>",
+                              lambda _e, p=path: _open_file_in_os(p))
+                att_widgets.append(chip)
+            att_widgets.append(att_row)
+
         def _draw(_r=r, _bg=bubble_bg, _bd=border_col):
             cv.delete("bb")
             w, h = cv.winfo_width(), cv.winfo_height()
@@ -1234,7 +1305,7 @@ class ChatMixin:
         cv.bind("<Configure>",    lambda e: (_sync_width(e), _draw()))
         shell.bind("<Configure>", _sync_height)
 
-        for w in (cv, shell, role_lbl, body_text):
+        for w in (cv, shell, role_lbl, body_text, *att_widgets):
             self._bind_chat_scroll(w)
             self._dnd_register(w)
 
