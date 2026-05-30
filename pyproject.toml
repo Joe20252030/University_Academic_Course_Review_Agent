@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "uacragent"
-version = "0.1.2"
+version = "0.2.0"
 description = "University Academic Course Review Agent — conversational course assistant for grounded study help and exam preparation"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -23,6 +23,9 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dynamic = ["dependencies"]
+
+[project.urls]
+"Changelog" = "https://github.com/xlzuvekas/UACRAgent/blob/main/CHANGELOG.md"
 
 [project.scripts]
 uacragent = "uacragent.__main__:main"

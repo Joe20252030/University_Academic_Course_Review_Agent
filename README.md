@@ -1,5 +1,9 @@
 # University Academic Course Review Agent (UACRAgent)
 
+> **Latest release: v0.2.0** — responsive cancellation, attachment visibility in
+> chat history, tooltip UX, and robustness fixes.
+> See [CHANGELOG.md](CHANGELOG.md) for the full release history.
+
 Study from course documents with a grounded academic assistant, and generate
 review materials when you need them through a persistent desktop chat workflow.
 
@@ -8,11 +12,23 @@ review materials when you need them through a persistent desktop chat workflow.
 - Chunk documents using type-specific multi-stage splitting strategies
 - Embed into a local Chroma vector store
 - Retrieve context with task-aware weighting across document types
-- Chat with an LLM in a session-aware study-assistant workflow
+- Chat with an LLM in a session-aware study-assistant workflow; attach files and images directly to any message
 - Ask grounded course questions and get guided review help from uploaded materials
 - Generate structured study artefacts such as review summaries, mock exams, and practice booklets when requested
 - Save canonical generated output as Markdown, with optional DOCX/PDF export in the desktop GUI
-- Persist desktop sessions, settings, and chat history across app restarts
+- Persist desktop sessions, settings, and chat history across app restarts; attached file metadata is preserved in history
+
+## What's New in v0.2.0
+
+| Area | Change |
+|---|---|
+| **Cancellation** | Cancel now exits within a fraction of a second — streaming LLM calls are interruptible at every pipeline stage |
+| **Attachment UX** | Attached files are shown as chips in the chat bubble; chips in both the input strip and history are clickable to open the file |
+| **Tooltips** | Hover 600 ms over the Web Search or Attach button to see a tooltip; respects active theme, font size, and multi-monitor layout |
+| **DOCX reliability** | Word document attachments fall back to `python-docx` when the primary extractor fails, handling complex real-world `.docx` files |
+| **Generation safety** | A two-layer guard (system-prompt tightening + narrow blocklist) stops the LLM from triggering document generation on test or conversational messages |
+
+Full details in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
