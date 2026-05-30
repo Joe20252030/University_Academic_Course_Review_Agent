@@ -62,7 +62,7 @@ from ._ui_constants import (  # noqa: F401 (re-exports)
 from ._custom_widgets import (
     AutoHideScrollbar, draw_rounded_rect,
     draw_left_rounded_rect, draw_right_rounded_rect,
-    CustomSessionList, _RoundedChip, _SidebarIcon,
+    CustomSessionList, _RoundedChip, _SidebarIcon, _Tooltip,
 )
 from ._appearance_mixin import AppearanceMixin
 from ._settings_mixin import SettingsMixin
@@ -862,6 +862,20 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
             command=self._pick_files,
         )
         self._upload_btn.pack(side="left")
+
+        # ── Tooltips for tool buttons ─────────────────────────────────
+        _tip_bg = _c0.get("tooltip_bg", "#1a2744")
+        _tip_fg = _c0.get("tooltip_fg", "#ffffff")
+        self._search_tooltip = _Tooltip(
+            self._search_btn,
+            text=self._t("tooltip_web_search"),
+            bg=_tip_bg, fg=_tip_fg,
+        )
+        self._upload_tooltip = _Tooltip(
+            self._upload_btn,
+            text=self._t("tooltip_attach"),
+            bg=_tip_bg, fg=_tip_fg,
+        )
 
         # ── row 3: controls row ───────────────────────────────────────
         controls_row = tk.Frame(self._input_block, bg=_c0["input_bg"])

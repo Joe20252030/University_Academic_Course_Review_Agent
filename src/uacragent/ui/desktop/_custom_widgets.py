@@ -15,6 +15,10 @@ _RoundedChip
     corners — works on macOS where ``tk.Button``/``tk.Label`` show
     native Aqua chrome regardless of ``bg``/``relief`` settings.
 
+_Tooltip
+    A delayed hover tooltip that floats above any tkinter widget after
+    the pointer rests on it for a configurable delay (default 600 ms).
+
 _SidebarIcon
     A ``tk.Canvas``-based toolbar icon that draws a sidebar-panel symbol
     (rectangle + left strip), used for the sidebar toggle button.
@@ -687,6 +691,159 @@ class _RoundedChip(tk.Canvas):
         if font is not None or icon_font is not None or text is not None:
             self._resize_to_fit()
         self._redraw()
+
+
+# ---------------------------------------------------------------------------
+# _Tooltip
+# ---------------------------------------------------------------------------
+
+class _Tooltip:
+    """A delayed hover tooltip that floats above any tkinter widget.
+
+    Binds to ``<Enter>``, ``<Leave>``, and ``<Button-1>`` on *widget* using
+    ``add="+"`` so existing bindings are preserved.  After the pointer has
+    rested on *widget* for *delay_ms* milliseconds a small borderless
+    ``tk.Toplevel`` appears just above the widget centre; it disappears
+    immediately when the pointer leaves or the button is clicked.
+
+    Usage::
+
+        chip = _RoundedChip(parent, text="🌐", ...)
+        tip  = _Tooltip(chip, text="Web Search On/Off",
+                        bg="#1a2744", fg="#ffffff")
+
+    Call :meth:`update_text` when state or language changes, and
+    :meth:`update_style` when the application theme switches.
+    """
+
+    DELAY_MS = 600   # hover dwell time before popup appears
+
+    def __init__(
+        self,
+        widget: tk.Widget,
+        text: str,
+        bg: str = "#1a2744",
+        fg: str = "#ffffff",
+        font_size: int = 9,
+    ) -> None:
+        self._widget    = widget
+        self._text      = text
+        self._bg        = bg
+        self._fg        = fg
+        self._font_size = font_size
+        self._tip_win: tk.Toplevel | None = None
+        self._after_id = None
+
+        widget.bind("<Enter>",    self._schedule,        add="+")
+        widget.bind("<Leave>",    self._cancel_and_hide, add="+")
+        widget.bind("<Button-1>", self._cancel_and_hide, add="+")
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _schedule(self, _event=None) -> None:
+        self._cancel()
+        self._after_id = self._widget.after(self.DELAY_MS, self._show)
+
+    def _cancel_and_hide(self, _event=None) -> None:
+        self._cancel()
+        self._hide()
+
+    def _cancel(self) -> None:
+        if self._after_id is not None:
+            try:
+                self._widget.after_cancel(self._after_id)
+            except Exception:
+                pass
+            self._after_id = None
+
+    def _show(self) -> None:
+        import sys
+        self._after_id = None
+        if self._tip_win is not None:
+            return
+        try:
+            if not self._widget.winfo_exists():
+                return
+        except Exception:
+            return
+
+        # Anchor on the live pointer rather than the widget's winfo_rootx/y.
+        # winfo_pointerx/y always returns true screen coordinates regardless
+        # of which monitor the window is on, avoiding the multi-monitor issue
+        # where winfo_screenwidth/height only describes the primary display.
+        try:
+            px = self._widget.winfo_pointerx()
+            py = self._widget.winfo_pointery()
+        except Exception:
+            return
+
+        tw = tk.Toplevel(self._widget)
+        tw.withdraw()  # hide before positioning to avoid flicker at 0,0
+
+        # On macOS, setting the native window level to "help" must happen
+        # before overrideredirect so the window floats above all app layers.
+        if sys.platform == "darwin":
+            try:
+                tw.tk.call(
+                    "::tk::unsupported::MacWindowStyle",
+                    "style", tw._w, "help", "noActivates",
+                )
+            except Exception:
+                pass
+
+        tw.wm_overrideredirect(True)
+        tw.wm_attributes("-topmost", True)
+
+        lbl = tk.Label(
+            tw, text=self._text,
+            bg=self._bg, fg=self._fg,
+            font=("TkDefaultFont", self._font_size),
+            relief="flat", padx=6, pady=3,
+        )
+        lbl.pack()
+        tw.update_idletasks()
+
+        tw_w = tw.winfo_reqwidth()
+        tw_h = tw.winfo_reqheight()
+
+        # Centre horizontally on the cursor, just above it.
+        # Fall back to below the cursor if there is not enough room above.
+        x = px - tw_w // 2
+        y = py - tw_h - 10
+        if y < 0:
+            y = py + 20
+
+        tw.wm_geometry(f"+{x}+{y}")
+        tw.deiconify()
+        tw.lift()
+        self._tip_win = tw
+
+    def _hide(self) -> None:
+        if self._tip_win is not None:
+            try:
+                self._tip_win.destroy()
+            except Exception:
+                pass
+            self._tip_win = None
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def update_text(self, text: str) -> None:
+        """Update the tooltip label (e.g. after a language or state change)."""
+        self._text = text
+
+    def update_style(self, bg: str, fg: str) -> None:
+        """Re-apply theme colours — call after every theme switch."""
+        self._bg = bg
+        self._fg = fg
+
+    def update_font_size(self, size: int) -> None:
+        """Re-apply font size — call after every app font-size change."""
+        self._font_size = size
 
 
 # ---------------------------------------------------------------------------

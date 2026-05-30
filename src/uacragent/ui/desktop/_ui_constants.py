@@ -495,6 +495,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "add_files_dialog_title": "Select {doctype} files",
         "search_off":         "Web search OFF",
         "dnd_drop_label":     "📎  Drop files here to attach",
+        "tooltip_web_search": "Web Search  On / Off",
+        "tooltip_attach":     "Attach files",
     },
     "zh_CN": {
         # Session list
@@ -909,6 +911,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "add_files_dialog_title": "选择 {doctype} 文件",
         "search_off":         "网络搜索已关闭",
         "dnd_drop_label":     "📎  拖放文件以附加",
+        "tooltip_web_search": "网络搜索  开 / 关",
+        "tooltip_attach":     "附加文件",
     },
 }
 
@@ -976,6 +980,9 @@ _THEME_COLORS: dict[str, dict[str, str]] = {
         # Alternating rows in file lists
         "row_even_bg":    "#f7f7f7",
         "row_odd_bg":     "#ffffff",
+        # Hover tooltip popup
+        "tooltip_bg":     "#1a2744",
+        "tooltip_fg":     "#ffffff",
     },
     "dark": {
         # Surfaces — neutral dark-gray palette (mirrors light mode design language)
@@ -1037,6 +1044,9 @@ _THEME_COLORS: dict[str, dict[str, str]] = {
         # Alternating rows in file lists — dark mode
         "row_even_bg":    "#2d3140",
         "row_odd_bg":     "#252830",
+        # Hover tooltip popup
+        "tooltip_bg":     "#e2e8f0",
+        "tooltip_fg":     "#1a1d23",
     },
 }
 

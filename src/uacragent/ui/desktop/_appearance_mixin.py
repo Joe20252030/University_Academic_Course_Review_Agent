@@ -605,6 +605,21 @@ class AppearanceMixin:
                 _btn.update_style(font=("TkDefaultFont", max(_ctrl_size, 12)))
         except Exception as exc:  # noqa: BLE001
             logger.debug("_apply_theme: widget not ready or update failed: %s", exc)
+        # Tooltip font size — slightly smaller than body text, floor at 9
+        try:
+            _tip_size = max(size - 4, 9)
+            self._search_tooltip.update_font_size(_tip_size)
+            self._upload_tooltip.update_font_size(_tip_size)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("_apply_theme: tooltip font size update failed: %s", exc)
+        # Tooltip colours
+        try:
+            _tip_bg = c.get("tooltip_bg", "#1a2744")
+            _tip_fg = c.get("tooltip_fg", "#ffffff")
+            self._search_tooltip.update_style(_tip_bg, _tip_fg)
+            self._upload_tooltip.update_style(_tip_bg, _tip_fg)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("_apply_theme: tooltip style update failed: %s", exc)
         # Session list items carry explicit font tuples so the named-font
         # update above does not reach them — propagate the new size explicitly.
         try:
@@ -649,6 +664,12 @@ class AppearanceMixin:
             )
         except Exception as exc:  # noqa: BLE001
             logger.debug("_apply_theme: widget not ready or update failed: %s", exc)
+        # Tooltip texts
+        try:
+            self._search_tooltip.update_text(self._t("tooltip_web_search"))
+            self._upload_tooltip.update_text(self._t("tooltip_attach"))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("_apply_language: tooltip text update failed: %s", exc)
 
     # ------------------------------------------------------------------
     # App Settings dialog  (global, not per-session)
