@@ -618,6 +618,7 @@ class AgentPipeline:
                              workspace_folder=workspace_folder)
         ensure_workspace_dirs(ws)
 
+        _check_cancelled()
         _progress("Loading and splitting documents…")
         chunks = self.loader.load_and_split_classified(
             classified_files,
@@ -630,6 +631,7 @@ class AgentPipeline:
                 "Please check that the files are readable and not empty."
             )
 
+        _check_cancelled()
         _progress(f"Building vector index ({len(chunks)} chunks)…")
         vectorstore = get_or_create_vectorstore(chunks, self.settings, ws,
                                                 classified_files=classified_files)

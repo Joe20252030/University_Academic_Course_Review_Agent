@@ -428,6 +428,10 @@ class ChatResponse:
     attachment_warnings: list[str] = field(default_factory=list)
     # ^ human-readable warnings for attachment issues (too large, encode fail,
     #   text budget exceeded, vision stripped).  Shown in the chat UI after reply.
+    history_appended: bool = True
+    # ^ False when chat() returned early (e.g. cancelled before the LLM replied)
+    #   without ever calling append_turn.  The UI layer uses this to decide
+    #   whether to pop the AI half of the turn or to add a human-only entry.
 
 
 class ConversationAgent:
@@ -626,7 +630,15 @@ class ConversationAgent:
             if search_enabled:
                 raw_response = llm.invoke_with_search(messages, provider_id)
             else:
-                raw_response = llm.invoke(messages)
+                raw_response = llm.stream_invoke(messages, cancel_event=cancel_event)
+            if raw_response is None:
+                # Cancelled during the initial LLM call — return immediately
+                # without appending to history.
+                return ChatResponse(
+                    text="",
+                    history_appended=False,
+                    attachment_warnings=all_warnings,
+                )
             content = getattr(raw_response, "content", str(raw_response))
             if isinstance(content, list):
                 assistant_text: str = " ".join(

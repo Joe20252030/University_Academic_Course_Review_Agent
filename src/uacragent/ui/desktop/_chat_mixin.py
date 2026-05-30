@@ -931,10 +931,17 @@ class ChatMixin:
                 if self._cancel_event.is_set() or self._request_token != captured_token:
                     # The LLM finished but the user cancelled before the response
                     # was dispatched to the UI (or a new operation started).
-                    # chat() already appended the turn (human + AI) to
-                    # session.chat_history — keep the human message so the request
-                    # is preserved in history, but drop the AI reply.
-                    captured_session.chat_history.pop_last_ai_only()
+                    if response.history_appended:
+                        # chat() called append_turn — keep the human message but
+                        # drop the AI reply so only the request is preserved.
+                        captured_session.chat_history.pop_last_ai_only()
+                    else:
+                        # chat() returned early (cancelled before append_turn) —
+                        # add just the human message so the request survives.
+                        from langchain_core.messages import HumanMessage
+                        captured_session.chat_history.append_human_only(
+                            HumanMessage(content=message)
+                        )
                     # Release busy lock since the completion handler won't run.
                     self.after(0, lambda: self._set_busy(False))
                 else:
