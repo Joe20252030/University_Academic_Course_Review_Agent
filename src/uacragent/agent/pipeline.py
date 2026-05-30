@@ -224,6 +224,7 @@ def generate_plan(
     chars_per_doc: int = 800,
     _outline_override: str | None = None,
     language: str = "en",
+    cancel_event: "threading.Event | None" = None,
 ) -> ReviewPlan:
     """Generate a :class:`ReviewPlan` from document chunks.
 
@@ -262,8 +263,12 @@ def generate_plan(
         response_language=_get_language_instruction(language),
     )
 
-    plan: ReviewPlan = llm_client.generate_structured(ReviewPlan, messages)
+    plan: ReviewPlan = llm_client.generate_structured_cancellable(
+        ReviewPlan, messages, cancel_event
+    )
     if plan is None:
+        if cancel_event and cancel_event.is_set():
+            raise LLMError("Generation was cancelled.")
         raise ParseError(
             "The LLM returned an empty response when asked to generate a study plan. "
             "Try again or adjust your course settings."
@@ -277,6 +282,7 @@ def write_section(
     llm_client: LLMClient,
     user_prefs: dict | None = None,
     language: str = "en",
+    cancel_event: "threading.Event | None" = None,
 ) -> str:
     """Write the prose body for a single outline section.
 
@@ -308,7 +314,7 @@ def write_section(
     prompt = ChatPromptTemplate.from_template(load_prompt(writer_file))
 
     p = _expand_user_prefs(user_prefs)
-    resp = llm_client.invoke(
+    resp = llm_client.stream_invoke(
         prompt.format_messages(
             title=section.title,
             key_topics=key_topics_text,
@@ -325,8 +331,11 @@ def write_section(
             exam_duration=p["exam_duration"],
             exam_info=p["exam_info"],
             response_language=_get_language_instruction(language),
-        )
+        ),
+        cancel_event=cancel_event,
     )
+    if resp is None:
+        return ""  # Cancelled mid-generation
     return getattr(resp, "content", str(resp))
 
 
@@ -378,7 +387,12 @@ def write_sections_sequential(
             return results
         if progress_cb:
             progress_cb(f"Writing section {i + 1}/{n}: {section.title}…")
-        text = write_section(section, retriever, llm_client, user_prefs, language=language)
+        text = write_section(
+            section, retriever, llm_client, user_prefs,
+            language=language, cancel_event=cancel_event,
+        )
+        if cancel_event and cancel_event.is_set():
+            return results  # Section was cancelled mid-generation; discard empty result
 
         # Deep Analysis: run a refinement / critic pass on each section.
         if enable_critic:
@@ -394,7 +408,11 @@ def write_sections_sequential(
                 section_title=section.title,
                 key_topics=list(section.key_topics),
                 llm_client=llm_client,
+                cancel_event=cancel_event,
             )
+            if cancel_event and cancel_event.is_set():
+                results.append(text)  # text is the pre-critic original; include it
+                return results
 
         results.append(text)
 
@@ -412,6 +430,7 @@ def write_predicted_exam_paper(
     llm_client: LLMClient,
     user_prefs: dict | None = None,
     language: str = "en",
+    cancel_event: "threading.Event | None" = None,
 ) -> str:
     """Generate Part B (predicted exam paper) for the exam_prediction task type."""
     user_prefs = user_prefs or {}
@@ -437,7 +456,7 @@ def write_predicted_exam_paper(
         load_prompt("exam_prediction_paper_writer.md")
     )
     p = _expand_user_prefs(user_prefs)
-    resp = llm_client.invoke(
+    resp = llm_client.stream_invoke(
         prompt.format_messages(
             course_name=p.get("course_name", ""),
             university_name=p["university_name"],
@@ -453,8 +472,11 @@ def write_predicted_exam_paper(
             predicted_sections=predicted_sections_text,
             context=context,
             response_language=_get_language_instruction(language),
-        )
+        ),
+        cancel_event=cancel_event,
     )
+    if resp is None:
+        return ""  # Cancelled mid-generation
     return getattr(resp, "content", str(resp))
 
 
@@ -569,6 +591,7 @@ class AgentPipeline:
         effort_level: str = "medium",
         reasoning_mode: str = "quick",
         language: str = "en",
+        cancel_event: "threading.Event | None" = None,
     ) -> tuple[ReviewPlan, str, str]:
         """Run the full RAG pipeline with classified documents.
 
@@ -586,6 +609,10 @@ class AgentPipeline:
         def _progress(msg: str) -> None:
             if progress_cb:
                 progress_cb(msg)
+
+        def _check_cancelled() -> None:
+            if cancel_event and cancel_event.is_set():
+                raise LLMError("Generation was cancelled.")
 
         ws = workspace_paths(workspace_id=workspace_id,
                              workspace_folder=workspace_folder)
@@ -660,7 +687,10 @@ class AgentPipeline:
                                      chars_per_doc=scaled_chars)
         if reasoning_cfg.enable_topic_extraction:
             _progress("Deep Analysis: extracting topic priorities…")
-            topic_list = extract_topics(outline_text, user_prefs, self.llm_client)
+            topic_list = extract_topics(
+                outline_text, user_prefs, self.llm_client, cancel_event=cancel_event
+            )
+            _check_cancelled()
             topic_block = build_topic_context(topic_list)
             if topic_block:
                 outline_text = outline_text + topic_block
@@ -669,6 +699,7 @@ class AgentPipeline:
                     if topic_list else "Deep Analysis: topic extraction skipped."
                 )
 
+        _check_cancelled()
         _progress("Generating study plan…")
         plan = generate_plan(
             chunks, user_prefs, self.llm_client,
@@ -676,6 +707,7 @@ class AgentPipeline:
             chars_per_doc=scaled_chars,
             _outline_override=outline_text,
             language=language,
+            cancel_event=cancel_event,
         )
 
         if not plan.sections:
@@ -697,16 +729,21 @@ class AgentPipeline:
             request_delay=self.settings.llm_request_delay,
             progress_cb=progress_cb,
             enable_critic=reasoning_cfg.enable_critic_pass,
+            cancel_event=cancel_event,
             language=language,
         )
+        _check_cancelled()
 
         # For exam_prediction, generate the full predicted exam paper (Part B)
         paper_text = ""
         if tt == TaskType.exam_prediction:
+            _check_cancelled()
             _progress("Generating predicted exam paper…")
             paper_text = write_predicted_exam_paper(
-                plan, retriever, self.llm_client, user_prefs, language=language,
+                plan, retriever, self.llm_client, user_prefs,
+                language=language, cancel_event=cancel_event,
             )
+            _check_cancelled()
 
         _progress("Assembling final document…")
         final_md = assemble_markdown(plan, section_texts, tt.value, paper_text=paper_text,

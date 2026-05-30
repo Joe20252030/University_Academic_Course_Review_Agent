@@ -926,6 +926,7 @@ class ChatMixin:
                     language=captured_lang,
                     search_enabled=captured_search,
                     attachments=captured_attachments,
+                    cancel_event=self._cancel_event,
                 )
                 if self._cancel_event.is_set() or self._request_token != captured_token:
                     # The LLM finished but the user cancelled before the response

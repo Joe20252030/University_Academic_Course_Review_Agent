@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import concurrent.futures
 import random
+import threading
 import time
 from collections.abc import Callable
 from typing import Any
@@ -159,6 +161,86 @@ class LLMClient:
 
     def invoke(self, prompt: Any) -> Any:
         return self._call_with_retry(self.llm.invoke, prompt)
+
+    def stream_invoke(
+        self,
+        prompt: Any,
+        cancel_event: "threading.Event | None" = None,
+    ) -> Any:
+        """Invoke the model via streaming, checking *cancel_event* between chunks.
+
+        Returns ``None`` if *cancel_event* is set before or during generation.
+        Falls back to a plain blocking :meth:`invoke` when *cancel_event* is
+        ``None`` so callers need no special-casing for the no-cancel path.
+        Retry logic mirrors :meth:`_call_with_retry` with an interruptible sleep
+        so cancellation is also responsive during rate-limit back-off.
+        """
+        if cancel_event is None:
+            return self._call_with_retry(self.llm.invoke, prompt)
+
+        delay = self._base_delay
+        for attempt in range(self._max_retries + 1):
+            try:
+                chunks = []
+                for chunk in self.llm.stream(prompt):
+                    if cancel_event.is_set():
+                        # Stop consuming — generator.close() aborts the HTTP stream.
+                        return None
+                    chunks.append(chunk)
+                if not chunks:
+                    return None
+                result = chunks[0]
+                for c in chunks[1:]:
+                    result = result + c
+                return result
+            except Exception as exc:  # noqa: BLE001
+                err_lower = str(exc).lower()
+                is_retryable = any(m in err_lower for m in _RETRYABLE_MARKERS)
+                if is_retryable and attempt < self._max_retries:
+                    jitter = random.uniform(0, delay * 0.25)
+                    sleep_total = delay + jitter
+                    slept = 0.0
+                    while slept < sleep_total:
+                        if cancel_event.is_set():
+                            return None
+                        time.sleep(min(0.1, sleep_total - slept))
+                        slept += 0.1
+                    delay = min(delay * 2, 60.0)
+                    continue
+                raise LLMError(
+                    f"LLM stream request failed: {self._scrub(str(exc))}"
+                ) from exc
+        raise LLMError("LLM stream request failed after all retries.")  # pragma: no cover
+
+    def generate_structured_cancellable(
+        self,
+        output_model: type,
+        prompt: Any,
+        cancel_event: "threading.Event | None" = None,
+    ) -> Any:
+        """Like :meth:`generate_structured` but polls *cancel_event* every 0.5 s.
+
+        Runs the blocking structured call in a background daemon thread and
+        returns ``None`` immediately if *cancel_event* is set before the call
+        completes.  The orphaned thread finishes its HTTP round-trip and is then
+        garbage-collected; it never writes to shared state so this is safe.
+        Falls back to a plain :meth:`generate_structured` when *cancel_event* is
+        ``None``.
+        """
+        if cancel_event is None:
+            return self.generate_structured(output_model, prompt)
+
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(self.generate_structured, output_model, prompt)
+        executor.shutdown(wait=False)
+
+        while True:
+            if cancel_event.is_set():
+                return None
+            try:
+                return future.result(timeout=0.5)
+            except concurrent.futures.TimeoutError:
+                continue
 
     def invoke_with_search(self, prompt: Any, provider_id: str) -> Any:
         """Invoke with provider-specific web-search grounding.

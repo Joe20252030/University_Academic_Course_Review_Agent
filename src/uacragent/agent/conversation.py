@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -538,6 +539,7 @@ class ConversationAgent:
         language: str = "auto",
         search_enabled: bool = False,
         attachments: list | None = None,
+        cancel_event: "threading.Event | None" = None,
     ) -> ChatResponse:
         """Process one user turn and return a :class:`ChatResponse`.
 
@@ -659,6 +661,7 @@ class ConversationAgent:
                         task_type, session, progress_cb,
                         effort_level, reasoning_mode, language,
                         prefs=prefs,
+                        cancel_event=cancel_event,
                     )
                 except Exception as exc:  # noqa: BLE001
                     generation_error = _ls(language, _CHAT_STRINGS, "gen_failed", exc=exc)
@@ -1080,6 +1083,7 @@ class ConversationAgent:
         reasoning_mode: str = "quick",
         language: str = "auto",
         prefs: dict | None = None,
+        cancel_event: "threading.Event | None" = None,
     ) -> str:
         """Run the generation pipeline and return the output markdown path.
 
@@ -1118,5 +1122,6 @@ class ConversationAgent:
             effort_level=effort_level,
             reasoning_mode=reasoning_mode,
             language=language,
+            cancel_event=cancel_event,
         )
         return md_path

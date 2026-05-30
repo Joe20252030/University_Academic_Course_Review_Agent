@@ -26,6 +26,7 @@ apply_critic_pass(...)      → str                (Deep only)
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass
 from typing import Any
 
@@ -180,6 +181,7 @@ def extract_topics(
     outline: str,
     user_prefs: dict,
     llm_client: Any,
+    cancel_event: "threading.Event | None" = None,
 ) -> TopicList | None:
     """Extract a ranked list of exam-relevant topics from the document outline.
 
@@ -207,7 +209,9 @@ def extract_topics(
             exam_type=user_prefs.get("exam_type") or "other",
             exam_format=user_prefs.get("exam_format") or "unknown",
         )
-        result: TopicList = llm_client.generate_structured(TopicList, messages)
+        result: TopicList = llm_client.generate_structured_cancellable(
+            TopicList, messages, cancel_event
+        )
         logger.info(
             "Topic extraction complete: %d topics extracted.", len(result.topics)
         )
@@ -255,6 +259,7 @@ def apply_critic_pass(
     section_title: str,
     key_topics: list[str],
     llm_client: Any,
+    cancel_event: "threading.Event | None" = None,
 ) -> str:
     """Run a refinement LLM call to improve a written section.
 
@@ -277,13 +282,16 @@ def apply_critic_pass(
         template = _load_reasoning_prompt("section_critic.md")
         prompt = ChatPromptTemplate.from_template(template)
         topics_str = ", ".join(key_topics)
-        resp = llm_client.invoke(
+        resp = llm_client.stream_invoke(
             prompt.format_messages(
                 section_title=section_title,
                 key_topics=topics_str,
                 section_text=section_text,
-            )
+            ),
+            cancel_event=cancel_event,
         )
+        if resp is None:
+            return section_text  # Cancelled — keep the original section
         refined = getattr(resp, "content", str(resp))
         return refined.strip() or section_text
     except Exception as exc:  # noqa: BLE001
