@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>UACRAgent · Course Review Assistant</title>
+    <meta
+      name="description"
+      content="Desktop-first academic course assistant for studying from course materials with grounded AI support."
+    >
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    >
+    <link rel="icon" href="./assets/logo.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="site-header">
+        <a class="brand" href="#top" aria-label="UACRAgent home">
+          <img src="./assets/logo.svg" alt="UACRAgent logo">
+          <span>UACRAgent</span>
+        </a>
+        <nav class="nav-links" aria-label="Primary">
+          <a href="#features">Features</a>
+          <a href="#workflow">Workflow</a>
+          <a href="#interfaces">Interfaces</a>
+          <a href="#privacy">Privacy</a>
+          <a href="#getting-started">Get Started</a>
+        </nav>
+        <a
+          class="github-link"
+          href="https://github.com/Joe20252030/University_Academic_Course_Review_Agent"
+          target="_blank"
+          rel="noreferrer"
+        >GitHub</a>
+      </header>
+
+      <main id="top">
+        <section class="hero">
+          <div class="hero-copy">
+            <p class="eyebrow">v0.2.0 · desktop-first · local-trusted API</p>
+            <h1>Study from course documents with a grounded academic assistant.</h1>
+            <p class="hero-text">
+              UACRAgent helps students chat over class materials, reuse persistent study
+              sessions, and generate structured review artefacts only when they actually
+              need them.
+            </p>
+            <div class="hero-actions">
+              <a
+                class="button primary"
+                href="https://github.com/Joe20252030/University_Academic_Course_Review_Agent"
+                target="_blank"
+                rel="noreferrer"
+              >View Repository</a>
+              <a class="button secondary" href="#getting-started">Quick Start</a>
+            </div>
+            <ul class="hero-points">
+              <li>Persistent desktop sessions with saved history and workspace reuse</li>
+              <li>RAG-based retrieval with document-type-aware chunking</li>
+              <li>Review summaries, practice booklets, mock exams, and exam predictions</li>
+            </ul>
+          </div>
+          <aside class="hero-card">
+            <div class="release-card">
+              <span class="release-label">Latest Release</span>
+              <h2>UACRAgent v0.2.0</h2>
+              <ul>
+                <li>Responsive cancellation across the full generation pipeline</li>
+                <li>Attachment chips preserved in chat history</li>
+                <li>Tooltip and DOCX extraction reliability fixes</li>
+              </ul>
+              <a
+                href="https://github.com/Joe20252030/University_Academic_Course_Review_Agent/releases"
+                target="_blank"
+                rel="noreferrer"
+              >Release notes</a>
+            </div>
+          </aside>
+        </section>
+
+        <section id="features" class="section">
+          <div class="section-heading">
+            <p class="eyebrow">What it does</p>
+            <h2>Built for studying first, generation second.</h2>
+            <p>
+              The current version is centered on guided course review through a persistent
+              assistant workflow, with document generation available as a strong secondary tool.
+            </p>
+          </div>
+          <div class="feature-grid">
+            <article class="feature-card">
+              <h3>Grounded study chat</h3>
+              <p>
+                Chat over uploaded course documents with task-aware retrieval and weighted
+                document priorities.
+              </p>
+            </article>
+            <article class="feature-card">
+              <h3>Structured outputs</h3>
+              <p>
+                Generate review summaries, practice booklets, mock exams, and exam predictions
+                when you ask for them.
+              </p>
+            </article>
+            <article class="feature-card">
+              <h3>Persistent workspaces</h3>
+              <p>
+                Desktop sessions, CLI runs, and API runs each keep their own predictable
+                managed workspace roots.
+              </p>
+            </article>
+            <article class="feature-card">
+              <h3>Multiple providers</h3>
+              <p>
+                Use Gemini, OpenAI, or DeepSeek for chat and generation, with cloud or local
+                embeddings depending on your setup.
+              </p>
+            </article>
+            <article class="feature-card">
+              <h3>Desktop-first controls</h3>
+              <p>
+                Choose effort level, reasoning mode, web search, attachments, export format,
+                and session-specific settings from the GUI.
+              </p>
+            </article>
+            <article class="feature-card">
+              <h3>Local retrieval store</h3>
+              <p>
+                Chroma vector indexes stay on your machine, and unchanged workspaces can be
+                reused across session reloads.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="workflow" class="section workflow-section">
+          <div class="section-heading">
+            <p class="eyebrow">How it works</p>
+            <h2>A course-material workflow that stays inspectable.</h2>
+          </div>
+          <div class="workflow-steps">
+            <article>
+              <span>1</span>
+              <h3>Collect</h3>
+              <p>
+                Add syllabi, lecture notes, textbooks, assignments, past exams, and other
+                files in the interface that fits your workflow.
+              </p>
+            </article>
+            <article>
+              <span>2</span>
+              <h3>Split</h3>
+              <p>
+                Each document type uses a different chunking strategy so retrieval matches
+                the structure of academic material more closely.
+              </p>
+            </article>
+            <article>
+              <span>3</span>
+              <h3>Retrieve</h3>
+              <p>
+                Chroma stores local vectors and the assistant retrieves weighted context for
+                chat or study-document generation.
+              </p>
+            </article>
+            <article>
+              <span>4</span>
+              <h3>Study</h3>
+              <p>
+                Ask grounded questions, request study artefacts, reopen sessions later, and
+                reuse existing indexes when files have not changed.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="interfaces" class="section">
+          <div class="section-heading">
+            <p class="eyebrow">Interfaces</p>
+            <h2>Three ways to use the same core pipeline.</h2>
+          </div>
+          <div class="interface-grid">
+            <article class="interface-card">
+              <h3>Desktop GUI</h3>
+              <p>The primary interface for most users.</p>
+              <ul>
+                <li>Persistent sessions and saved workspaces</li>
+                <li>Chat, quick actions, export controls, and app settings</li>
+                <li>macOS, Windows, and Linux support</li>
+              </ul>
+            </article>
+            <article class="interface-card">
+              <h3>Interactive CLI</h3>
+              <p>A terminal-first study assistant.</p>
+              <ul>
+                <li>Indexes once, then enters a chat loop</li>
+                <li>Managed workspaces under <code>cli_run/</code></li>
+                <li>Best for scriptable local workflows without the GUI</li>
+              </ul>
+            </article>
+            <article class="interface-card">
+              <h3>Local FastAPI API</h3>
+              <p>Programmatic one-shot generation for trusted local use.</p>
+              <ul>
+                <li>Managed workspaces under <code>api_run/</code></li>
+                <li>Absolute local <code>markdown_path</code> response</li>
+                <li>Not intended for public or multi-user deployment</li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section id="privacy" class="section privacy-section">
+          <div class="section-heading">
+            <p class="eyebrow">Privacy</p>
+            <h2>Local-first working data, provider-dependent requests.</h2>
+          </div>
+          <div class="privacy-layout">
+            <div class="privacy-card">
+              <h3>What stays local</h3>
+              <ul>
+                <li>Session state and chat history</li>
+                <li>Workspace uploads, outputs, and Chroma indexes</li>
+                <li>Local model cache under the app data directory</li>
+                <li>Logs under <code>&lt;app_data_dir&gt;/logs/</code></li>
+              </ul>
+            </div>
+            <div class="privacy-card">
+              <h3>What may leave the machine</h3>
+              <ul>
+                <li>Chat requests sent to the selected LLM provider</li>
+                <li>Retrieved document excerpts used in generation</li>
+                <li>Cloud embedding requests when local embeddings are not used</li>
+                <li>Provider-backed web search or attachment processing</li>
+              </ul>
+            </div>
+          </div>
+          <p class="privacy-note">
+            The current API is intended for local trusted use only. If you use the
+            FastAPI layer, set <code>UACRAGENT_ALLOWED_BASE_DIR</code> when you want an
+            extra local filesystem boundary.
+          </p>
+        </section>
+
+        <section id="getting-started" class="section getting-started">
+          <div class="section-heading">
+            <p class="eyebrow">Get started</p>
+            <h2>Source install, desktop launch, or local API.</h2>
+          </div>
+          <div class="install-grid">
+            <article class="install-card">
+              <h3>Install from source</h3>
+              <pre><code>python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+pip install -e .</code></pre>
+            </article>
+            <article class="install-card">
+              <h3>Windows PowerShell</h3>
+              <pre><code>py -m venv .venv
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+pip install -e .</code></pre>
+            </article>
+            <article class="install-card">
+              <h3>Launch the desktop app</h3>
+              <pre><code>python -m uacragent --gui</code></pre>
+            </article>
+            <article class="install-card">
+              <h3>Run the local API</h3>
+              <pre><code>uvicorn uacragent.api.main:app --reload</code></pre>
+            </article>
+          </div>
+          <div class="resource-links">
+            <a
+              class="button secondary"
+              href="https://github.com/Joe20252030/University_Academic_Course_Review_Agent/wiki"
+              target="_blank"
+              rel="noreferrer"
+            >Open Wiki</a>
+            <a
+              class="button secondary"
+              href="https://github.com/Joe20252030/University_Academic_Course_Review_Agent/blob/main/README.md"
+              target="_blank"
+              rel="noreferrer"
+            >Read README</a>
+            <a
+              class="button secondary"
+              href="https://github.com/Joe20252030/University_Academic_Course_Review_Agent/releases"
+              target="_blank"
+              rel="noreferrer"
+            >Downloads</a>
+          </div>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <p>
+          UACRAgent is an independent open-source educational study-assistance tool.
+          Generated content should be verified against official course materials and
+          instructor guidance.
+        </p>
+      </footer>
+    </div>
+  </body>
+</html>
