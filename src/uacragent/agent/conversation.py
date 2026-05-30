@@ -401,6 +401,41 @@ _TASK_MARKER_RE = re.compile(
     r"\[TASK:(review_summary|practice_booklet|mock_exam|exam_prediction)\]",
 )
 
+# Second line of defence against false-positive task triggers.
+#
+# Strategy: NARROW BLOCKLIST, not a broad whitelist.
+#
+# Requiring generation keywords (whitelist) is the wrong tool — it forces
+# exact phrasing, blocks natural variants like "I'd like a review" or
+# "show me a mock exam", and makes the system needlessly rigid.
+#
+# Instead, suppress only patterns that are *unambiguously* not a generation
+# request: connectivity checks, visibility tests, and greetings.  Everything
+# else is left to the system prompt and the LLM's own judgement.
+_OBVIOUS_NON_GENERATION_RE = re.compile(
+    r"\bcan\s+you\s+see\b"                        # "can you see this / the image"
+    r"|\bdo\s+you\s+see\b"                         # "do you see"
+    r"|\bcan\s+you\s+read\s+this\b"               # "can you read this"
+    r"|\bis\s+this\s+(?:working|visible|showing)\b"  # connectivity / visibility check
+    r"|\bare\s+you\s+(?:there|online|working)\b"  # presence check
+    r"|\btest[,\s!]+test\b",                       # "test, test" / "test! test"
+    re.IGNORECASE,
+)
+
+
+def _is_obvious_non_generation(message: str) -> bool:
+    """Return ``True`` only for messages that are *unambiguously* not a generation
+    request — test pings, visibility checks, and presence checks.
+
+    This is a narrow blocklist, not an intent detector.  It deliberately avoids
+    requiring generation keywords so that natural-language requests ("I'd like a
+    review", "show me a mock exam", "help me prepare") are never wrongly blocked.
+    The system prompt is the primary mechanism for intent handling; this guard
+    only catches the specific failure mode where the LLM emits a task marker in
+    response to an obvious non-generation message (e.g. "can you see the image?").
+    """
+    return bool(_OBVIOUS_NON_GENERATION_RE.search(message))
+
 
 def _extract_task_marker(text: str) -> tuple[str | None, str]:
     """Return ``(task_type_value, cleaned_text)`` after stripping the marker.
@@ -657,6 +692,18 @@ class ConversationAgent:
 
         # -- 4. Detect and strip task marker -----------------------------------
         task_type, clean_text = _extract_task_marker(assistant_text)
+
+        # Code-level safety gate: suppress task markers emitted in response to
+        # messages that are unambiguously NOT generation requests (test pings,
+        # visibility checks, presence checks).  This is a narrow blocklist —
+        # natural-language requests are left entirely to the LLM's judgement.
+        if task_type is not None and _is_obvious_non_generation(message):
+            _logger.warning(
+                "Task marker [TASK:%s] suppressed — message matched non-generation "
+                "pattern: %r",
+                task_type, message[:120],
+            )
+            task_type = None
 
         # -- 5. Run generation pipeline if task was requested ------------------
         output_path: str | None = None
