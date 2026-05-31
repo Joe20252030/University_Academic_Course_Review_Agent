@@ -218,15 +218,19 @@ class ChatMixin:
 
         if cb is not None:
             if hasattr(cb, "save"):
-                import tempfile
-                from datetime import datetime as _dt
-                ts = _dt.now().strftime("%Y%m%d_%H%M%S")
-                tmp_path = Path(tempfile.gettempdir()) / f"uacr_paste_{ts}.png"
+                import tempfile, os as _os
+                # mkstemp guarantees a unique path — avoids the same-second
+                # collision that timestamp-only names can produce when the user
+                # pastes multiple images rapidly.  The prefix keeps the cleanup
+                # filter (startswith("uacr_paste_")) working correctly.
                 try:
+                    _fd, _tmp = tempfile.mkstemp(prefix="uacr_paste_", suffix=".png")
+                    _os.close(_fd)
+                    tmp_path = Path(_tmp)
                     cb.save(str(tmp_path), format="PNG")
                     self._pending_attachments.append({
                         "path": str(tmp_path),
-                        "name": f"pasted_image_{ts}.png",
+                        "name": tmp_path.name,
                         "mime": "image/png",
                     })
                     self._rebuild_attach_strip()

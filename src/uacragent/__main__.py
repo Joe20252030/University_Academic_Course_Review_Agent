@@ -351,4 +351,12 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    # freeze_support() MUST be the very first call in a frozen entry point.
+    # On macOS (and Windows), PyInstaller frozen apps use multiprocessing
+    # spawn mode: each worker re-executes the frozen binary.  Without this
+    # call the spawned process would run main() again instead of becoming
+    # a worker, causing an infinite crash loop on first startup.
+    # Safe no-op in non-frozen (source) runs.
+    import multiprocessing
+    multiprocessing.freeze_support()
     main()

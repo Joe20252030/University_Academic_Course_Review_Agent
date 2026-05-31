@@ -199,7 +199,7 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=[str(HERE / "rthooks" / "rthook_tkdnd.py")],
     excludes=[
         "pytest", "_pytest",
         "fastapi", "uvicorn", "starlette",
