@@ -75,6 +75,21 @@ from ._chat_mixin import ChatMixin
 # ---------------------------------------------------------------------------
 try:
     from tkinterdnd2 import TkinterDnD as _TkinterDnD
+
+    # In a PyInstaller frozen build the module archive resolves __file__ for
+    # TkinterDnD.py to a path inside the archive rather than the real on-disk
+    # location inside _MEIPASS.  _require() computes the tkdnd extension
+    # directory as os.path.dirname(__file__) + '/tkdnd/<arch>', so if __file__
+    # is wrong, Tcl cannot find pkgIndex.tcl and raises RuntimeError.
+    # Patch __file__ explicitly so the path computation always works.
+    import sys as _sys_dnd, os as _os_dnd
+    if hasattr(_sys_dnd, "_MEIPASS"):
+        import tkinterdnd2.TkinterDnD as _tkdnd_mod
+        _tkdnd_mod.__file__ = _os_dnd.path.join(
+            _sys_dnd._MEIPASS, "tkinterdnd2", "TkinterDnD.py"
+        )
+    del _sys_dnd, _os_dnd
+
     _TK_BASE: type = _TkinterDnD.Tk
     _HAS_DND: bool = True
 except Exception:               # ImportError or Tcl/Tk extension not found
@@ -104,7 +119,23 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
     """
 
     def __init__(self) -> None:
-        super().__init__()
+        # super().__init__() calls TkinterDnD.Tk.__init__() → _require() when
+        # tkdnd is the base class.  _require() can raise RuntimeError if the
+        # Tcl extension fails to load (e.g. wrong __file__ path in a frozen
+        # build even after the patch above).  Catch it so the app degrades
+        # gracefully — drag-and-drop is unavailable, everything else works.
+        try:
+            super().__init__()
+        except RuntimeError as _dnd_e:
+            _msg = str(_dnd_e).lower()
+            if "tkdnd" not in _msg and "unable to load" not in _msg:
+                raise           # unrelated RuntimeError — re-raise
+            import logging as _log_dnd
+            _log_dnd.getLogger(__name__).warning(
+                "tkdnd extension failed to load (%s); "
+                "drag-and-drop will be unavailable.", _dnd_e
+            )
+            del _dnd_e, _msg, _log_dnd
         self.title(_WINDOW_TITLE)
         self.minsize(_MIN_WIDTH, _MIN_HEIGHT)
 
