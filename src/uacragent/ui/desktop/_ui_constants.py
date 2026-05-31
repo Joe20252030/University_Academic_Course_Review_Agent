@@ -55,6 +55,21 @@ _QUICK_ACTIONS: list[str] = [
 ]
 
 # ---------------------------------------------------------------------------
+# Platform helpers
+# ---------------------------------------------------------------------------
+
+def _icon_font_family() -> str:
+    """Return a font family that renders Unicode symbols cleanly on this OS.
+
+    On Windows, ``TkDefaultFont`` maps to Segoe UI which lacks many symbol
+    glyphs (e.g. ⚙ U+2699).  ``Segoe UI Symbol`` ships with every Windows
+    version and covers the full Miscellaneous Symbols block, so the gear and
+    similar characters look sharp instead of pixelated or missing.
+    """
+    return "Segoe UI Symbol" if platform.system() == "Windows" else "TkDefaultFont"
+
+
+# ---------------------------------------------------------------------------
 # Internationalisation — UI display strings
 # ---------------------------------------------------------------------------
 _STRINGS: dict[str, dict[str, str]] = {

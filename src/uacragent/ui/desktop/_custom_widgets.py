@@ -140,6 +140,41 @@ def draw_right_rounded_rect(
     return canvas.create_polygon(pts, smooth=False, **kw)
 
 
+def draw_search_icon(
+    canvas: tk.Canvas,
+    cx: float,
+    cy: float,
+    r: float = 5,
+    color: str = "#1a2744",
+    tags: str = "",
+    line_width: float = 1.5,
+) -> None:
+    """Draw a magnifying-glass icon centred at (*cx*, *cy*) using canvas primitives.
+
+    Replaces emoji ``🔍`` which renders poorly on Windows with Tk's default font.
+    The icon is a circle of radius *r* plus a diagonal handle extending from the
+    bottom-right of the circle.
+    """
+    # Lens circle
+    canvas.create_oval(
+        cx - r, cy - r, cx + r, cy + r,
+        outline=color, fill="", width=line_width,
+        tags=tags,
+    )
+    # Handle — starts at the inner edge of the circle (45°) and extends outward
+    import math
+    angle = math.radians(45)
+    hx1 = cx + r * math.cos(angle)
+    hy1 = cy + r * math.sin(angle)
+    hx2 = cx + (r + r * 0.85) * math.cos(angle)
+    hy2 = cy + (r + r * 0.85) * math.sin(angle)
+    canvas.create_line(
+        hx1, hy1, hx2, hy2,
+        fill=color, width=line_width + 0.5, capstyle="round",
+        tags=tags,
+    )
+
+
 def draw_rounded_rect(
     canvas: tk.Canvas,
     x1: float, y1: float,
@@ -737,10 +772,20 @@ class _Tooltip:
         widget.bind("<Enter>",    self._schedule,        add="+")
         widget.bind("<Leave>",    self._cancel_and_hide, add="+")
         widget.bind("<Button-1>", self._cancel_and_hide, add="+")
+        # When the host widget is destroyed (e.g. during strip rebuild or app
+        # quit) cancel any pending after() and close the popup proactively,
+        # before Tcl has a chance to auto-destroy child windows in a way that
+        # conflicts with our own cleanup.
+        widget.bind("<Destroy>",  self._on_host_destroy, add="+")
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _on_host_destroy(self, _event=None) -> None:
+        """Called when the host widget is destroyed — clean up immediately."""
+        self._cancel()
+        self._hide()
 
     def _schedule(self, _event=None) -> None:
         self._cancel()

@@ -19,7 +19,7 @@ from uacragent.infra.persistence import (
 )
 
 from ._custom_widgets import _RoundedChip
-from ._ui_constants import _STRINGS, _THEME_COLORS, _FONT_SIZE_VALUES
+from ._ui_constants import _STRINGS, _THEME_COLORS, _FONT_SIZE_VALUES, _icon_font_family
 
 
 class AppearanceMixin:
@@ -514,7 +514,7 @@ class AppearanceMixin:
         try:
             self._gear_btn.update_style(
                 font=("TkDefaultFont", size),
-                icon_font=("TkDefaultFont", size + 4),
+                icon_font=(_icon_font_family(), size + 4),
             )
         except Exception as exc:  # noqa: BLE001
             logger.debug("_apply_theme: widget not ready or update failed: %s", exc)
@@ -585,7 +585,7 @@ class AppearanceMixin:
         try:
             self._sess_settings_btn.update_style(
                 font=("TkDefaultFont", _ctrl_size),
-                icon_font=("TkDefaultFont", _ctrl_size + 4),
+                icon_font=(_icon_font_family(), _ctrl_size + 4),
             )
         except Exception as exc:  # noqa: BLE001
             logger.debug("_apply_theme: widget not ready or update failed: %s", exc)

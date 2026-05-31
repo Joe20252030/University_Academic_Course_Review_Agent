@@ -26,6 +26,29 @@ class SettingsMixin:
     """Mixin: session settings dialog — open, apply, and all helper methods."""
 
     @staticmethod
+    def _safe_destroy_toplevel(win: tk.Toplevel | tk.Tk | None) -> None:
+        """Best-effort ``destroy()`` wrapper for dialog callbacks.
+
+        On newer Tk / Python combinations, a button or WM_DELETE callback can
+        race with Tcl's own widget-command teardown and raise
+        ``TclError: can't delete Tcl command`` when ``destroy()`` is invoked a
+        second time through a stale bound method.  Treat that path as an
+        already-closed dialog and swallow it.
+        """
+        if win is None:
+            return
+        try:
+            if not win.winfo_exists():
+                return
+        except Exception:
+            return
+        try:
+            win.destroy()
+        except tk.TclError as exc:
+            if "can't delete Tcl command" not in str(exc):
+                raise
+
+    @staticmethod
     def _is_managed_exam_info_path(path: str, workspace_folder: Path | None) -> bool:
         """Return True when *path* is inside the workspace-managed exam-info area."""
         if not path or workspace_folder is None:
@@ -308,7 +331,7 @@ class SettingsMixin:
             font=("TkDefaultFont", _sz, "bold"),
             padx=14, pady=6,
             hover_bg=_phov,
-            command=win.destroy,
+            command=lambda: self._safe_destroy_toplevel(win),
         ).pack()
 
         self._center_on_main(win)
@@ -368,7 +391,10 @@ class SettingsMixin:
 
         def _ok():
             result[0] = True
-            win.destroy()
+            self._safe_destroy_toplevel(win)
+
+        def _cancel():
+            self._safe_destroy_toplevel(win)
 
         _RoundedChip(
             btn_row,
@@ -389,10 +415,10 @@ class SettingsMixin:
             padx=14, pady=6,
             outline=_border, outline_width=1,
             hover_bg=c.get("qa_bg", "#edf0f8"),
-            command=win.destroy,
+            command=_cancel,
         ).pack(side="left")
 
-        win.protocol("WM_DELETE_WINDOW", win.destroy)
+        win.protocol("WM_DELETE_WINDOW", _cancel)
         self._center_on_main(win)
         win.wait_window()
         return result[0]
@@ -462,10 +488,10 @@ class SettingsMixin:
             val = entry_var.get().strip()
             if val:
                 result[0] = val
-            win.destroy()
+            self._safe_destroy_toplevel(win)
 
         def _cancel(_event=None):
-            win.destroy()
+            self._safe_destroy_toplevel(win)
 
         _RoundedChip(
             btn_row, text=self._t("settings_apply_btn"),
@@ -784,7 +810,7 @@ class SettingsMixin:
             padx=14, pady=6,
             outline=_border, outline_width=1,
             hover_bg=c.get("qa_bg", "#edf0f8"),
-            command=win.destroy,
+            command=lambda: self._safe_destroy_toplevel(win),
         ).pack(side="left")
 
         # ── Scrollable canvas inside the dialog ───────────────────────

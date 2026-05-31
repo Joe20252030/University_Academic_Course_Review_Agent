@@ -58,9 +58,10 @@ from ._ui_constants import (  # noqa: F401 (re-exports)
     _STRINGS, _THEME_COLORS, _FONT_SIZE_VALUES,
     _open_in_os, _open_file_in_os, _open_folder_in_os,
     _strip_markdown, _fmt_dt,
+    _icon_font_family,
 )
 from ._custom_widgets import (
-    AutoHideScrollbar, draw_rounded_rect,
+    AutoHideScrollbar, draw_rounded_rect, draw_search_icon,
     draw_left_rounded_rect, draw_right_rounded_rect,
     CustomSessionList, _RoundedChip, _SidebarIcon, _Tooltip,
 )
@@ -532,7 +533,7 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
             chip_fg=_fg,
             parent_bg=_wbg,
             font=("TkDefaultFont", _sz),
-            icon_font=("TkDefaultFont", _sz + 4),
+            icon_font=(_icon_font_family(), _sz + 4),
             padx=10, pady=6,
             hover_bg=_c0.get("lb_hover_bg", "#dfe4f0"),
             command=self._open_app_settings,
@@ -967,7 +968,7 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
             chip_fg=_c0["input_fg"],
             parent_bg=_c0["input_bg"],
             font=("TkDefaultFont", 11),
-            icon_font=("TkDefaultFont", 15),
+            icon_font=(_icon_font_family(), 15),
             padx=14, pady=5,
             hover_bg=_c0.get("qa_bg", "#edf0f8"),
             outline=_c0.get("input_border", "#cdd4e8"),
@@ -1815,9 +1816,8 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         cv.delete("sc_icon")
         draw_rounded_rect(cv, 1, 1, w - 1, h - 1, r=8,
                           fill=_ibg, outline=_brd, width=1, tags="sc")
-        cv.create_text(14, h // 2, text="🔍",
-                       font=("TkDefaultFont", 10),
-                       fill=_fg, anchor="center", tags="sc_icon")
+        draw_search_icon(cv, cx=14, cy=h // 2, r=5,
+                         color=_fg, tags="sc_icon", line_width=1.5)
         cv.itemconfigure(self._search_cv_win,
                          width=max(1, w - 32), height=max(1, h - 8))
         cv.coords(self._search_cv_win, 28, 4)
