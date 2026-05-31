@@ -698,6 +698,7 @@ class ConversationAgent:
             session, context, language=language,
             history_summary=session.history_summary,
             prefs=prefs,
+            attachments=effective_attachments or None,
         )
         messages: list = [SystemMessage(content=system_content)]
         # Use snapshot() to get a consistent, lock-safe copy of history.
@@ -882,6 +883,7 @@ class ConversationAgent:
         language: str = "auto",
         history_summary: str = "",
         prefs: dict | None = None,
+        attachments: list | None = None,
     ) -> str:
         """Fill the system prompt template with session values.
 
@@ -946,6 +948,36 @@ class ConversationAgent:
 
         response_language = _get_language_instruction(language)
 
+        # Build an explicit note about any files attached to the current message.
+        # This prevents the LLM from confusing "no indexed course documents" (empty
+        # RAG context) with "no content available" when the user has pasted or
+        # uploaded files directly into the chat.  Images and text files are
+        # described separately because they reach the LLM via different channels:
+        # text files are extracted and appended to the message body; images are
+        # sent as inline base64 content parts for vision-capable providers.
+        attachments_note = ""
+        if attachments:
+            image_atts = [a for a in attachments if a.get("mime", "") in _IMAGE_MIMES]
+            text_atts  = [a for a in attachments if a.get("mime", "") not in _IMAGE_MIMES]
+            note_lines: list[str] = []
+            if text_atts:
+                names = ", ".join(f'"{a.get("name", "file")}"' for a in text_atts)
+                note_lines.append(
+                    f"The student has attached {len(text_atts)} document file(s) "
+                    f"to this message ({names}). Their text content has been "
+                    f"extracted and appended to the student's message — you can "
+                    f"read and use it directly to answer their question."
+                )
+            if image_atts:
+                names = ", ".join(f'"{a.get("name", "image")}"' for a in image_atts)
+                note_lines.append(
+                    f"The student has attached {len(image_atts)} image file(s) "
+                    f"to this message ({names}). They are included as inline "
+                    f"images — you can view and describe their content directly."
+                )
+            if note_lines:
+                attachments_note = "> **Attached files in this message:** " + " ".join(note_lines) + "\n\n"
+
         rendered = template.format(
             course_name=_sanitise(prefs.get("course_name") or "this course"),
             course_meta=_sanitise(course_meta),
@@ -959,8 +991,9 @@ class ConversationAgent:
             exam_duration=_sanitise(prefs.get("exam_duration") or "Not specified"),
             exam_info=_sanitise(prefs.get("exam_info") or "None provided"),
             extra_instructions=_sanitise(prefs.get("extra_instructions") or "None"),
-            has_files=has_files_text,   # computed from enum keys + counts — safe
-            context=context,            # already sanitised in _retrieve_context()
+            has_files=has_files_text,        # computed from enum keys + counts — safe
+            context=context,                 # already sanitised in _retrieve_context()
+            attachments_note=attachments_note,  # built above from effective_attachments
             response_language=response_language,  # fixed dict value — safe
         )
 
