@@ -58,7 +58,7 @@
       <main id="top">
         <section class="hero">
           <div class="hero-copy">
-            <p class="eyebrow" data-en="v0.2.0 · desktop-first · local-trusted API" data-zh="v0.2.0 · 桌面优先 · 本地可信 API">v0.2.0 · desktop-first · local-trusted API</p>
+            <p class="eyebrow" data-en="v0.3.0 · desktop-first · local-trusted API" data-zh="v0.3.0 · 桌面优先 · 本地可信 API">v0.3.0 · desktop-first · local-trusted API</p>
             <h1 data-en="Study from course documents with a grounded academic assistant." data-zh="通过有依据的学术助手，从课程资料中高效学习。">Study from course documents with a grounded academic assistant.</h1>
             <p class="hero-text" data-en="UACRAgent helps students chat over class materials, reuse persistent study sessions, and generate structured review artefacts only when they actually need them." data-zh="UACRAgent 帮助学生围绕课程资料进行对话式学习、复用持久化学习会话，并在真正需要时生成结构化复习材料。">
               UACRAgent helps students chat over class materials, reuse persistent study
@@ -85,11 +85,11 @@
           <aside class="hero-card">
             <div class="release-card">
               <span class="release-label" data-en="Latest Release" data-zh="最新版本">Latest Release</span>
-              <h2>UACRAgent v0.2.0</h2>
+              <h2>UACRAgent v0.3.0</h2>
               <ul>
-                <li data-en="Responsive cancellation across the full generation pipeline" data-zh="整个生成流程都支持快速响应的取消操作">Responsive cancellation across the full generation pipeline</li>
-                <li data-en="Attachment chips preserved in chat history" data-zh="附件标签会保留在聊天历史中">Attachment chips preserved in chat history</li>
-                <li data-en="Tooltip and DOCX extraction reliability fixes" data-zh="改进了工具提示与 DOCX 提取可靠性">Tooltip and DOCX extraction reliability fixes</li>
+                <li data-en="Paste files and images directly into the chat input (Cmd/Ctrl+V)" data-zh="直接将文件或图片粘贴到聊天输入框（Cmd/Ctrl+V）">Paste files and images directly into the chat input (Cmd/Ctrl+V)</li>
+                <li data-en="Original file format preserved when pasting from Finder or Explorer" data-zh="从 Finder 或 Explorer 粘贴时正确保留原始文件格式">Original file format preserved when pasting from Finder or Explorer</li>
+                <li data-en="Windows icon rendering fixes and Inno Setup installer" data-zh="修复 Windows 图标渲染并新增 Inno Setup 安装包支持">Windows icon rendering fixes and Inno Setup installer</li>
               </ul>
               <a
                 href="https://github.com/Joe20252030/University_Academic_Course_Review_Agent/releases"
@@ -142,9 +142,10 @@
             </article>
             <article class="feature-card">
               <h3 data-en="Desktop-first controls" data-zh="桌面优先控制体验">Desktop-first controls</h3>
-              <p data-en="Choose effort level, reasoning mode, web search, attachments, export format, and session-specific settings from the GUI." data-zh="在桌面界面中选择 effort level、reasoning mode、网页搜索、附件、导出格式以及会话级设置。">
-                Choose effort level, reasoning mode, web search, attachments, export format,
-                and session-specific settings from the GUI.
+              <p data-en="Attach files via the + button, paste (Cmd/Ctrl+V), or drag-and-drop. Choose effort level, reasoning mode, web search, export format, and session-specific settings from the GUI." data-zh="通过 + 按钮、粘贴（Cmd/Ctrl+V）或拖放方式添加附件。在桌面界面中选择 effort level、reasoning mode、网页搜索、导出格式以及会话级设置。">
+                Attach files via the + button, paste (Cmd/Ctrl+V), or drag-and-drop. Choose
+                effort level, reasoning mode, web search, export format, and session-specific
+                settings from the GUI.
               </p>
             </article>
             <article class="feature-card">
@@ -285,13 +286,13 @@
                 <li data-en="On first use, add your provider/API settings and create a session." data-zh="首次使用时，先填写 provider / API 设置，然后创建一个会话。">On first use, add your provider/API settings and create a session.</li>
               </ol>
             </article>
-            <article class="install-card">
-              <h3 data-en="Desktop app: Windows" data-zh="桌面应用：Windows">Desktop app: Windows</h3>
-              <ol class="install-steps">
-                <li data-en="Open the Releases page and download the latest Windows zip." data-zh="打开 Releases 页面并下载最新的 Windows zip 压缩包。">Open the Releases page and download the latest Windows zip.</li>
-                <li data-en="Extract the zip, then keep the full app folder together. Do not move only the .exe by itself." data-zh="解压压缩包，并保留完整的应用文件夹。不要只单独移动 .exe 文件。">Extract the zip, then keep the full app folder together. Do not move only the <code>.exe</code> by itself.</li>
-                <li data-en="Run UACRAgent.exe. If Windows SmartScreen warns that the app is from an unknown publisher, click More info → Run anyway." data-zh="运行 UACRAgent.exe。如果 Windows SmartScreen 提示应用来自未知发布者，请点击“更多信息 → 仍要运行”。">Run <code>UACRAgent.exe</code>. If Windows SmartScreen warns that the app is from an unknown publisher, click <strong>More info → Run anyway</strong>.</li>
-                <li data-en="On first use, add your provider/API settings and create a session." data-zh="首次使用时，先填写 provider / API 设置，然后创建一个会话。">On first use, add your provider/API settings and create a session.</li>
+            <article class=”install-card”>
+              <h3 data-en=”Desktop app: Windows” data-zh=”桌面应用：Windows”>Desktop app: Windows</h3>
+              <ol class=”install-steps”>
+                <li data-en=”Open the Releases page and download the latest Windows installer (.exe) or portable zip.” data-zh=”打开 Releases 页面，下载最新的 Windows 安装程序（.exe）或便携版 zip 压缩包。”>Open the Releases page and download the latest Windows installer (<code>.exe</code>) or portable zip.</li>
+                <li data-en=”Installer: run the setup wizard and follow the prompts. Portable zip: extract and keep the full app folder together — do not move only the .exe.” data-zh=”安装程序：运行安装向导并按提示操作。便携版 zip：解压后保留完整文件夹，不要只单独移动 .exe 文件。”>Installer: run the setup wizard and follow the prompts. Portable zip: extract and keep the full app folder together.</li>
+                <li data-en=”If Windows SmartScreen warns that the app is from an unknown publisher, click More info → Run anyway.” data-zh=”如果 Windows SmartScreen 提示应用来自未知发布者，请点击”更多信息 → 仍要运行”。”>If Windows SmartScreen warns that the app is from an unknown publisher, click <strong>More info → Run anyway</strong>.</li>
+                <li data-en=”On first use, add your provider/API settings and create a session.” data-zh=”首次使用时，先填写 provider / API 设置，然后创建一个会话。”>On first use, add your provider/API settings and create a session.</li>
               </ol>
             </article>
             <article class="install-card">
