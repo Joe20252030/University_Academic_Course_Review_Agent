@@ -1137,6 +1137,13 @@ class ChatMixin:
 
         _progress = self._make_progress_cb(update_status_bar=False)
 
+        # Identify temp paste files (created by _on_paste_input for raw images)
+        # so they can be deleted after the LLM call regardless of outcome.
+        _tmp_paste_paths = [
+            att["path"] for att in captured_attachments
+            if Path(att.get("path", "")).name.startswith("uacr_paste_")
+        ]
+
         def _work() -> None:
             try:
                 response = captured_agent.chat(
@@ -1190,6 +1197,16 @@ class ChatMixin:
                         )
                     )
                     self.after(0, lambda: self._set_busy(False))
+            finally:
+                # Delete temp paste image files (uacr_paste_*.png) created by
+                # _on_paste_input.  The LLM has already read their bytes at this
+                # point; they serve no further purpose and must not accumulate.
+                import os as _os
+                for _tp in _tmp_paste_paths:
+                    try:
+                        _os.unlink(_tp)
+                    except OSError:
+                        pass
 
         threading.Thread(target=_work, daemon=True).start()
 
