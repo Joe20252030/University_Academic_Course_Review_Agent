@@ -181,10 +181,35 @@ class ChatMixin:
         if not self._provider_supports_files():
             return None  # no attachment support → let text paste through
 
-        # ── 1. Try PIL clipboard grab (image data or file list) ──────────
-        # PIL.ImageGrab.grabclipboard() works reliably on macOS and Windows.
-        # On Linux it requires xclip/xsel; the outer try/except makes it a
-        # safe no-op when unavailable.
+        # ── 1. Check for a file list first ───────────────────────────────
+        # When a file is copied in Explorer/Finder the OS places both a file
+        # list (CF_HDROP / NSFilenamesPboardType) AND a preview thumbnail
+        # image in the clipboard.  PIL.ImageGrab.grabclipboard() picks the
+        # image format first (higher priority in its internal format order),
+        # so a copied PDF would be saved as a .png temp file.
+        # We probe for the file list before calling PIL so the original file
+        # path — and therefore its correct format — is always preferred.
+        file_list: list[str] = self._clipboard_file_list()
+        if file_list:
+            from uacragent.agent.conversation import _MIME_MAP
+            added = False
+            for p in file_list:
+                if Path(p).is_file():
+                    suffix = Path(p).suffix.lower()
+                    mime = _MIME_MAP.get(suffix, "application/octet-stream")
+                    self._pending_attachments.append({
+                        "path": p,
+                        "name": Path(p).name,
+                        "mime": mime,
+                    })
+                    added = True
+            if added:
+                self._rebuild_attach_strip()
+                return "break"
+
+        # ── 2. Try PIL clipboard grab (raw image — screenshot, browser copy) ──
+        # Only reached when the clipboard holds image data with no accompanying
+        # file list (e.g. a screenshot or an image copied from a web browser).
         try:
             from PIL import ImageGrab
             cb = ImageGrab.grabclipboard()
@@ -192,7 +217,6 @@ class ChatMixin:
             cb = None
 
         if cb is not None:
-            # ── 1a. PIL Image (screenshot, copied image from browser, etc.) ──
             if hasattr(cb, "save"):
                 import tempfile
                 from datetime import datetime as _dt
@@ -210,8 +234,9 @@ class ChatMixin:
                 except Exception:
                     pass  # save failed — fall through to default paste
 
-            # ── 1b. File list (files copied in Finder / Explorer) ────────
             elif isinstance(cb, list) and cb:
+                # PIL already returned a file list (fallback path for some
+                # Linux clipboard managers that don't expose HDROP natively).
                 from uacragent.agent.conversation import _MIME_MAP
                 added = False
                 for item in cb:
@@ -229,8 +254,120 @@ class ChatMixin:
                     self._rebuild_attach_strip()
                     return "break"
 
-        # ── 2. Default: plain text paste — let tkinter handle it ─────────
+        # ── 3. Default: plain text paste — let tkinter handle it ─────────
         return None
+
+    def _clipboard_file_list(self) -> list[str]:
+        """Return file paths from the clipboard without touching image data.
+
+        Checks platform-native file-list clipboard formats before PIL has a
+        chance to read the thumbnail/preview image that OSes also place in the
+        clipboard when files are copied.
+
+        Returns an empty list when no file list is present.
+        """
+        import sys
+
+        if sys.platform.startswith("win"):
+            return self._clipboard_file_list_win()
+        if sys.platform == "darwin":
+            return self._clipboard_file_list_mac()
+        # Linux: no reliable pure-stdlib path; PIL's grabclipboard handles it.
+        return []
+
+    def _clipboard_file_list_win(self) -> list[str]:
+        """Read CF_HDROP (file list) from the Windows clipboard via ctypes.
+
+        ``DragQueryFileW`` takes the HDROP handle returned by
+        ``GetClipboardData`` directly — no ``GlobalLock`` is needed.
+        Calling ``GlobalLock`` and passing the resulting raw pointer was the
+        previous bug: the pointer value differs from the handle value, causing
+        ``DragQueryFileW`` to receive an invalid argument and return 0 files.
+        """
+        try:
+            import ctypes
+
+            CF_HDROP = 15
+            u32     = ctypes.windll.user32
+            shell32 = ctypes.windll.shell32
+
+            if not u32.OpenClipboard(None):
+                return []
+            try:
+                if not u32.IsClipboardFormatAvailable(CF_HDROP):
+                    return []
+                h = u32.GetClipboardData(CF_HDROP)
+                if not h:
+                    return []
+                # DragQueryFileW takes the HDROP handle directly.
+                n = shell32.DragQueryFileW(h, 0xFFFFFFFF, None, 0)
+                paths: list[str] = []
+                buf = ctypes.create_unicode_buffer(4096)
+                for i in range(n):
+                    shell32.DragQueryFileW(h, i, buf, ctypes.sizeof(buf))
+                    paths.append(buf.value)
+                return paths
+            finally:
+                u32.CloseClipboard()
+        except Exception:
+            return []
+
+    def _clipboard_file_list_mac(self) -> list[str]:
+        """Read file paths from the macOS pasteboard.
+
+        PIL's ``ImageGrab.grabclipboard()`` on macOS runs
+        ``osascript -e "get the clipboard as «class PNGf»"`` which coerces
+        ANY clipboard content — including PDF files copied from Finder — into
+        a PNG image.  We must extract file paths before PIL gets a chance to
+        do that coercion.
+
+        Strategy (fastest-first):
+        1. AppKit / PyObjC — direct NSPasteboard access, zero overhead.
+        2. osascript — shell subprocess, works without PyObjC.
+        """
+        # ── 1. AppKit (PyObjC) ───────────────────────────────────────────
+        try:
+            from AppKit import NSPasteboard, NSFilenamesPboardType  # type: ignore[import]
+            pb    = NSPasteboard.generalPasteboard()
+            items = pb.propertyListForType_(NSFilenamesPboardType)
+            if items:
+                return [str(p) for p in items]
+        except Exception:
+            pass
+
+        # ── 2. osascript + Foundation bridge (no PyObjC needed) ─────────
+        # Uses the AppleScript/Obj-C bridge to call NSPasteboard directly —
+        # the same API as the AppKit path above, but accessible without PyObjC.
+        # Alias coercion ("the clipboard as {alias}") is unreliable: it raises
+        # "Can't make some data into the expected type" even when files ARE
+        # in the clipboard, so we bypass AppleScript's type system entirely and
+        # call NSPasteboard.propertyListForType: with NSFilenamesPboardType.
+        try:
+            import subprocess
+            script = (
+                "use framework \"Foundation\"\n"
+                "use scripting additions\n"
+                "set pb to current application's NSPasteboard's generalPasteboard()\n"
+                "set fileList to pb's propertyListForType:\"NSFilenamesPboardType\"\n"
+                "if fileList is missing value then return \"\"\n"
+                "set output to {}\n"
+                "repeat with aFile in (fileList as list)\n"
+                "    set end of output to (aFile as text)\n"
+                "end repeat\n"
+                "set AppleScript's text item delimiters to (ASCII character 10)\n"
+                "return output as text"
+            )
+            p = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True, text=True, timeout=3,
+            )
+            if p.returncode == 0 and p.stdout.strip():
+                paths = [ln.strip() for ln in p.stdout.strip().splitlines() if ln.strip()]
+                return [f for f in paths if Path(f).is_file()]
+        except Exception:
+            pass
+
+        return []
 
     def _remove_attachment(self, idx: int) -> None:
         if 0 <= idx < len(self._pending_attachments):
