@@ -167,6 +167,71 @@ class ChatMixin:
         if paths:
             self._rebuild_attach_strip()
 
+    def _on_paste_input(self, event=None) -> "str | None":
+        """Handle Ctrl/Cmd+V in the chat input box.
+
+        Intercepts the paste event when the clipboard holds an image or a list
+        of file paths and converts the content into pending attachment(s),
+        consistent with picking files via the + button or drag-and-drop.
+
+        Returns ``"break"`` to suppress the default text-insertion behaviour
+        when an image or files are consumed; returns ``None`` when the clipboard
+        holds plain text so the normal paste proceeds unmodified.
+        """
+        if not self._provider_supports_files():
+            return None  # no attachment support → let text paste through
+
+        # ── 1. Try PIL clipboard grab (image data or file list) ──────────
+        # PIL.ImageGrab.grabclipboard() works reliably on macOS and Windows.
+        # On Linux it requires xclip/xsel; the outer try/except makes it a
+        # safe no-op when unavailable.
+        try:
+            from PIL import ImageGrab
+            cb = ImageGrab.grabclipboard()
+        except Exception:
+            cb = None
+
+        if cb is not None:
+            # ── 1a. PIL Image (screenshot, copied image from browser, etc.) ──
+            if hasattr(cb, "save"):
+                import tempfile
+                from datetime import datetime as _dt
+                ts = _dt.now().strftime("%Y%m%d_%H%M%S")
+                tmp_path = Path(tempfile.gettempdir()) / f"uacr_paste_{ts}.png"
+                try:
+                    cb.save(str(tmp_path), format="PNG")
+                    self._pending_attachments.append({
+                        "path": str(tmp_path),
+                        "name": f"pasted_image_{ts}.png",
+                        "mime": "image/png",
+                    })
+                    self._rebuild_attach_strip()
+                    return "break"
+                except Exception:
+                    pass  # save failed — fall through to default paste
+
+            # ── 1b. File list (files copied in Finder / Explorer) ────────
+            elif isinstance(cb, list) and cb:
+                from uacragent.agent.conversation import _MIME_MAP
+                added = False
+                for item in cb:
+                    p = str(item)
+                    if Path(p).is_file():
+                        suffix = Path(p).suffix.lower()
+                        mime = _MIME_MAP.get(suffix, "application/octet-stream")
+                        self._pending_attachments.append({
+                            "path": p,
+                            "name": Path(p).name,
+                            "mime": mime,
+                        })
+                        added = True
+                if added:
+                    self._rebuild_attach_strip()
+                    return "break"
+
+        # ── 2. Default: plain text paste — let tkinter handle it ─────────
+        return None
+
     def _remove_attachment(self, idx: int) -> None:
         if 0 <= idx < len(self._pending_attachments):
             self._pending_attachments.pop(idx)
