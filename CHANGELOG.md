@@ -9,6 +9,60 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.0] — 2026-05-31
+
+### Added
+
+- **Paste-to-attach** — files and images can now be pasted directly into the
+  chat input field (Cmd+V / Ctrl+V) to attach them, consistent with using the
+  `+` button or drag-and-drop. Supported types: PDF, DOCX, plain text, Markdown,
+  code files, CSV, JSON, XML, HTML, and common image formats.
+
+- **Windows installer** — an Inno Setup script (`UACRAgent_installer.iss`) is
+  now included for building a proper Windows installer, providing a smoother
+  Windows installation experience than the raw zip distribution.
+
+### Fixed
+
+- **Paste-to-attach format preservation (macOS)** — files pasted from Finder
+  were being saved and attached as PNG images instead of their original format.
+  Root cause: PIL's `grabclipboard()` on macOS runs
+  `osascript "get the clipboard as «class PNGf»"`, which coerces any clipboard
+  content — including a PDF file's Finder icon — to PNG before returning.
+  Fix: the pasteboard's `NSFilenamesPboardType` is now read directly via the
+  AppleScript/Obj-C Foundation bridge (`use framework "Foundation"`) before PIL
+  is invoked. This requires no PyObjC dependency and works on all supported
+  macOS versions.
+
+- **Paste-to-attach format preservation (Windows)** — files pasted from
+  Explorer were returning zero results from the file-list reader, causing
+  fallthrough to PIL which may return a thumbnail image. Root cause:
+  `DragQueryFileW` was passed a raw locked memory pointer from `GlobalLock`
+  instead of the HDROP handle returned by `GetClipboardData`. Fix: the
+  `GlobalLock` / `GlobalUnlock` calls are removed; the HDROP handle is now
+  passed directly to `DragQueryFileW` as the Windows API requires.
+
+- **Temp paste image cleanup** — raw pasted images (screenshots, browser image
+  copies) are saved to a `uacr_paste_*.png` temp file so the LLM can read them.
+  These files were previously never deleted. They are now removed in a `finally`
+  block after each send, regardless of whether the LLM call succeeded, failed,
+  or was cancelled.
+
+- **Settings and search icon rendering on Windows** — the `⚙` gear symbol in
+  the "App Settings" and "Session Settings" button labels now renders cleanly on
+  Windows. Root cause: `TkDefaultFont` on Windows maps to Segoe UI, which lacks
+  the Miscellaneous Symbols Unicode block that `⚙` (U+2699) belongs to. Fix:
+  `Segoe UI Symbol` — which ships with every Windows version and fully covers
+  that block — is now selected automatically on Windows for the icon glyph.
+
+- **Sidebar search icon on Windows** — the `🔍` emoji in the sidebar search
+  box is replaced with a canvas-drawn magnifying glass (oval + diagonal line via
+  `draw_search_icon()`). The drawn icon renders crisply at all sizes and DPI
+  settings on every platform and avoids the emoji rendering inconsistencies that
+  affected `TkDefaultFont` on Windows.
+
+---
+
 ## [0.2.0] — 2026-05-30
 
 ### Added

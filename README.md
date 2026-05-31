@@ -4,8 +4,8 @@
 [![GitHub](https://img.shields.io/badge/github-Joe20252030-lightgrey)](https://github.com/Joe20252030/University_Academic_Course_Review_Agent)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-> **Latest release: v0.2.0** — responsive cancellation, attachment visibility in
-> chat history, tooltip UX, and robustness fixes.
+> **Latest release: v0.3.0** — paste-to-attach, Windows installer, correct
+> file-format preservation when pasting, and icon rendering fixes on Windows.
 > See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 > Visit the **[project website](https://joe20252030.github.io/University_Academic_Course_Review_Agent/)** for an overview.
 
@@ -23,15 +23,15 @@ review materials when you need them through a persistent desktop chat workflow.
 - Save canonical generated output as Markdown, with optional DOCX/PDF export in the desktop GUI
 - Persist desktop sessions, settings, and chat history across app restarts; attached file metadata is preserved in history
 
-## What's New in v0.2.0
+## What's New in v0.3.0
 
 | Area | Change |
 |---|---|
-| **Cancellation** | Cancel now exits within a fraction of a second — streaming LLM calls are interruptible at every pipeline stage |
-| **Attachment UX** | Attached files are shown as chips in the chat bubble; chips in both the input strip and history are clickable to open the file |
-| **Tooltips** | Hover 600 ms over the Web Search or Attach button to see a tooltip; respects active theme, font size, and multi-monitor layout |
-| **DOCX reliability** | Word document attachments fall back to `python-docx` when the primary extractor fails, handling complex real-world `.docx` files |
-| **Generation safety** | A two-layer guard (system-prompt tightening + narrow blocklist) stops the LLM from triggering document generation on test or conversational messages |
+| **Paste-to-attach** | Paste files or images directly into the chat input (Cmd+V / Ctrl+V); PDFs, DOCX, text, and images are all supported |
+| **Format preservation** | Files pasted from Finder or Explorer now attach with their original format (PDF, DOCX, etc.) instead of being incorrectly saved as PNG |
+| **Windows installer** | Inno Setup script included for building a proper Windows installer (`UACRAgent_installer.iss`) |
+| **Windows icon rendering** | `⚙` gear symbol in Settings buttons now renders cleanly on Windows using `Segoe UI Symbol`; sidebar search uses a canvas-drawn magnifier instead of the `🔍` emoji |
+| **Temp file cleanup** | Pasted image temp files (`uacr_paste_*.png`) are now deleted automatically after the LLM reads them |
 
 Full details in [CHANGELOG.md](CHANGELOG.md).
 
@@ -531,7 +531,7 @@ The GUI lets you:
 - Use **Apply** to commit setting changes and re-index with the updated session configuration
 - Chat with the assistant about the course material
 - Toggle provider-backed web search for the next message when supported by the active provider
-- Attach supported files to chat messages, including drag-and-drop onto the chat area when desktop drag-and-drop support is available
+- Attach supported files to chat messages via the `+` button, by pasting (Cmd+V / Ctrl+V) directly into the chat input, or by drag-and-drop onto the chat area when desktop drag-and-drop support is available
 - Use quick actions to generate a Review Summary, Practice Booklet, Mock Exam, or Exam Prediction
 - Open generated outputs directly from the chat transcript
 - Cancel an in-flight indexing or chat request from the main panel
