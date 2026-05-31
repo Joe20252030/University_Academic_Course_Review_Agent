@@ -808,6 +808,7 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         )
         self._input_text.bind("<KeyRelease>", self._auto_resize_input)
         self._input_text.bind("<Return>",     self._on_return_key)
+        self._input_text.bind("<<Paste>>",    self._on_paste_input)
         # Sync canvas height whenever the text widget itself resizes
         self._input_text.bind(
             "<Configure>", lambda _: self._sync_input_text_cv_height())
