@@ -27,13 +27,17 @@ class AppearanceMixin:
 
     @staticmethod
     def _runtime_secret_env_vars() -> tuple[str, ...]:
-        """Return env vars that should not survive an app relaunch."""
+        """Return API-key env vars that must not be inherited by a relaunched process.
+
+        Only genuine secrets (authentication credentials) belong here.
+        Configuration settings such as EMBEDDING_PROVIDER and LOCAL_EMBEDDING_MODEL
+        are NOT secrets — removing them from the child env would silently revert
+        shell-level embedding settings after an app-data-folder relaunch.
+        """
         return (
             "GOOGLE_API_KEY",
             "OPENAI_API_KEY",
             "DEEPSEEK_API_KEY",
-            "EMBEDDING_PROVIDER",
-            "LOCAL_EMBEDDING_MODEL",
         )
 
     def _clear_runtime_secrets(self) -> None:

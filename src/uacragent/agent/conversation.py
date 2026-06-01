@@ -980,7 +980,9 @@ class ConversationAgent:
             text_atts  = [a for a in attachments if a.get("mime", "") not in _IMAGE_MIMES]
             note_lines: list[str] = []
             if text_atts:
-                names = ", ".join(f'"{a.get("name", "file")}"' for a in text_atts)
+                # Sanitise filenames: neutralise [TASK:] patterns so a file named
+                # e.g. "notes [TASK:mock_exam].pdf" cannot inject a task marker.
+                names = ", ".join(f'"{_sanitise(a.get("name", "file"))}"' for a in text_atts)
                 note_lines.append(
                     f"The student has attached {len(text_atts)} document file(s) "
                     f"to this message ({names}). Their text content has been "
@@ -988,7 +990,7 @@ class ConversationAgent:
                     f"read and use it directly to answer their question."
                 )
             if image_atts:
-                names = ", ".join(f'"{a.get("name", "image")}"' for a in image_atts)
+                names = ", ".join(f'"{_sanitise(a.get("name", "image"))}"' for a in image_atts)
                 note_lines.append(
                     f"The student has attached {len(image_atts)} image file(s) "
                     f"to this message ({names}). They are included as inline "
@@ -1017,12 +1019,20 @@ class ConversationAgent:
         )
 
         if history_summary:
+            # Neutralise any [TASK:xxx] patterns that may have survived from
+            # earlier conversation turns into the summary.  The summary is
+            # LLM-generated but is built from user messages that could contain
+            # such patterns.  Injecting them unsanitised into the system prompt
+            # is inconsistent with the sanitisation applied to every other
+            # user-controlled field, and could in theory cause the LLM to emit
+            # an unintended task marker.
+            _safe_summary = history_summary.replace("[TASK:", "[TASK⁠:")
             rendered += (
                 "\n\n## Earlier Conversation Summary\n"
                 "The following is a compressed summary of earlier turns in this "
                 "session that are no longer in the active history window. Use it "
                 "to maintain continuity.\n\n"
-                + history_summary
+                + _safe_summary
             )
 
         return rendered

@@ -121,6 +121,20 @@ def _cli(args: argparse.Namespace) -> None:
             # when all files belong to the same category.
             classified_files[DocumentType.other] = list(args.paths)
 
+    # ── Validate workspace_id ─────────────────────────────────────────────────
+    # workspace_paths() uses _SAFE_ID_RE to block path-traversal characters, but
+    # the CLI sets workspace_folder directly (bypassing workspace_paths).  Apply
+    # the same regex here so "--workspace-id ../../Documents" cannot place session
+    # files outside the intended cli_run directory.
+    import re as _re
+    _SAFE_ID_RE = _re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+    safe_workspace_id = args.workspace_id
+    if not _SAFE_ID_RE.match(safe_workspace_id):
+        raise SystemExit(
+            f"error: --workspace-id '{safe_workspace_id}' contains invalid characters.\n"
+            "Only letters, digits, hyphens, and underscores are allowed (max 128 chars)."
+        )
+
     # ── Build session ─────────────────────────────────────────────────────────
     settings = get_settings()
     session = AgentSession(
@@ -135,13 +149,13 @@ def _cli(args: argparse.Namespace) -> None:
         exam_duration=args.exam_duration or "",
         llm_provider=settings.llm_provider,
         llm_model=settings.llm_model,
-        workspace_id=args.workspace_id,
+        workspace_id=safe_workspace_id,
         extra_instructions=args.extra_instructions or "",
         classified_files=classified_files,
     )
     # Keep CLI-created artefacts under a dedicated app-managed root rather
     # than mixing them with desktop auto sessions or app-global metadata.
-    session.workspace_folder = (get_cli_run_dir() / session.workspace_id).resolve()
+    session.workspace_folder = (get_cli_run_dir() / safe_workspace_id).resolve()
 
     agent = ConversationAgent(settings)
 

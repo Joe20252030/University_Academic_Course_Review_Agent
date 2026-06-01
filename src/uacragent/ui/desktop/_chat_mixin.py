@@ -375,7 +375,18 @@ class ChatMixin:
 
     def _remove_attachment(self, idx: int) -> None:
         if 0 <= idx < len(self._pending_attachments):
-            self._pending_attachments.pop(idx)
+            att = self._pending_attachments.pop(idx)
+            # Delete temp files created by _on_paste_input (clipboard image paste).
+            # These files are normally cleaned up in _work()'s finally block after
+            # send, but if the user removes the attachment before sending the file
+            # would otherwise accumulate in the OS temp directory indefinitely.
+            _path = att.get("path", "")
+            if _path and Path(_path).name.startswith("uacr_paste_"):
+                try:
+                    import os as _os
+                    _os.unlink(_path)
+                except OSError:
+                    pass
         self._rebuild_attach_strip()
 
     def _rebuild_attach_strip(self) -> None:

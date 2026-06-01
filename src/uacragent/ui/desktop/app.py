@@ -1577,20 +1577,15 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
                 parent=self,
             )
 
-        # Erase API keys from in-process memory before the window is destroyed.
-        # The process exit would clean these up anyway, but explicit zeroing is
-        # the correct security practice — it removes key material immediately
-        # rather than leaving it in the process heap until the OS reclaims it.
-        for var in (self._gemini_key_var, self._openai_key_var, self._deepseek_key_var):
-            try:
-                var.set("")
-            except Exception:  # noqa: BLE001
-                pass
-        for env_var in (
-            "GOOGLE_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY",
-            "EMBEDDING_PROVIDER", "LOCAL_EMBEDDING_MODEL",
-        ):
-            os.environ.pop(env_var, None)
+        # Drop API key references before the window is destroyed so they are not
+        # accessible to any code that runs after this point.  _clear_runtime_secrets
+        # blanks the StringVars and removes keys from os.environ.
+        # Note: Python strings are immutable — os.environ.pop removes the reference
+        # but cannot zero the underlying heap bytes; the OS reclaims them on exit.
+        try:
+            self._clear_runtime_secrets()
+        except Exception:  # noqa: BLE001
+            pass
 
         self.destroy()
 

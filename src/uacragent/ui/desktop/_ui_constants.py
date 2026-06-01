@@ -29,12 +29,15 @@ _PAD = 8
 _SESSION_LIST_WIDTH = 220
 
 _SUPPORTED_FILETYPES = [
-    ("All supported", "*.pdf *.txt *.md *.docx *.csv"),
-    ("PDF files", "*.pdf"),
-    ("Word documents", "*.docx"),
-    ("Text files", "*.txt"),
-    ("Markdown files", "*.md"),
-    ("CSV files", "*.csv"),
+    # Keep this list in sync with DocumentLoader.load_single_file() in infra/loaders.py.
+    ("All supported",
+     "*.pdf *.docx *.txt *.md *.csv *.py *.js *.ts *.html *.htm *.xml *.json"),
+    ("PDF files",       "*.pdf"),
+    ("Word documents",  "*.docx"),
+    ("Text / Markdown", "*.txt *.md"),
+    ("CSV files",       "*.csv"),
+    ("Code files",      "*.py *.js *.ts"),
+    ("Web / Data",      "*.html *.htm *.xml *.json"),
 ]
 _DOC_TYPE_LABELS = {
     DocumentType.syllabus: "Syllabus",
