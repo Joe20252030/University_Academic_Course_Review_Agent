@@ -4,8 +4,9 @@
 [![GitHub](https://img.shields.io/badge/github-Joe20252030-lightgrey)](https://github.com/Joe20252030/University_Academic_Course_Review_Agent)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-> **Latest release: v0.3.0** — paste-to-attach, Windows installer, correct
-> file-format preservation when pasting, and icon rendering fixes on Windows.
+> **Latest release: v0.3.1** — stability and safety patch: crash fixes on
+> window close, plain-text paste freeze fix, per-file ingest recovery, security
+> hardening, and a comprehensive test suite expansion (426 tests).
 > See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 > Visit the **[project website](https://joe20252030.github.io/University_Academic_Course_Review_Agent/)** for an overview.
 
@@ -23,15 +24,22 @@ review materials when you need them through a persistent desktop chat workflow.
 - Save canonical generated output as Markdown, with optional DOCX/PDF export in the desktop GUI
 - Persist desktop sessions, settings, and chat history across app restarts; attached file metadata is preserved in history
 
-## What's New in v0.3.0
+## What's New in v0.3.1
 
 | Area | Change |
 |---|---|
-| **Paste-to-attach** | Paste files or images directly into the chat input (Cmd+V / Ctrl+V); PDFs, DOCX, text, and images are all supported |
-| **Format preservation** | Files pasted from Finder or Explorer now attach with their original format (PDF, DOCX, etc.) instead of being incorrectly saved as PNG |
-| **Windows installer** | Inno Setup script included for building a proper Windows installer (`UACRAgent_installer.iss`) |
-| **Windows icon rendering** | `⚙` gear symbol in Settings buttons now renders cleanly on Windows using `Segoe UI Symbol`; sidebar search uses a canvas-drawn magnifier instead of the `🔍` emoji |
-| **Temp file cleanup** | Pasted image temp files (`uacr_paste_*.png`) are now deleted automatically after the LLM reads them |
+| **Crash on close fixed** | Fatal `PyEval_RestoreThread: GIL released` error on window close is eliminated — background workers now receive a cancel signal and exit cleanly before the window is destroyed |
+| **TclError on close fixed** | `TclError: can't delete Tcl command` during teardown is resolved by stopping the elapsed-timer ticker before the deferred destroy |
+| **Paste freeze fixed** | Pasting plain text into the chat input no longer freezes the app — a fast native clipboard-type check now prevents PIL's slow `osascript` subprocess from running when the clipboard has no image |
+| **Per-file ingest recovery** | A single bad file (corrupted PDF, unsupported type, wrong encoding) no longer aborts the entire indexing run; it is skipped with a warning and the rest are processed |
+| **UTF-8 fallback** | Non-UTF-8 text files (Latin-1, GBK, etc.) now load correctly with replacement characters instead of raising a cryptic error |
+| **Scanned PDF message** | Image-only PDFs produce a clear error with OCR guidance instead of the generic "no chunks created" message |
+| **Large file guard** | Files over 300 MB are refused before loading to prevent OOM; files over 100 MB log a warning |
+| **Security hardening** | CLI `--workspace-id` validated against path-safe regex; `[TASK:]` patterns in history summary and attachment filenames neutralised before system-prompt injection; temp paste images deleted when removed from queue; non-secret env vars removed from secret-clearance list |
+| **File picker extended** | Session file picker now includes all supported extensions: `.py`, `.js`, `.ts`, `.html`, `.htm`, `.xml`, `.json` in addition to the previous set |
+| **API concurrent safety** | API requests using the default `workspace_id="default"` now receive an isolated per-request workspace UUID, preventing ChromaDB lock collisions under concurrent load |
+| **Export error clarity** | OSErrors from `save_markdown`, `save_docx`, and `save_pdf` are now wrapped as `ExportError` with a clear "check disk space / permissions" message |
+| **Test suite** | 180 new tests added across 8 new files; 4 pre-existing test bugs fixed; total 426 tests, all passing |
 
 Full details in [CHANGELOG.md](CHANGELOG.md).
 
@@ -1007,11 +1015,24 @@ src/uacragent/
     logo_icns_source.png Source PNG used to generate the macOS ICNS asset
     logo_*.png/svg/ico  Desktop and package icon variants
 tests/
-  test_domain.py         Domain model and enum tests
-  test_export.py         Markdown / DOCX / PDF export tests
-  test_loaders.py        Document loading and splitting tests
-  test_pipeline_utils.py Pipeline utility function tests
-  test_workspace.py      Workspace path and directory tests
+  test_domain.py              Domain model and enum tests
+  test_export.py              Markdown / DOCX / PDF export tests
+  test_loaders.py             Document loading and splitting tests
+  test_loaders_csv.py         CSV ingestion and load_and_split_classified tests
+  test_loaders_extended.py    Cross-type dedup, workspace copy edge cases, attachment limits
+  test_pipeline_utils.py      Pipeline utility function tests
+  test_pipeline_advanced.py   Effort config, prefs expansion, cancel, localisation
+  test_vectorstore_dedup.py   Chunk ID hashing and Chroma deduplication tests
+  test_vectorstore_advanced.py Manifest, chroma_is_current, WeightedDocTypeRetriever
+  test_workspace.py           Workspace path and directory tests
+  test_persistence.py         App-managed cache path helpers and ONNX embedding cache
+  test_persistence_full.py    Session serialisation, save/load, dict_to_session, atomic write
+  test_session.py             _HistoryStore thread-safety and AgentSession helpers
+  test_doc_priorities.py      Weight matrix and get_present_weights tests
+  test_reasoning.py           ReasoningConfig, TopicScore/List, build_topic_context
+  test_rate_tiers.py          RateTierConfig, get_rate_tier, Settings._apply_rate_tier
+  test_settings_env.py        Env-var aliases, warn_unrecognised_env_vars, privacy defaults
+  test_bug_fixes.py           Regression tests for all v0.3.1 bug fixes
 app.py                   Lightweight importable helper for direct service calls
 .env.sample              Example environment configuration
 UACRAgent_mac.spec       PyInstaller spec for macOS standalone builds
