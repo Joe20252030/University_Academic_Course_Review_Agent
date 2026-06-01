@@ -803,9 +803,15 @@ def delete_session(workspace: Path) -> None:
         _is_managed = _workspace_resolved.is_relative_to(_sessions_dir)
 
         if _is_managed and workspace.exists():
-            user_items = [p for p in workspace.iterdir() if p.name not in _OS_METADATA]
-            if not user_items:
-                shutil.rmtree(workspace)
+            if workspace.is_symlink():
+                logger.warning(
+                    "Refusing to remove workspace folder '%s': path is a symlink. "
+                    "Manual cleanup may be required.", workspace,
+                )
+            else:
+                user_items = [p for p in workspace.iterdir() if p.name not in _OS_METADATA]
+                if not user_items:
+                    shutil.rmtree(workspace)
     except Exception as exc:
         logger.warning("Could not remove workspace folder %s: %s", workspace, exc)
 

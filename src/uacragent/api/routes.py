@@ -60,18 +60,22 @@ def _validate_file_paths(classified_files_dict: dict) -> None:
 
     for paths in classified_files_dict.values():
         for raw_path in paths:
+            # Check that the raw input is already absolute *before* resolve(),
+            # because Path.resolve() always returns an absolute path regardless
+            # of what the input was — checking is_absolute() after resolve()
+            # would be dead code and would never reject relative paths.
+            if not Path(raw_path).is_absolute():
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"File path must be absolute: '{raw_path}'",
+                )
+
             try:
                 p = Path(raw_path).resolve()
             except (ValueError, OSError) as exc:
                 raise HTTPException(
                     status_code=400,
                     detail=f"Invalid file path '{raw_path}': {exc}",
-                )
-
-            if not p.is_absolute():
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"File path must be absolute: '{raw_path}'",
                 )
 
             if allowed_base_dir is not None:

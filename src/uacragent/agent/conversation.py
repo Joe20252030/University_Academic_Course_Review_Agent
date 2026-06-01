@@ -572,6 +572,7 @@ class ConversationAgent:
             pipeline = AgentPipeline(settings)
 
             # ── Fast path: reuse existing ChromaDB without re-embedding ────────
+            _fast_path_warning: str | None = None
             if not force_reindex:
                 try:
                     retriever = pipeline.prepare_session_fast(session)
@@ -598,9 +599,7 @@ class ConversationAgent:
                     )
 
             # ── Full indexing path ──────────────────────────────────────────────
-            # _fast_path_warning is set when the fast path raised an exception
-            # and we are now doing a forced rebuild (not just a normal Apply).
-            _warn = locals().get("_fast_path_warning")
+            _warn = _fast_path_warning
             session.retriever = pipeline.prepare_session(session, progress_cb=progress_cb)
             n_types = len(session.active_files())
             n_files = sum(len(v) for v in session.active_files().values())

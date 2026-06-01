@@ -124,7 +124,8 @@ def test_copy_to_workspace(loader: DocumentLoader, tmp_path: Path):
     assert Path(dest).parent == ws.doc_folders[DocumentType.lecture_note]
 
 
-def test_copy_to_workspace_avoids_overwrite(loader: DocumentLoader, tmp_path: Path):
+def test_copy_to_workspace_reuses_identical_file(loader: DocumentLoader, tmp_path: Path):
+    """Copying the same file twice returns the same destination path (no new copy)."""
     from uacragent.infra.workspace import workspace_paths, ensure_workspace_dirs
 
     src = tmp_path / "notes.txt"
@@ -135,6 +136,31 @@ def test_copy_to_workspace_avoids_overwrite(loader: DocumentLoader, tmp_path: Pa
 
     dest1 = loader.copy_to_workspace(str(src), DocumentType.other, ws)
     dest2 = loader.copy_to_workspace(str(src), DocumentType.other, ws)
+    # Same content → reuse the existing workspace copy, no new file created.
+    assert dest1 == dest2
+    assert Path(dest1).exists()
+
+
+def test_copy_to_workspace_avoids_overwrite_different_content(
+    loader: DocumentLoader, tmp_path: Path
+):
+    """A different file with the same name still gets a unique suffixed path."""
+    from uacragent.infra.workspace import workspace_paths, ensure_workspace_dirs
+
+    src_a = tmp_path / "notes.txt"
+    src_a.write_text("content A")
+    src_b = tmp_path / "other_dir" / "notes.txt"
+    src_b.parent.mkdir()
+    src_b.write_text("content B — different from A")
+
+    ws = workspace_paths(workspace_folder=tmp_path / "ws3")
+    ensure_workspace_dirs(ws)
+
+    dest1 = loader.copy_to_workspace(str(src_a), DocumentType.other, ws)
+    dest2 = loader.copy_to_workspace(str(src_b), DocumentType.other, ws)
+    # Different content → must not overwrite; second file gets a suffixed name.
     assert dest1 != dest2
     assert Path(dest1).exists()
     assert Path(dest2).exists()
+    assert Path(dest1).read_text() == "content A"
+    assert Path(dest2).read_text() == "content B — different from A"

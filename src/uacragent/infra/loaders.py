@@ -331,8 +331,15 @@ class DocumentLoader:
     ) -> str:
         """Copy a file to the appropriate classified folder in the workspace.
 
-        Returns the new path in the workspace.
+        If an existing workspace copy with the same content is found, that path
+        is returned immediately without creating a new copy.  This prevents the
+        same file from being re-indexed every time the user clicks Apply, which
+        would accumulate duplicate content in the vector store.
+
+        Returns the path of the workspace copy (new or reused).
         """
+        import filecmp
+
         src = Path(source_path)
         if not src.exists():
             raise IngestError(f"Source file not found: {source_path}")
@@ -341,15 +348,32 @@ class DocumentLoader:
         dest_folder.mkdir(parents=True, exist_ok=True)
         dest_path = dest_folder / src.name
 
-        # Avoid overwriting — add numeric suffix if destination already exists.
-        # Cap at _MAX_COLLISION_COUNTER to prevent an infinite loop if the
-        # filesystem is in an unexpected state.
+        # If the primary destination already exists and has identical content,
+        # reuse it — no new copy needed.  This is the common case when the user
+        # clicks Apply multiple times without changing their file list.
+        if dest_path.exists():
+            try:
+                if filecmp.cmp(str(src), str(dest_path), shallow=False):
+                    return str(dest_path)
+            except OSError:
+                pass  # fall through to normal copy/rename logic
+
+        # Primary destination exists but holds DIFFERENT content — find a free
+        # suffixed name.  Also reuse any suffixed copy whose content matches.
         counter = 1
-        while dest_path.exists() and counter <= _MAX_COLLISION_COUNTER:
+        candidate = dest_path
+        while candidate.exists() and counter <= _MAX_COLLISION_COUNTER:
             stem = src.stem
             suffix = src.suffix
-            dest_path = dest_folder / f"{stem}_{counter}{suffix}"
+            candidate = dest_folder / f"{stem}_{counter}{suffix}"
+            if candidate.exists():
+                try:
+                    if filecmp.cmp(str(src), str(candidate), shallow=False):
+                        return str(candidate)
+                except OSError:
+                    pass
             counter += 1
+
         if counter > _MAX_COLLISION_COUNTER:
             raise IngestError(
                 f"Could not find a unique filename for {src.name} in {dest_folder} "
@@ -357,8 +381,8 @@ class DocumentLoader:
                 "The destination folder may contain an unexpected number of files."
             )
 
-        shutil.copy2(str(src), str(dest_path))
-        return str(dest_path)
+        shutil.copy2(str(src), str(candidate))
+        return str(candidate)
 
     def split_documents(
         self,
@@ -387,16 +411,35 @@ class DocumentLoader:
         """
         all_chunks: list[Document] = []
 
+        # Track resolved paths across ALL doc types so the same physical file
+        # is never loaded and embedded twice even when the user adds it to
+        # multiple document-type buckets.
+        _globally_seen: set[str] = set()
+
         for doc_type, paths in classified_files.items():
-            # Deduplicate file paths (preserve order) to avoid embedding the
-            # same file twice and inflating the vector store with duplicate chunks.
+            # Deduplicate within this doc type (preserve order).
             unique_paths = list(dict.fromkeys(paths))
             if len(unique_paths) < len(paths):
                 logger.warning(
                     "Duplicate file paths found for %s; deduplicating (%d → %d).",
                     doc_type, len(paths), len(unique_paths),
                 )
+
             for path in unique_paths:
+                # Cross-type duplicate check: compare resolved source paths so
+                # the same file under two doc types is only indexed once (under
+                # whichever bucket it appears in first).
+                resolved = str(Path(path).resolve())
+                if resolved in _globally_seen:
+                    logger.warning(
+                        "File '%s' was already processed under another document "
+                        "type and will not be indexed again to avoid duplicate "
+                        "content in the vector store.",
+                        Path(path).name,
+                    )
+                    continue
+                _globally_seen.add(resolved)
+
                 # Optionally copy to workspace
                 if workspace_paths:
                     path = self.copy_to_workspace(path, doc_type, workspace_paths)

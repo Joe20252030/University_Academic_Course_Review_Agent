@@ -857,8 +857,19 @@ def get_or_create_vectorstore(
             batch = ids[start : start + _GET_BATCH_SIZE]
             result = db.get(ids=batch)
             existing_ids.update(result.get("ids") or [])
-        new_chunks = [c for c, cid in zip(chunks, ids) if cid not in existing_ids]
-        new_ids = [cid for cid in ids if cid not in existing_ids]
+        # Deduplicate within the new batch as well as against existing IDs.
+        # Two chunks can share the same _chunk_id() when they have identical
+        # content from the same source file (repeated headers, blank pages,
+        # or the same file listed under multiple document types).  Passing
+        # duplicate IDs to Chroma raises "Expected IDs to be unique".
+        _seen: set[str] = set()
+        new_chunks: list = []
+        new_ids: list[str] = []
+        for _c, _cid in zip(chunks, ids):
+            if _cid not in existing_ids and _cid not in _seen:
+                _seen.add(_cid)
+                new_chunks.append(_c)
+                new_ids.append(_cid)
         if new_chunks:
             db.add_documents(new_chunks, ids=new_ids)
 
