@@ -130,7 +130,17 @@ datas += collect_data_files("fpdf")
 datas += collect_data_files("docx")
 
 # tkinterdnd2 — bundle the platform-specific tkdnd extension correctly.
-# DLL → binaries; .tcl files → datas.  See UACRAgent_mac.spec for rationale.
+#
+# Both the DLL AND the .tcl scripts go into datas, not binaries.
+# See UACRAgent_mac.spec for the full rationale; the short version:
+#   PyInstaller's binary pipeline may relocate a DLL whose install name is a
+#   bare filename to _MEIPASS root, while pkgIndex.tcl still refers to the
+#   platform subdirectory.  Tcl's `load $dir/$lib` then fails even though the
+#   file exists — it just isn't where Tcl looks.  Putting the DLL in datas
+#   guarantees exact placement at _MEIPASS/tkinterdnd2/tkdnd/<arch>/<dll>.
+#
+# DLL dependency resolution for Tcl's LoadLibrary is handled separately by
+# the TCLLIBPATH + PATH prepend in rthook_tkdnd.py.
 import platform as _plat
 import os as _os
 import tkinterdnd2 as _tkdnd
@@ -150,8 +160,9 @@ _tkdnd_plat_dir = _tkdnd_pkg_dir / "tkdnd" / _tkdnd_subdir
 
 if _tkdnd_plat_dir.is_dir():
     _tkdnd_dest = f"tkinterdnd2/tkdnd/{_tkdnd_subdir}"
+    # DLL → datas (exact placement guaranteed; avoids binary-pipeline relocation)
     for _f in _tkdnd_plat_dir.glob("*.dll"):
-        binaries += [(str(_f), _tkdnd_dest)]
+        datas += [(str(_f), _tkdnd_dest)]
     for _f in _tkdnd_plat_dir.glob("*.tcl"):
         datas += [(str(_f), _tkdnd_dest)]
 else:

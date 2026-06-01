@@ -86,12 +86,28 @@ datas += collect_data_files("docx")
 
 # tkinterdnd2 — bundle the platform-specific tkdnd extension correctly.
 #
-# The dylib is added as a BINARY (not a data file) so PyInstaller applies
-# proper macOS binary handling (codesigning, dependency analysis, etc.).
-# The .tcl scripts are added as DATA files — they are plain text and need
-# no binary processing.  Using BINARY for the dylib is critical: macOS will
-# refuse to dlopen() a dylib that lacks a valid code signature in a context
-# where the process already has a signature (ad-hoc or otherwise).
+# Both the dylib AND the .tcl scripts go into datas, not binaries.
+#
+# Why datas for the dylib?
+#   PyInstaller's binary pipeline (macholib) does NOT guarantee that a dylib
+#   with a bare install name (no @rpath / @loader_path prefix) lands at the
+#   dest_dir we specify — it may be relocated to _MEIPASS root, while
+#   pkgIndex.tcl still points to the subdirectory.  Tcl's `load $dir/$lib`
+#   then fails with "couldn't load file" even though the file exists elsewhere.
+#
+#   Crucially, the tkdnd dylib ships from the tkinterdnd2 wheel already signed
+#   with an adhoc,linker-signed signature (Apple ld at build time).  That
+#   signature is valid for dlopen() in any unsigned or ad-hoc–signed process,
+#   so PyInstaller re-signing is unnecessary.
+#
+#   Placing it in datas guarantees it lands at exactly
+#       _MEIPASS/tkinterdnd2/tkdnd/<arch>/libtkdnd*.dylib
+#   which is where pkgIndex.tcl's `load $dir/$lib` resolves it.
+#
+# The TCLLIBPATH env-var (set in rthook_tkdnd_mac.py before Python starts)
+# is the primary mechanism that gets pkgIndex.tcl into Tcl's auto_path before
+# the first `package require tkdnd` call; the `lappend auto_path` in
+# tkinterdnd2._require() is belt-and-suspenders.
 #
 # We only bundle the current-machine platform subdirectory to keep the bundle
 # lean and to avoid bundling ARM dylibs on Intel (which would be ignored anyway).
@@ -105,9 +121,9 @@ _tkdnd_plat_dir = _tkdnd_pkg_dir / "tkdnd" / _tkdnd_subdir
 
 if _tkdnd_plat_dir.is_dir():
     _tkdnd_dest = f"tkinterdnd2/tkdnd/{_tkdnd_subdir}"
-    # Dylib → binaries (code-signed by PyInstaller, dlopen-safe on macOS 12+)
+    # Dylib → datas (exact placement guaranteed; original adhoc signature preserved)
     for _f in _tkdnd_plat_dir.glob("*.dylib"):
-        binaries += [(str(_f), _tkdnd_dest)]
+        datas += [(str(_f), _tkdnd_dest)]
     # Tcl scripts → datas (plain text, no signing needed)
     for _f in _tkdnd_plat_dir.glob("*.tcl"):
         datas += [(str(_f), _tkdnd_dest)]

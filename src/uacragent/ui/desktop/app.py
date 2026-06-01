@@ -120,10 +120,29 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
 
     def __init__(self) -> None:
         # super().__init__() calls TkinterDnD.Tk.__init__() → _require() when
-        # tkdnd is the base class.  _require() can raise RuntimeError if the
-        # Tcl extension fails to load (e.g. wrong __file__ path in a frozen
-        # build even after the patch above).  Catch it so the app degrades
-        # gracefully — drag-and-drop is unavailable, everything else works.
+        # tkdnd is the base class.  _require() wraps ANY TclError as a bare
+        # RuntimeError('Unable to load tkdnd library.'), discarding the
+        # underlying Tcl message.  Log diagnostic paths in frozen builds so
+        # that any future failure is immediately actionable from the log file.
+        import sys as _sys_init
+        if hasattr(_sys_init, "_MEIPASS") and _HAS_DND:
+            import logging as _log_dnd_diag, os as _os_dnd_diag
+            import tkinterdnd2.TkinterDnD as _tm_diag
+            _tkdnd_dir = _os_dnd_diag.path.join(
+                _os_dnd_diag.path.dirname(_tm_diag.__file__), "tkdnd"
+            )
+            _log_dnd_diag.getLogger(__name__).debug(
+                "tkdnd frozen-build paths — MEIPASS=%s  tkdnd_dir=%s  exists=%s  "
+                "TCLLIBPATH=%s",
+                _sys_init._MEIPASS,
+                _tkdnd_dir,
+                _os_dnd_diag.path.isdir(_tkdnd_dir),
+                _os_dnd_diag.environ.get("TCLLIBPATH", "<not set>"),
+            )
+            del _log_dnd_diag, _os_dnd_diag, _tm_diag, _tkdnd_dir
+        del _sys_init
+
+        # Now do the real init with graceful DnD degradation.
         try:
             super().__init__()
         except RuntimeError as _dnd_e:
