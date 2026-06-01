@@ -2,7 +2,7 @@
 ; Build: pyinstaller UACRAgent_win.spec, then iscc UACRAgent_installer.iss
 
 #define AppName      "UACRAgent"
-#define AppVersion   "0.3.0"
+#define AppVersion   "0.3.2"
 #define AppPublisher "Lizhuo Xu"
 #define AppURL       "https://joe20252030.github.io/University_Academic_Course_Review_Agent/"
 #define AppExeName   "UACRAgent.exe"

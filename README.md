@@ -4,9 +4,10 @@
 [![GitHub](https://img.shields.io/badge/github-Joe20252030-lightgrey)](https://github.com/Joe20252030/University_Academic_Course_Review_Agent)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-> **Latest release: v0.3.1** — stability and safety patch: crash fixes on
-> window close, plain-text paste freeze fix, per-file ingest recovery, security
-> hardening, and a comprehensive test suite expansion (426 tests).
+> **Latest release: v0.3.2** — drag-and-drop fixed in standalone built apps:
+> platform-specific tkdnd extension now bundled correctly in PyInstaller
+> packages on both macOS and Windows, with a multi-layer Tcl `auto_path` fix
+> that ensures DnD is available from the very first interpreter start.
 > See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 > Visit the **[project website](https://joe20252030.github.io/University_Academic_Course_Review_Agent/)** for an overview.
 
@@ -24,22 +25,16 @@ review materials when you need them through a persistent desktop chat workflow.
 - Save canonical generated output as Markdown, with optional DOCX/PDF export in the desktop GUI
 - Persist desktop sessions, settings, and chat history across app restarts; attached file metadata is preserved in history
 
-## What's New in v0.3.1
+## What's New in v0.3.2
 
 | Area | Change |
 |---|---|
-| **Crash on close fixed** | Fatal `PyEval_RestoreThread: GIL released` error on window close is eliminated — background workers now receive a cancel signal and exit cleanly before the window is destroyed |
-| **TclError on close fixed** | `TclError: can't delete Tcl command` during teardown is resolved by stopping the elapsed-timer ticker before the deferred destroy |
-| **Paste freeze fixed** | Pasting plain text into the chat input no longer freezes the app — a fast native clipboard-type check now prevents PIL's slow `osascript` subprocess from running when the clipboard has no image |
-| **Per-file ingest recovery** | A single bad file (corrupted PDF, unsupported type, wrong encoding) no longer aborts the entire indexing run; it is skipped with a warning and the rest are processed |
-| **UTF-8 fallback** | Non-UTF-8 text files (Latin-1, GBK, etc.) now load correctly with replacement characters instead of raising a cryptic error |
-| **Scanned PDF message** | Image-only PDFs produce a clear error with OCR guidance instead of the generic "no chunks created" message |
-| **Large file guard** | Files over 300 MB are refused before loading to prevent OOM; files over 100 MB log a warning |
-| **Security hardening** | CLI `--workspace-id` validated against path-safe regex; `[TASK:]` patterns in history summary and attachment filenames neutralised before system-prompt injection; temp paste images deleted when removed from queue; non-secret env vars removed from secret-clearance list |
-| **File picker extended** | Session file picker now includes all supported extensions: `.py`, `.js`, `.ts`, `.html`, `.htm`, `.xml`, `.json` in addition to the previous set |
-| **API concurrent safety** | API requests using the default `workspace_id="default"` now receive an isolated per-request workspace UUID, preventing ChromaDB lock collisions under concurrent load |
-| **Export error clarity** | OSErrors from `save_markdown`, `save_docx`, and `save_pdf` are now wrapped as `ExportError` with a clear "check disk space / permissions" message |
-| **Test suite** | 180 new tests added across 8 new files; 4 pre-existing test bugs fixed; total 426 tests, all passing |
+| **Drag-and-drop fixed in built apps** | Files dragged onto the chat input were silently ignored in PyInstaller-frozen builds on both macOS and Windows — DnD now works correctly in all standalone distributions |
+| **tkdnd bundled as binary (macOS)** | The platform-specific `.dylib` is now listed under `binaries` in the spec, so PyInstaller applies proper codesigning; previously it was included as a data file which macOS refuses to `dlopen()` in a signed process context |
+| **tkdnd bundled as binary (Windows)** | The platform-specific `.dll` is now listed under `binaries`; `.tcl` scripts remain as data files — only the current-machine architecture subdirectory is bundled, keeping the installer lean |
+| **`TCLLIBPATH` runtime hook (macOS & Windows)** | Runtime hooks now set `TCLLIBPATH` before any Python code runs; Tcl reads this at interpreter startup and adds the tkdnd directory to `auto_path` before the first package-index scan, fixing the race where `package require tkdnd` failed because `_require()` ran too late |
+| **Three-layer Windows DnD fix** | Windows runtime hook uses `TCLLIBPATH` (primary), `PATH` prepend for `LoadLibrary` dependency resolution, and `os.add_dll_directory()` for belt-and-suspenders coverage |
+| **Two-layer macOS DnD fix** | macOS runtime hook uses `TCLLIBPATH` (primary) and `DYLD_FALLBACK_LIBRARY_PATH` for dylib dependency resolution |
 
 Full details in [CHANGELOG.md](CHANGELOG.md).
 

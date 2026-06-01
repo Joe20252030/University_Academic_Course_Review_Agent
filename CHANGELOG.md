@@ -9,6 +9,46 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.2] — 2026-06-01
+
+### Fixed
+
+- **Drag-and-drop broken in standalone built apps** — files dragged onto the
+  chat input were silently ignored in PyInstaller-frozen builds. Root cause
+  (two layers):
+
+  1. *Wrong bundle type for the tkdnd extension.* The previous spec files
+     included the entire `tkinterdnd2` package directory as a data file.
+     On macOS, `dlopen()` refuses to load a dylib that lacks a valid code
+     signature in a signed process context, and PyInstaller only applies
+     binary processing (codesigning, dependency analysis) to entries listed
+     under `binaries`, not `datas`. On Windows the DLL search path was not
+     set up early enough. Fix: both spec files now split the platform-specific
+     extension directory into `binaries` (`.dylib` / `.dll`) and `datas`
+     (`.tcl` scripts). The dylibs/DLLs are code-signed and dependency-analysed
+     correctly; the Tcl scripts are copied verbatim.
+
+  2. *Tcl's `auto_path` scan completed before tkinterdnd2 could register
+     itself.* `tkinterdnd2._require()` appends the tkdnd directory to Tcl's
+     `auto_path` at import time, but in a frozen build the Tcl interpreter is
+     fully initialised (including its initial `pkgIndex.tcl` scan) before
+     Python imports `tkinterdnd2`. A subsequent `package require tkdnd` then
+     fails because the tkdnd directory was never scanned. Fix: both runtime
+     hooks (`rthook_tkdnd.py` on Windows, `rthook_tkdnd_mac.py` on macOS) now
+     set the `TCLLIBPATH` environment variable before any Python code runs.
+     Tcl reads `TCLLIBPATH` at interpreter *startup* — before the first
+     package-index scan — and prepends each listed path to `auto_path`,
+     guaranteeing that `pkgIndex.tcl` is found on the very first
+     `package require tkdnd`.
+
+  The Windows runtime hook now uses a three-layer strategy: `TCLLIBPATH`
+  (primary), `PATH` prepend (DLL dependency resolution for `LoadLibrary`),
+  and `os.add_dll_directory()` (belt-and-suspenders for Python-level DLL
+  loading). The macOS runtime hook uses two layers: `TCLLIBPATH` (primary)
+  and `DYLD_FALLBACK_LIBRARY_PATH` (belt-and-suspenders).
+
+---
+
 ## [0.3.1] — 2026-06-01
 
 ### Fixed
