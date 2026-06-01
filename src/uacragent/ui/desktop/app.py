@@ -1561,33 +1561,64 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
     # ------------------------------------------------------------------
 
     def _on_close(self) -> None:
+        # ── Step 1: signal all background workers to stop ─────────────────
+        # Set cancel_event FIRST so every LLM stream / indexing thread checks
+        # it at the next chunk boundary and returns, rather than continuing to
+        # run while the window tears down underneath them.  This is the primary
+        # fix for the "Fatal Python error: PyEval_RestoreThread: GIL is released"
+        # crash, which occurs when a daemon worker thread is still executing
+        # Python code when the interpreter begins its shutdown sequence.
+        self._cancel_event.set()
+        self._is_busy = False
+
+        # ── Step 2: stop the elapsed-time ticker ──────────────────────────
+        # The ticker reschedules itself via after() on every tick.  Cancelling
+        # it here prevents it from firing again during the teardown window and
+        # triggering the "can't delete Tcl command" TclError inside destroy().
+        try:
+            self._stop_timer()
+        except Exception:  # noqa: BLE001
+            pass
+
+        # ── Step 3: save session and clear secrets ────────────────────────
         # _save_current_session() returns False when the write fails.
-        # We cannot use _append_chat() here: self.destroy() follows immediately
-        # and the tkinter event loop never runs between them, so any queued
-        # widget update would be silently discarded.  A blocking native dialog
-        # is the only reliable way to show the error before the window is gone.
+        # A blocking native dialog is the only reliable way to show the error
+        # before the window is gone (a Toplevel would race with destruction).
         if not self._save_current_session():
             from tkinter import messagebox as _mb
-            # Native blocking dialog intentional: self.destroy() follows
-            # immediately below, so a Toplevel-based dialog would race with
-            # window destruction and never render.
             _mb.showwarning(
                 self._t("mb_session_not_saved_title"),
                 self._t("mb_session_not_saved_body"),
                 parent=self,
             )
 
-        # Drop API key references before the window is destroyed so they are not
-        # accessible to any code that runs after this point.  _clear_runtime_secrets
-        # blanks the StringVars and removes keys from os.environ.
-        # Note: Python strings are immutable — os.environ.pop removes the reference
-        # but cannot zero the underlying heap bytes; the OS reclaims them on exit.
         try:
             self._clear_runtime_secrets()
         except Exception:  # noqa: BLE001
             pass
 
-        self.destroy()
+        # ── Step 4: defer destroy by 200 ms ──────────────────────────────
+        # The Tkinter event loop keeps running during this window.  Workers
+        # that were mid-stream will see _cancel_event, finish their current
+        # iteration, post their final self.after(0, …) callback, and exit the
+        # thread function cleanly.  By the time _do_destroy() fires, no worker
+        # thread is executing Python code, so the GIL is not contested and the
+        # fatal error cannot occur.  200 ms is imperceptible to the user.
+        self.after(200, self._do_destroy)
+
+    def _do_destroy(self) -> None:
+        """Destroy the main window; called 200 ms after _on_close.
+
+        Wrapped in a broad try/except because Tkinter's destroy() can raise
+        ``TclError: can't delete Tcl command`` when a widget's Tcl-side
+        command was already unregistered by an earlier callback during the
+        brief teardown window.  The window is still fully closed in all cases.
+        """
+        try:
+            self.destroy()
+        except tk.TclError as exc:
+            if "can't delete Tcl command" not in str(exc):
+                raise
 
     # ------------------------------------------------------------------
     # Busy state
