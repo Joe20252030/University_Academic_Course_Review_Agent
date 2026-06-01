@@ -126,10 +126,20 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   now also checks the model name and returns `False` for any model containing
   `"search-preview"`.
 
-- **Four pre-existing test bugs fixed** — `TestFilesWereRemoved` wrote the
-  manifest in the wrong JSON schema; `test_api_keys_not_persisted` imported a
-  nonexistent function (`session_to_dict`). All four tests now reflect the
-  correct API.
+- **Chunk ID collision — file-removal detection tests fixed** — `_files_were_removed()`
+  is the mechanism that wipes ChromaDB when files are removed from a session,
+  preventing stale chunks (which may share the same content-hash ID as new
+  chunks) from persisting across indexing runs.  Three tests that verified this
+  behaviour were writing the manifest file in the wrong JSON schema —
+  ``{"files": {"doc_type": [paths]}}`` instead of the correct list-of-dicts
+  form ``{"files": [{"doc_type": …, "path": …}]}`` — causing a ``TypeError``
+  and leaving the detection mechanism completely untested.  The tests are now
+  fixed and all three pass, confirming that the collision-avoidance wipe path
+  works as intended.
+
+- **`test_api_keys_not_persisted` test fixed** — imported the nonexistent
+  function ``session_to_dict``; replaced with the correct ``save_session`` +
+  raw JSON file assertion pattern that exercises the actual persistence layer.
 
 ### Added
 
