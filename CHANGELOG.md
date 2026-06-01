@@ -47,6 +47,22 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   loading). The macOS runtime hook uses two layers: `TCLLIBPATH` (primary)
   and `DYLD_FALLBACK_LIBRARY_PATH` (belt-and-suspenders).
 
+- **App Settings `×` close button applied live-preview changes permanently** —
+  closing the App Settings dialog via the OS window-close button (`×`) called
+  Tkinter's raw `destroy()` directly, bypassing the in-dialog Cancel handler.
+  This meant any live-preview theme or font-size change the user was exploring
+  was silently committed even when they intended to cancel. Fix: the window's
+  `WM_DELETE_WINDOW` protocol is now wired to the same `_cancel` callback used
+  by the Cancel button, which reverts all live-preview changes before calling
+  `_safe_destroy_toplevel`.
+
+- **Session Settings `×` close button raised `TclError`** — closing the
+  Session Settings dialog via `×` called raw `destroy()`, which raced with
+  widget-command teardown and raised `TclError: can't delete Tcl command`. Fix:
+  the window's `WM_DELETE_WINDOW` protocol is now wired to
+  `_safe_destroy_toplevel`, consistent with the rest of the dialog teardown
+  paths.
+
 ---
 
 ## [0.3.1] — 2026-06-01

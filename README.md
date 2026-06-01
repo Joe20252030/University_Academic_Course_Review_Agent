@@ -30,11 +30,11 @@ review materials when you need them through a persistent desktop chat workflow.
 | Area | Change |
 |---|---|
 | **Drag-and-drop fixed in built apps** | Files dragged onto the chat input were silently ignored in PyInstaller-frozen builds on both macOS and Windows — DnD now works correctly in all standalone distributions |
-| **tkdnd bundled as binary (macOS)** | The platform-specific `.dylib` is now listed under `binaries` in the spec, so PyInstaller applies proper codesigning; previously it was included as a data file which macOS refuses to `dlopen()` in a signed process context |
+| **tkdnd bundled as binary (macOS)** | The platform-specific `.dylib` is now listed under `binaries` in the spec so PyInstaller applies proper codesigning; previously it was included as a data file which macOS refuses to `dlopen()` in a signed process context |
 | **tkdnd bundled as binary (Windows)** | The platform-specific `.dll` is now listed under `binaries`; `.tcl` scripts remain as data files — only the current-machine architecture subdirectory is bundled, keeping the installer lean |
 | **`TCLLIBPATH` runtime hook (macOS & Windows)** | Runtime hooks now set `TCLLIBPATH` before any Python code runs; Tcl reads this at interpreter startup and adds the tkdnd directory to `auto_path` before the first package-index scan, fixing the race where `package require tkdnd` failed because `_require()` ran too late |
-| **Three-layer Windows DnD fix** | Windows runtime hook uses `TCLLIBPATH` (primary), `PATH` prepend for `LoadLibrary` dependency resolution, and `os.add_dll_directory()` for belt-and-suspenders coverage |
-| **Two-layer macOS DnD fix** | macOS runtime hook uses `TCLLIBPATH` (primary) and `DYLD_FALLBACK_LIBRARY_PATH` for dylib dependency resolution |
+| **App Settings `×` button now cancels correctly** | Closing App Settings via the OS window-close button previously applied live-preview theme/font changes permanently; it now routes through `_cancel`, reverting any unsaved changes |
+| **Session Settings `×` button no longer raises `TclError`** | Closing Session Settings via `×` called raw `destroy()`, racing with widget teardown; it now uses `_safe_destroy_toplevel` |
 
 Full details in [CHANGELOG.md](CHANGELOG.md).
 
