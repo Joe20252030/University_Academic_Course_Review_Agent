@@ -13,8 +13,10 @@ Fix (three-layer approach)
    Tcl reads this environment variable at interpreter startup and prepends its
    entries to ``auto_path`` before any package-index scan.  Setting it here
    (before Python/Tk starts) ensures the tkdnd ``pkgIndex.tcl`` is found
-   during the very first ``package require tkdnd`` call.  Space-separated
-   (Tcl list syntax).
+   during the very first ``package require tkdnd`` call.  The value is a
+   Tcl list (space-separated); each path is brace-quoted so that directory
+   names containing spaces (e.g. ``C:\Users\John Smith\…``) are treated as
+   a single list element by the Tcl parser.
 
 2. **PATH prepend** — Tcl's ``load`` on Windows uses ``LoadLibrary``.  The DLL
    loader searches PATH for implicit dependencies of the tkdnd DLL (tcl86.dll,
@@ -42,10 +44,15 @@ if hasattr(sys, "_MEIPASS") and sys.platform == "win32":
     _tkdnd_dir = os.path.join(_meipass, "tkinterdnd2", "tkdnd", _subdir)
 
     # ── 1. TCLLIBPATH — pre-configure Tcl's auto_path at interpreter start ──
+    # Brace-quote the path so Tcl treats it as a single list element even
+    # when the directory name contains spaces (e.g. "C:/Users/John Smith/…").
+    # Forward slashes are used because Tcl's file handling prefers them on
+    # Windows; backslashes inside braces are interpreted literally by Tcl.
     if os.path.isdir(_tkdnd_dir):
         _curr_tcllib = os.environ.get("TCLLIBPATH", "")
+        _quoted = "{" + _tkdnd_dir.replace("\\", "/").replace("}", r"\}") + "}"
         os.environ["TCLLIBPATH"] = (
-            _tkdnd_dir + (" " + _curr_tcllib if _curr_tcllib else "")
+            _quoted + (" " + _curr_tcllib if _curr_tcllib else "")
         )
 
     # ── 2. PATH prepend — DLL dependency resolution for LoadLibrary ─────────

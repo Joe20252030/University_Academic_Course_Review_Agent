@@ -19,7 +19,9 @@ Fix (two-layer approach)
    the interpreter initialises.  This is the primary fix.
 
    ``TCLLIBPATH`` uses *space*-separated paths (Tcl list syntax, not ``:``)
-   and must be set before ``Tk.__init__()`` is called.
+   and must be set before ``Tk.__init__()`` is called.  Each path is
+   brace-quoted so that directory names containing spaces are treated as a
+   single list element by the Tcl parser.
 
 2. **DYLD_FALLBACK_LIBRARY_PATH** (belt-and-suspenders)
    Keeps ``_MEIPASS`` and all tkdnd subdirectories in the dynamic-linker
@@ -49,12 +51,13 @@ if hasattr(sys, "_MEIPASS") and sys.platform == "darwin":
     # BEFORE the first package-index scan.  This is the most reliable way to
     # ensure ``package require tkdnd`` finds pkgIndex.tcl without depending on
     # the _require() lappend arriving in time.
-    # Space-separated list (Tcl list syntax); paths with spaces must be
-    # brace-quoted, but _MEIPASS paths typically contain no spaces.
+    # Brace-quote the path so that any spaces in the directory name are
+    # treated as part of the path, not as list-element separators.
     if os.path.isdir(_tkdnd_dir):
         _curr_tcllib = os.environ.get("TCLLIBPATH", "")
+        _quoted = "{" + _tkdnd_dir.replace("}", r"\}") + "}"
         os.environ["TCLLIBPATH"] = (
-            _tkdnd_dir + (" " + _curr_tcllib if _curr_tcllib else "")
+            _quoted + (" " + _curr_tcllib if _curr_tcllib else "")
         )
 
     # ── 2. DYLD_FALLBACK_LIBRARY_PATH — dylib dependency resolution ─────────
