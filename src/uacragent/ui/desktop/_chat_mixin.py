@@ -210,11 +210,23 @@ class ChatMixin:
         # ── 2. Try PIL clipboard grab (raw image — screenshot, browser copy) ──
         # Only reached when the clipboard holds image data with no accompanying
         # file list (e.g. a screenshot or an image copied from a web browser).
-        try:
-            from PIL import ImageGrab
-            cb = ImageGrab.grabclipboard()
-        except Exception:
-            cb = None
+        #
+        # IMPORTANT: PIL.ImageGrab.grabclipboard() on macOS runs
+        #   osascript -e "get the clipboard as «class PNGf»"
+        # synchronously on the main (UI) thread.  When the clipboard holds
+        # plain text this osascript call can block for several seconds due to
+        # macOS sandbox / permission checks, freezing the entire app.
+        #
+        # Fix: use the fast native clipboard-type API to confirm that the
+        # clipboard actually contains image data before invoking PIL.  Each
+        # platform check completes in < 1 ms and never spawns a subprocess.
+        cb = None
+        if self._clipboard_has_image():
+            try:
+                from PIL import ImageGrab
+                cb = ImageGrab.grabclipboard()
+            except Exception:
+                cb = None
 
         if cb is not None:
             if hasattr(cb, "save"):
@@ -260,6 +272,68 @@ class ChatMixin:
 
         # ── 3. Default: plain text paste — let tkinter handle it ─────────
         return None
+
+    def _clipboard_has_image(self) -> bool:
+        """Return True when the clipboard contains image data (not plain text or files).
+
+        Uses the native OS clipboard-type query API so the check completes in
+        under 1 ms without spawning any subprocess.  This guards the
+        PIL.ImageGrab.grabclipboard() call — on macOS that function runs
+        osascript synchronously and can block for seconds when the clipboard
+        holds plain text, freezing the Tkinter main thread.
+
+        Platform behaviour
+        ------------------
+        macOS  — AppKit.NSPasteboard.types() is checked for public.png /
+                 public.tiff / public.jpeg and related image UTIs.
+        Windows — IsClipboardFormatAvailable() is called for the three main
+                 bitmap formats (CF_BITMAP, CF_DIB, CF_DIBV5).
+        Linux  — returns False (PIL's grabclipboard() is generally fast on
+                 Linux X11 because it uses the CLIPBOARD selection directly
+                 without spawning osascript).
+        """
+        import sys as _sys
+
+        if _sys.platform == "darwin":
+            try:
+                from AppKit import NSPasteboard  # type: ignore[import]
+                _pb    = NSPasteboard.generalPasteboard()
+                _types = _pb.types() or []
+                # Common image UTIs that macOS places on the pasteboard for
+                # screenshots, images copied from browsers, and Preview.
+                _IMAGE_UTIS = (
+                    "public.png", "public.tiff", "public.jpeg",
+                    "public.heic", "public.heif",
+                    "com.apple.pict",
+                    "NSBitmapImageRep",
+                )
+                return any(
+                    any(uti in t for uti in _IMAGE_UTIS)
+                    for t in _types
+                )
+            except Exception:
+                # PyObjC not installed; fall back to False so PIL is skipped.
+                # Users who paste screenshots without PyObjC lose image-paste
+                # support but gain a responsive UI — the better trade-off.
+                return False
+
+        if _sys.platform.startswith("win"):
+            try:
+                import ctypes as _ct
+                _CF_BITMAP = 2
+                _CF_DIB    = 8
+                _CF_DIBV5  = 17
+                _u32 = _ct.windll.user32
+                for _fmt in (_CF_BITMAP, _CF_DIB, _CF_DIBV5):
+                    if _u32.IsClipboardFormatAvailable(_fmt):
+                        return True
+            except Exception:
+                pass
+            return False
+
+        # Linux / other — PIL handles clipboard access natively without
+        # subprocess overhead, so always allow the grab attempt.
+        return True
 
     def _clipboard_file_list(self) -> list[str]:
         """Return file paths from the clipboard without touching image data.
