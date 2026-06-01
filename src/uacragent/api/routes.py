@@ -9,6 +9,7 @@ a path-traversal risk in multi-tenant or network-exposed environments.
 from __future__ import annotations
 
 import os
+import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -121,6 +122,18 @@ def generate_review(
     classified = req.classified_files.to_dict()
     _validate_file_paths(classified)
 
+    # Each request whose workspace_id is the generic default "default" gets a
+    # fresh per-request UUID so concurrent callers never share the same workspace
+    # directory and collide on the ChromaDB SQLite file.  Callers who pass an
+    # explicit, non-default workspace_id (e.g. a session key from their own
+    # system) still get the exact folder they asked for; they are responsible
+    # for not issuing concurrent requests against the same workspace.
+    effective_workspace_id = (
+        f"req_{uuid.uuid4().hex[:12]}"
+        if req.workspace_id == "default"
+        else req.workspace_id
+    )
+
     result = service.run_end_to_end(
         classified_files=classified,
         exam_format=req.exam_format.value,
@@ -128,7 +141,7 @@ def generate_review(
         exam_type=req.exam_type.value,
         task_type=req.task_type.value,
         extra_instructions=req.extra_instructions,
-        workspace_id=req.workspace_id,
+        workspace_id=effective_workspace_id,
         copy_to_workspace=req.copy_to_workspace,
         university_name=req.university_name,
         major=req.major,
@@ -137,7 +150,7 @@ def generate_review(
         semester=req.semester,
         exam_duration=req.exam_duration,
         exam_info=req.exam_info,
-        workspace_folder=(get_api_run_dir() / req.workspace_id).resolve(),
+        workspace_folder=(get_api_run_dir() / effective_workspace_id).resolve(),
         effort_level=req.effort_level,
         reasoning_mode=req.reasoning_mode,
     )

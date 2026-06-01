@@ -116,11 +116,16 @@ def _add_markdown_to_docx(doc: DocxDocument, md_text: str) -> None:
 
 
 def save_docx(md_text: str, workspace_paths: WorkspacePaths) -> str:
-    Path(workspace_paths.outputs).mkdir(parents=True, exist_ok=True)
-
-    doc = DocxDocument()
-    _add_markdown_to_docx(doc, md_text)
-
-    path = Path(workspace_paths.outputs) / f"review_{safe_timestamp()}.docx"
-    doc.save(str(path))
-    return str(path)
+    from uacragent.domain.errors import ExportError
+    try:
+        Path(workspace_paths.outputs).mkdir(parents=True, exist_ok=True)
+        doc = DocxDocument()
+        _add_markdown_to_docx(doc, md_text)
+        path = Path(workspace_paths.outputs) / f"review_{safe_timestamp()}.docx"
+        doc.save(str(path))
+        return str(path)
+    except OSError as exc:
+        raise ExportError(
+            f"Could not save DOCX file: {exc}. "
+            "Check that the workspace folder is writable and has enough disk space."
+        ) from exc

@@ -190,7 +190,14 @@ def _sanitize_latin1(text: str) -> str:
 
 
 def save_pdf(md_text: str, workspace_paths: WorkspacePaths) -> str:
-    Path(workspace_paths.outputs).mkdir(parents=True, exist_ok=True)
+    from uacragent.domain.errors import ExportError
+    try:
+        Path(workspace_paths.outputs).mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise ExportError(
+            f"Could not create output directory: {exc}. "
+            "Check that the workspace folder is writable and has enough disk space."
+        ) from exc
 
     # Detect non-latin-1 content before building the PDF.  If no Unicode font
     # is available and the content cannot be represented in latin-1, the fallback
@@ -202,7 +209,6 @@ def save_pdf(md_text: str, workspace_paths: WorkspacePaths) -> str:
         try:
             md_text.encode("latin-1")
         except UnicodeEncodeError:
-            from uacragent.domain.errors import ExportError
             raise ExportError(
                 "PDF export is unavailable: the document contains characters "
                 "(e.g. CJK / non-latin) that require a Unicode font, but no "
@@ -211,9 +217,14 @@ def save_pdf(md_text: str, workspace_paths: WorkspacePaths) -> str:
                 "(Linux: sudo apt-get install fonts-noto) and retry."
             )
 
-    pdf = _ReviewPDF()
-    pdf.add_markdown(md_text)
-
-    path = Path(workspace_paths.outputs) / f"review_{safe_timestamp()}.pdf"
-    pdf.output(str(path))
-    return str(path)
+    try:
+        pdf = _ReviewPDF()
+        pdf.add_markdown(md_text)
+        path = Path(workspace_paths.outputs) / f"review_{safe_timestamp()}.pdf"
+        pdf.output(str(path))
+        return str(path)
+    except OSError as exc:
+        raise ExportError(
+            f"Could not save PDF file: {exc}. "
+            "Check that the workspace folder is writable and has enough disk space."
+        ) from exc

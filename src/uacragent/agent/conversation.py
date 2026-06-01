@@ -167,8 +167,16 @@ def _extract_file_text(path: str, mime: str) -> str:
         )
 
 
-def _provider_supports_vision(provider_id: str) -> bool:
-    """Return True if the given provider supports image/file attachments."""
+def _provider_supports_vision(provider_id: str, model: str = "") -> bool:
+    """Return True if the given provider+model supports image/file attachments.
+
+    Some models within a vision-capable provider do not accept image inputs —
+    notably OpenAI's search-preview variants (gpt-4o-search-preview,
+    gpt-4o-mini-search-preview) which only accept text.  Check the model name
+    before consulting the provider-level flag.
+    """
+    if "search-preview" in model.lower():
+        return False
     return get_provider(provider_id).supports_files
 
 
@@ -438,7 +446,14 @@ def _ls(lang: str, table: dict[str, dict[str, str]], key: str, **fmt: object) ->
     inline placeholders without a separate format call.
     """
     row = table.get(lang) or table["en"]
-    text = row.get(key) or table["en"].get(key, key)
+    text = row.get(key) or table["en"].get(key)
+    if text is None:
+        _logger.warning(
+            "Missing localisation key %r in string table for language %r — "
+            "returning key name as fallback.",
+            key, lang,
+        )
+        text = key  # raw key as last resort; at least it's visible
     return text.format(**fmt) if fmt else text
 
 
@@ -669,7 +684,7 @@ class ConversationAgent:
         # since they are extracted to text before being sent to the LLM.
         effective_attachments = list(attachments or [])
         vision_warnings: list[str] = []
-        if not _provider_supports_vision(provider_id):
+        if not _provider_supports_vision(provider_id, model=session.llm_model):
             image_atts = [
                 a for a in effective_attachments
                 if a.get("mime", "") in _IMAGE_MIMES
@@ -800,7 +815,12 @@ class ConversationAgent:
             ),
             AIMessage(content=reply),
         )
-        self._smart_trim_history(session, llm, progress_cb=progress_cb, language=language)
+        self._smart_trim_history(
+            session, llm,
+            progress_cb=progress_cb,
+            language=language,
+            request_delay=self.settings.llm_request_delay,
+        )
 
         return ChatResponse(
             text=reply,
@@ -1017,6 +1037,7 @@ class ConversationAgent:
         llm_client: "LLMClient",
         progress_cb: "Callable[[str], None] | None" = None,
         language: str = "en",
+        request_delay: float = 0.0,
     ) -> None:
         """Token-budget trim with LLM summarisation of dropped turns.
 
@@ -1131,6 +1152,7 @@ class ConversationAgent:
             existing_summary=session.history_summary,
             llm_client=llm_client,
             language=language,
+            request_delay=request_delay,
         )
 
         # Rebuild the in-memory store atomically
@@ -1153,6 +1175,7 @@ class ConversationAgent:
         existing_summary: str,
         llm_client: "LLMClient",
         language: str = "en",
+        request_delay: float = 0.0,
     ) -> str:
         """Return a 3-5 sentence summary of *messages*, merged with *existing_summary*.
 
@@ -1160,6 +1183,11 @@ class ConversationAgent:
         focused prompt so the call is fast and cheap.  On any failure a plain
         fallback string (in the correct *language*) is returned so the trim
         still proceeds.
+
+        *request_delay* is the inter-call delay from the active rate tier.  A
+        sleep of that duration is inserted before the summarisation LLM call so
+        it does not fire back-to-back with the preceding chat turn and hit the
+        rate limit (which would silently lose history context).
         """
         # Build a condensed transcript of the turns to summarise.
         # Cap individual messages at 800 chars so one massive AI response
@@ -1194,6 +1222,12 @@ class ConversationAgent:
         )
 
         try:
+            # Sleep before the summarisation call so it doesn't fire
+            # back-to-back with the preceding chat turn and hit rate limits.
+            import time as _time
+            if request_delay > 0:
+                _time.sleep(request_delay)
+
             resp = llm_client.invoke([
                 SystemMessage(content=(
                     "You are a precise summariser. Return only the summary text, "

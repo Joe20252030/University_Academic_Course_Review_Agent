@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 from collections.abc import Callable
 
-from langchain_community.document_loaders import PyPDFLoader, TextLoader, Docx2txtLoader
+from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader
 from langchain_core.documents import Document
 from langchain_text_splitters import (
     MarkdownHeaderTextSplitter,
@@ -24,6 +24,12 @@ logger = logging.getLogger(__name__)
 # that cannot be resolved is practically impossible with human-uploaded files;
 # anything beyond suggests a filesystem problem rather than a collision.
 _MAX_COLLISION_COUNTER = 1_000
+
+# Pre-load file-size thresholds.
+# Files larger than _WARN_BYTES are logged as warnings; they may be slow.
+# Files larger than _BLOCK_BYTES are refused entirely — loading them risks OOM.
+_LARGE_FILE_WARN_BYTES  = 100 * 1024 * 1024   # 100 MB
+_LARGE_FILE_BLOCK_BYTES = 300 * 1024 * 1024   # 300 MB
 
 
 # ---------------------------------------------------------------------------
@@ -271,7 +277,11 @@ class DocumentLoader:
                 return PyPDFLoader(path).load()
             elif ext in {".txt", ".md", ".py", ".js", ".ts",
                          ".html", ".htm", ".xml", ".json"}:
-                return TextLoader(path, encoding="utf-8").load()
+                # Read directly with errors="replace" so non-UTF-8 files
+                # (Latin-1, GBK, etc.) are loaded with replacement characters
+                # instead of raising UnicodeDecodeError.
+                content = Path(path).read_text(encoding="utf-8", errors="replace")
+                return [Document(page_content=content, metadata={"source": path})]
             elif ext == ".docx":
                 return Docx2txtLoader(path).load()
             elif ext == ".csv":
@@ -402,6 +412,11 @@ class DocumentLoader:
     ) -> list[Document]:
         """Load and split files by their document type classification.
 
+        Individual file failures are logged and skipped so one bad file does
+        not abort the entire indexing run.  If *every* file fails, an
+        :class:`~uacragent.domain.errors.IngestError` is raised with a
+        consolidated summary of what went wrong.
+
         Args:
             classified_files: Mapping of DocumentType to list of file paths
             workspace_paths: If provided, copy files to classified folders
@@ -410,6 +425,7 @@ class DocumentLoader:
             Combined list of all chunks with doc_type metadata
         """
         all_chunks: list[Document] = []
+        _failed: list[tuple[str, str]] = []  # (filename, reason)
 
         # Track resolved paths across ALL doc types so the same physical file
         # is never loaded and embedded twice even when the user adds it to
@@ -440,14 +456,70 @@ class DocumentLoader:
                     continue
                 _globally_seen.add(resolved)
 
-                # Optionally copy to workspace
-                if workspace_paths:
-                    path = self.copy_to_workspace(path, doc_type, workspace_paths)
+                fname = Path(path).name
+                try:
+                    # ── S5: pre-load size guard ────────────────────────────
+                    # Check file size before reading to prevent OOM on very
+                    # large files.  Stat failure is tolerated — the real error
+                    # (missing file, permission denied) surfaces in load_single_file.
+                    try:
+                        file_size = Path(path).stat().st_size
+                    except OSError:
+                        file_size = 0
 
-                # Load and split with multi-stage type-specific pipeline
-                docs = self.load_single_file(path)
-                chunks = self.split_documents(docs, doc_type)
-                all_chunks.extend(chunks)
+                    if file_size >= _LARGE_FILE_BLOCK_BYTES:
+                        raise IngestError(
+                            f"'{fname}' is {file_size / 1_048_576:.0f} MB — "
+                            f"files over {_LARGE_FILE_BLOCK_BYTES // 1_048_576} MB "
+                            "cannot be loaded (memory limit). "
+                            "Split the file into smaller parts and re-upload."
+                        )
+                    if file_size >= _LARGE_FILE_WARN_BYTES:
+                        logger.warning(
+                            "Large file '%s' (%d MB) — loading may be slow.",
+                            fname, file_size // 1_048_576,
+                        )
+
+                    # ── Optionally copy to workspace ──────────────────────
+                    if workspace_paths:
+                        path = self.copy_to_workspace(path, doc_type, workspace_paths)
+
+                    # ── Load raw documents ────────────────────────────────
+                    docs = self.load_single_file(path)
+
+                    # ── B7: detect image-only / scanned PDFs ──────────────
+                    # PyPDFLoader returns pages with empty page_content when
+                    # the PDF has no embedded text layer (e.g. scanned pages).
+                    # This produces zero usable chunks — detect it early and
+                    # give a clear, actionable error instead of the generic
+                    # "No document chunks" message.
+                    if Path(path).suffix.lower() == ".pdf" and docs:
+                        if all(not d.page_content.strip() for d in docs):
+                            raise IngestError(
+                                f"'{fname}' appears to be a scanned or image-only PDF "
+                                "— no text could be extracted from it. "
+                                "Convert it to a searchable PDF using an OCR tool "
+                                "(e.g. Adobe Acrobat, Tesseract) and re-upload."
+                            )
+
+                    # ── Split with type-specific pipeline ─────────────────
+                    chunks = self.split_documents(docs, doc_type)
+                    all_chunks.extend(chunks)
+
+                except IngestError as exc:
+                    _failed.append((fname, str(exc)))
+                    logger.warning(
+                        "Skipping '%s' (%s): %s",
+                        fname, doc_type.value, exc,
+                    )
+
+        # If every file failed, surface a consolidated error so the caller
+        # sees what went wrong rather than just "no chunks produced".
+        if _failed and not all_chunks:
+            summary = "; ".join(f"{n}: {r}" for n, r in _failed)
+            raise IngestError(
+                f"All {len(_failed)} file(s) failed to load. Details: {summary}"
+            )
 
         return all_chunks
 
