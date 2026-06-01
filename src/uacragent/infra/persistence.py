@@ -2,8 +2,9 @@
 
 Layout
 ------
-~/.uacragent/                       ← bootstrap location; holds config only
+~/.uacragent/                       ← bootstrap location; fixed, never moves
     config.json                     ← stores the user-chosen app data dir
+    paste_tmp/                      ← clipboard-paste image temp files (app-owned; always here regardless of app_data_dir setting)
 
 <app_data_dir>/                     ← configurable; defaults to ~/.uacragent
     index.json                      ← lightweight session registry
@@ -75,6 +76,23 @@ def get_cli_run_dir() -> Path:
 def get_api_run_dir() -> Path:
     """Return the managed root for FastAPI generation workspaces."""
     return get_app_data_dir() / "api_run"
+
+
+def get_paste_tmp_dir() -> Path:
+    """Return (and create) the directory for clipboard-paste temp image files.
+
+    Intentionally rooted at ``_UAR_DIR`` (``~/.uacragent/paste_tmp/``), NOT
+    at ``get_app_data_dir()``.  This means the location is fixed and unaffected
+    when the user relocates their app data folder via App Settings — the startup
+    sweep in ``app.py`` always knows exactly where to look regardless of any
+    configuration change.
+
+    The directory is exclusive to this app, so a full wipe on startup is safe
+    (see ``_sweep_stale_paste_tmp`` in ``app.py``).
+    """
+    d = _UAR_DIR / "paste_tmp"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
 def get_chroma_onnx_models_dir() -> Path:
@@ -443,19 +461,29 @@ def _atomic_write_text(path: Path, text: str, encoding: str = "utf-8") -> None:
 
     ``os.replace()`` is atomic on POSIX and effectively atomic on Windows (same
     volume, same directory).  A process crash during the write leaves at most a
-    stale ``.tmp`` file — the original *path* is never partially written.
+    stale temp file — the original *path* is never partially written.
+
+    A unique temp-file name (via ``tempfile.NamedTemporaryFile``) is used so
+    two concurrent callers writing to files in the same directory never share
+    a temp path and accidentally truncate each other's in-progress write.
     """
-    import os as _os
-    tmp = path.with_suffix(".tmp")
+    import os as _os, tempfile as _tf
+    tmp_path: "Path | None" = None
     try:
-        tmp.write_text(text, encoding=encoding)
-        _os.replace(tmp, path)
+        with _tf.NamedTemporaryFile(
+            mode="w", encoding=encoding,
+            dir=path.parent, suffix=".tmp", delete=False,
+        ) as _f:
+            tmp_path = Path(_f.name)
+            _f.write(text)
+        _os.replace(tmp_path, path)
     except Exception:
-        # Clean up the temp file on failure so it doesn't litter the folder.
-        try:
-            tmp.unlink(missing_ok=True)
-        except Exception:  # noqa: BLE001
-            pass
+        # Clean up the unique temp file on failure so it doesn't litter the folder.
+        if tmp_path is not None:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except Exception:  # noqa: BLE001
+                pass
         raise
 
 
@@ -811,7 +839,18 @@ def delete_session(workspace: Path) -> None:
             else:
                 user_items = [p for p in workspace.iterdir() if p.name not in _OS_METADATA]
                 if not user_items:
-                    shutil.rmtree(workspace)
+                    # Re-check symlink status immediately before rmtree to
+                    # close the TOCTOU window between the earlier check above
+                    # and the actual deletion — a concurrent process could
+                    # have replaced the directory with a symlink in between.
+                    if workspace.is_symlink():
+                        logger.warning(
+                            "Workspace '%s' became a symlink before rmtree; "
+                            "refusing to proceed. Manual cleanup may be required.",
+                            workspace,
+                        )
+                    else:
+                        shutil.rmtree(workspace)
     except Exception as exc:
         logger.warning("Could not remove workspace folder %s: %s", workspace, exc)
 

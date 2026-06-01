@@ -72,12 +72,24 @@ class SessionMixin:
         except Exception:
             pass
         self._set_chat_active(True)
+        # Discard any pending (unsent) attachments when switching to a
+        # different session.  Re-clicking the already-active session is a
+        # reload/refresh — pending attachments must be preserved in that case.
+        _current_ws = (
+            self._session.workspace_folder
+            if self._workspace_committed else None
+        )
+        if _current_ws != ws:
+            self._discard_pending_attachments()
         # Load metadata + replay history immediately, then attach retriever.
         self._load_session_from_workspace(ws)
         self._attach_session_async()
 
     def _on_new_session(self) -> None:
         """Start a blank session and open settings so the user can fill it in."""
+        # Discard pending attachments from the previous session before resetting
+        # state — a new session is always a different context.
+        self._discard_pending_attachments()
         # Inherit the active LLM provider/model so the user doesn't have to
         # re-enter them for every new session.  API keys are already in os.environ.
         prev_provider = self._llm_provider_var.get() or "gemini"

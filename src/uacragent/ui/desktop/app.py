@@ -47,7 +47,7 @@ from uacragent.domain.types import DocumentType, ExamFormat, ExamType, ExportFor
 # Only names used directly in this file are imported here.
 # Each mixin module (SessionMixin, AppearanceMixin, ChatMixin, etc.) imports
 # the persistence, export, and provider functions it needs independently.
-from uacragent.infra.persistence import get_app_data_dir
+from uacragent.infra.persistence import get_app_data_dir, get_paste_tmp_dir
 
 # Re-export module-level constants and helpers so existing callers that
 # ``from uacragent.ui.desktop.app import _strip_markdown`` still work.
@@ -322,6 +322,10 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         # only configured once — by the _apply_font_size() call that follows.
         self._apply_theme(reconfigure_tags=False)
         self._apply_font_size()
+
+        # Remove any uacr_paste_*.png files left in paste_tmp/ by a previous
+        # session that was force-killed before it could clean up normally.
+        self._sweep_stale_paste_tmp()
 
         # Populate the session list but do not auto-select anything.
         # The right panel stays blank until the user clicks a session.
@@ -1599,7 +1603,16 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         except Exception:  # noqa: BLE001
             pass
 
-        # ── Step 3: save session and clear secrets ────────────────────────
+        # ── Step 3: discard pending attachments ──────────────────────────
+        # Remove all queued attachments and delete any paste temp files
+        # (uacr_paste_*.png) that were never sent.  Must run before session
+        # save so temp-file paths do not linger in any serialised state.
+        try:
+            self._discard_pending_attachments()
+        except Exception:  # noqa: BLE001
+            pass
+
+        # ── Step 4: save session and clear secrets ────────────────────────
         # _save_current_session() returns False when the write fails.
         # A blocking native dialog is the only reliable way to show the error
         # before the window is gone (a Toplevel would race with destruction).
@@ -1638,6 +1651,28 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         except tk.TclError as exc:
             if "can't delete Tcl command" not in str(exc):
                 raise
+
+    # ------------------------------------------------------------------
+    # Paste-temp housekeeping
+    # ------------------------------------------------------------------
+
+    def _sweep_stale_paste_tmp(self) -> None:
+        """Delete any leftover uacr_paste_*.png files from a previous crash.
+
+        Called once at startup.  The paste_tmp/ directory is exclusively owned
+        by this app, so wiping its contents on a fresh launch is always safe —
+        no file in that directory could belong to any other process or session
+        that is still running.
+        """
+        try:
+            paste_dir = get_paste_tmp_dir()
+            for _f in paste_dir.glob("uacr_paste_*.png"):
+                try:
+                    _f.unlink()
+                except OSError:
+                    pass
+        except Exception:  # noqa: BLE001
+            pass
 
     # ------------------------------------------------------------------
     # Busy state

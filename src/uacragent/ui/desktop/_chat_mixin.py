@@ -14,7 +14,7 @@ from uacragent.domain.rate_tiers import RATE_TIER_BY_DISPLAY
 from uacragent.domain.types import DocumentType, ExportFormat
 from uacragent.export.docx import save_docx
 from uacragent.export.pdf import save_pdf
-from uacragent.infra.persistence import get_app_data_dir, save_session
+from uacragent.infra.persistence import get_app_data_dir, get_paste_tmp_dir, save_session
 from uacragent.infra.workspace import workspace_paths, ensure_workspace_dirs
 
 from ._ui_constants import _strip_markdown, _open_file_in_os, _open_folder_in_os
@@ -233,10 +233,16 @@ class ChatMixin:
                 import tempfile, os as _os
                 # mkstemp guarantees a unique path — avoids the same-second
                 # collision that timestamp-only names can produce when the user
-                # pastes multiple images rapidly.  The prefix keeps the cleanup
-                # filter (startswith("uacr_paste_")) working correctly.
+                # pastes multiple images rapidly.  Files land in the app-managed
+                # paste_tmp/ directory (not the OS temp dir) so all app-owned
+                # transient data is self-contained and easy to audit.
+                # The "is_temp_file" flag marks each entry as app-owned so
+                # cleanup code never touches user files.
                 try:
-                    _fd, _tmp = tempfile.mkstemp(prefix="uacr_paste_", suffix=".png")
+                    _fd, _tmp = tempfile.mkstemp(
+                        prefix="uacr_paste_", suffix=".png",
+                        dir=get_paste_tmp_dir(),
+                    )
                     _os.close(_fd)
                     tmp_path = Path(_tmp)
                     cb.save(str(tmp_path), format="PNG")
@@ -244,11 +250,18 @@ class ChatMixin:
                         "path": str(tmp_path),
                         "name": tmp_path.name,
                         "mime": "image/png",
+                        "is_temp_file": True,   # owned by us — safe to delete
                     })
                     self._rebuild_attach_strip()
                     return "break"
                 except Exception:
-                    pass  # save failed — fall through to default paste
+                    # save failed — delete the empty file mkstemp already
+                    # created so it doesn't linger until the next startup sweep.
+                    try:
+                        _os.unlink(_tmp)  # type: ignore[possibly-undefined]
+                    except Exception:  # noqa: BLE001
+                        pass
+                    # Fall through to default paste behaviour.
 
             elif isinstance(cb, list) and cb:
                 # PIL already returned a file list (fallback path for some
@@ -447,20 +460,40 @@ class ChatMixin:
 
         return []
 
+    def _discard_pending_attachments(self) -> None:
+        """Discard all queued attachments, cleaning up any paste temp files.
+
+        Called on session switch (to a different session) and on app close.
+        For regular attachments (+ button, drag-and-drop) only the queue entry
+        is removed — the original file on disk is never touched.  Only
+        attachments explicitly marked ``"is_temp_file": True`` (clipboard image
+        pastes created by ``tempfile.mkstemp``) are deleted from disk.
+        """
+        import os as _os
+        for att in self._pending_attachments:
+            if att.get("is_temp_file"):
+                _path = att.get("path", "")
+                if _path:
+                    try:
+                        _os.unlink(_path)
+                    except OSError:
+                        pass
+        self._pending_attachments.clear()
+        self._rebuild_attach_strip()
+
     def _remove_attachment(self, idx: int) -> None:
         if 0 <= idx < len(self._pending_attachments):
             att = self._pending_attachments.pop(idx)
-            # Delete temp files created by _on_paste_input (clipboard image paste).
-            # These files are normally cleaned up in _work()'s finally block after
-            # send, but if the user removes the attachment before sending the file
-            # would otherwise accumulate in the OS temp directory indefinitely.
-            _path = att.get("path", "")
-            if _path and Path(_path).name.startswith("uacr_paste_"):
-                try:
-                    import os as _os
-                    _os.unlink(_path)
-                except OSError:
-                    pass
+            # Only delete files that were explicitly created by this app
+            # (clipboard image pastes).  Regular user files are never touched.
+            if att.get("is_temp_file"):
+                _path = att.get("path", "")
+                if _path:
+                    try:
+                        import os as _os
+                        _os.unlink(_path)
+                    except OSError:
+                        pass
         self._rebuild_attach_strip()
 
     def _rebuild_attach_strip(self) -> None:
@@ -1226,11 +1259,12 @@ class ChatMixin:
 
         _progress = self._make_progress_cb(update_status_bar=False)
 
-        # Identify temp paste files (created by _on_paste_input for raw images)
-        # so they can be deleted after the LLM call regardless of outcome.
+        # Identify temp files owned by this app (clipboard image pastes) so they
+        # can be deleted after the LLM call regardless of outcome.  Only entries
+        # explicitly marked "is_temp_file" are included — never user files.
         _tmp_paste_paths = [
             att["path"] for att in captured_attachments
-            if Path(att.get("path", "")).name.startswith("uacr_paste_")
+            if att.get("is_temp_file") and att.get("path")
         ]
 
         def _work() -> None:
@@ -1297,7 +1331,20 @@ class ChatMixin:
                     except OSError:
                         pass
 
-        threading.Thread(target=_work, daemon=True).start()
+        try:
+            threading.Thread(target=_work, daemon=True).start()
+        except Exception:
+            # Thread failed to start (e.g. OS resource exhaustion).  The
+            # _work finally block will never run, so clean up temp paste files
+            # here before re-raising so they don't leak into paste_tmp/.
+            import os as _os_thr
+            for _tp in _tmp_paste_paths:
+                try:
+                    _os_thr.unlink(_tp)
+                except OSError:
+                    pass
+            self._set_busy(False)
+            raise
 
     def _send_message(self, message: str) -> None:
         self._input_text.delete("1.0", tk.END)

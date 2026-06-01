@@ -1513,6 +1513,10 @@ class SettingsMixin:
                     ):
                         return
                     try:
+                        if p.is_symlink():
+                            raise OSError(
+                                f"'{p.name}' is a symlink and cannot be deleted here."
+                            )
                         p.unlink()
                     except Exception as exc:
                         self._show_info_dialog(

@@ -1030,12 +1030,14 @@ def reset_manifest(workspace_paths: WorkspacePaths) -> None:
         tmp = mp.with_suffix(".tmp")
         tmp.write_text(json.dumps({"files": []}, indent=2, ensure_ascii=False), encoding="utf-8")
         _os.replace(tmp, mp)
-    except Exception:  # noqa: BLE001
+    except Exception as _exc:  # noqa: BLE001
         try:
             tmp.unlink(missing_ok=True)  # type: ignore[possibly-undefined]
         except Exception:  # noqa: BLE001
             pass
-        # non-fatal; worst case the next run rebuilds unnecessarily
+        # Non-fatal: the next indexing run will rebuild the manifest.
+        # Log so disk-full or permission issues are visible in the log file.
+        _vs_logger.warning("reset_manifest failed for %s: %s", mp, _exc)
 
 
 def chroma_is_current(
