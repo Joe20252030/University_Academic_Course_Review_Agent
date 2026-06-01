@@ -989,7 +989,7 @@ class AppearanceMixin:
             self._openai_store_var.set(_saved_store)
             self._apply_theme()
             self._apply_font_size()
-            win.destroy()
+            self._safe_destroy_toplevel(win)
 
         _RoundedChip(
             btn_row, text=self._t("save"),
@@ -1011,6 +1011,10 @@ class AppearanceMixin:
             command=_cancel,
         ).pack(side="left")
 
+        # Wire the OS-level window-close button (×) to _cancel so that live-
+        # preview appearance changes are reverted before the window is destroyed,
+        # and so _safe_destroy_toplevel guards against TclError on teardown.
+        win.protocol("WM_DELETE_WINDOW", _cancel)
         self._center_on_main(win)
 
     # ------------------------------------------------------------------

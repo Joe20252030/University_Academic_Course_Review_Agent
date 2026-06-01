@@ -1,48 +1,67 @@
-"""Runtime hook: fix tkdnd dylib loading in frozen macOS builds.
+"""Runtime hook: fix tkdnd loading in frozen macOS builds.
 
 Root cause
 ----------
-The tkdnd Tcl extension (a .dylib) is extracted into a subdirectory:
+tkinterdnd2's ``_require()`` adds the tkdnd directory to Tcl's ``auto_path``
+by calling ``lappend auto_path module_path`` from Python.  In a frozen build
+the Tcl interpreter is already initialised by the time ``_require()`` runs,
+and on some macOS/Tcl builds the initial package-index scan has already
+completed.  That scan never saw the tkdnd directory, so ``package require tkdnd``
+fails even after the ``lappend``.
 
-    _MEIPASS/tkinterdnd2/tkdnd/osx-arm64/  (Apple Silicon)
-    _MEIPASS/tkinterdnd2/tkdnd/osx-x64/    (Intel)
+Fix (two-layer approach)
+------------------------
+1. **TCLLIBPATH** (Tcl-native, most reliable)
+   Tcl reads this environment variable at interpreter *startup* — before any
+   package-index scanning — and prepends its entries to ``auto_path``.
+   Setting it in this runtime hook (which runs before Python starts) ensures
+   the tkdnd directory is in Tcl's ``auto_path`` from the very first moment
+   the interpreter initialises.  This is the primary fix.
 
-When Tcl loads that dylib, macOS's dynamic linker resolves its own
-dependencies (tcl86.dylib, tk86.dylib, libtcl*.dylib, etc.) by looking in:
+   ``TCLLIBPATH`` uses *space*-separated paths (Tcl list syntax, not ``:``)
+   and must be set before ``Tk.__init__()`` is called.
 
-  1. Absolute paths / @rpath / @loader_path embedded in the dylib
-  2. DYLD_LIBRARY_PATH
-  3. DYLD_FALLBACK_LIBRARY_PATH
-  4. Default system locations
-
-PyInstaller's bootloader sets DYLD_LIBRARY_PATH to _MEIPASS via a re-exec
-trick.  However, in some macOS/SIP configurations that re-exec path is
-bypassed and DYLD_LIBRARY_PATH may not cover _MEIPASS reliably.
-
-Fix
----
-This runtime hook runs before any application code and explicitly sets
-DYLD_FALLBACK_LIBRARY_PATH to include _MEIPASS and the tkdnd architecture
-subdirectory.  Using the FALLBACK variant avoids clobbering any paths already
-placed in DYLD_LIBRARY_PATH by the PyInstaller bootloader.
+2. **DYLD_FALLBACK_LIBRARY_PATH** (belt-and-suspenders)
+   Keeps ``_MEIPASS`` and all tkdnd subdirectories in the dynamic-linker
+   fallback search path so ``dlopen()`` can find any dylib dependencies when
+   Tcl calls ``load libtkdnd2.9.3.dylib``.  Not the primary mechanism —
+   the dylib's own deps are system frameworks — but retained for robustness.
 
 freeze_support()
 ----------------
-On macOS, multiprocessing defaults to the 'spawn' start method (Python 3.8+).
-When the frozen binary spawns worker processes (e.g. onnxruntime, tokenizers),
-those workers re-execute the binary.  multiprocessing.freeze_support() is
-called in __main__.py to intercept that re-execution and act as a worker
-rather than running main() again.  This hook does NOT call freeze_support()
-because runtime hooks run before __main__ and calling it here would be too
-early; it belongs in __main__.py.
+Not called here — runtime hooks run before ``__main__``.  ``freeze_support()``
+belongs in ``__main__.py`` where it already lives.
 """
 import os
+import platform
 import sys
 
 if hasattr(sys, "_MEIPASS") and sys.platform == "darwin":
     _meipass = sys._MEIPASS
 
-    # Collect directories to add: _MEIPASS root + tkdnd subdirectories
+    # Determine the correct platform subdirectory (mirrors _require() logic).
+    _machine = platform.machine()
+    _subdir = "osx-arm64" if _machine == "arm64" else "osx-x64"
+    _tkdnd_dir = os.path.join(_meipass, "tkinterdnd2", "tkdnd", _subdir)
+
+    # ── 1. TCLLIBPATH — pre-configure Tcl's auto_path at interpreter start ──
+    # Tcl reads TCLLIBPATH at startup and prepends each entry to auto_path
+    # BEFORE the first package-index scan.  This is the most reliable way to
+    # ensure ``package require tkdnd`` finds pkgIndex.tcl without depending on
+    # the _require() lappend arriving in time.
+    # Space-separated list (Tcl list syntax); paths with spaces must be
+    # brace-quoted, but _MEIPASS paths typically contain no spaces.
+    if os.path.isdir(_tkdnd_dir):
+        _curr_tcllib = os.environ.get("TCLLIBPATH", "")
+        os.environ["TCLLIBPATH"] = (
+            _tkdnd_dir + (" " + _curr_tcllib if _curr_tcllib else "")
+        )
+
+    # ── 2. DYLD_FALLBACK_LIBRARY_PATH — dylib dependency resolution ─────────
+    # Belt-and-suspenders: ensures _MEIPASS root and all tkdnd subdirectories
+    # are in the fallback dylib search path for dlopen().  The tkdnd dylib
+    # only depends on macOS system frameworks (Cocoa, AppKit, etc.), so this
+    # is mostly defensive.
     _extra: list[str] = [_meipass]
     _tkdnd_root = os.path.join(_meipass, "tkinterdnd2", "tkdnd")
     if os.path.isdir(_tkdnd_root):
@@ -53,10 +72,8 @@ if hasattr(sys, "_MEIPASS") and sys.platform == "darwin":
                 if os.path.isdir(_full):
                     _extra.append(_full)
         except OSError:
-            pass  # permission denied or other OS error — skip subdirs
+            pass
 
-    # Prepend to DYLD_FALLBACK_LIBRARY_PATH (does not override bootloader's
-    # DYLD_LIBRARY_PATH, so the two complement each other).
     _current = os.environ.get("DYLD_FALLBACK_LIBRARY_PATH", "")
     os.environ["DYLD_FALLBACK_LIBRARY_PATH"] = (
         os.pathsep.join(_extra) + (os.pathsep + _current if _current else "")

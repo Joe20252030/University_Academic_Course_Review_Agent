@@ -1340,6 +1340,14 @@ class SettingsMixin:
         row += 1
         self._build_outputs_panel(out_frame, win)
 
+        # Wire the OS-level window-close button (×) to the same safe destroy
+        # used by the in-dialog Close button.  Without this, clicking × calls
+        # Tkinter's raw destroy() directly, which races with widget command
+        # teardown and raises TclError: can't delete Tcl command.
+        win.protocol(
+            "WM_DELETE_WINDOW",
+            lambda: self._safe_destroy_toplevel(win),
+        )
         self._center_on_main(win)
 
     def _build_outputs_panel(

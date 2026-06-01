@@ -84,9 +84,38 @@ datas += collect_data_files("fpdf")
 # python-docx / docx2txt
 datas += collect_data_files("docx")
 
-# tkinterdnd2 — include the entire package dir so Tcl can find tkdnd
+# tkinterdnd2 — bundle the platform-specific tkdnd extension correctly.
+#
+# The dylib is added as a BINARY (not a data file) so PyInstaller applies
+# proper macOS binary handling (codesigning, dependency analysis, etc.).
+# The .tcl scripts are added as DATA files — they are plain text and need
+# no binary processing.  Using BINARY for the dylib is critical: macOS will
+# refuse to dlopen() a dylib that lacks a valid code signature in a context
+# where the process already has a signature (ad-hoc or otherwise).
+#
+# We only bundle the current-machine platform subdirectory to keep the bundle
+# lean and to avoid bundling ARM dylibs on Intel (which would be ignored anyway).
+import platform as _plat
 import tkinterdnd2 as _tkdnd
-datas += [(str(Path(_tkdnd.__file__).parent), "tkinterdnd2")]
+
+_tkdnd_pkg_dir  = Path(_tkdnd.__file__).parent
+_tkdnd_machine  = _plat.machine()
+_tkdnd_subdir   = "osx-arm64" if _tkdnd_machine == "arm64" else "osx-x64"
+_tkdnd_plat_dir = _tkdnd_pkg_dir / "tkdnd" / _tkdnd_subdir
+
+if _tkdnd_plat_dir.is_dir():
+    _tkdnd_dest = f"tkinterdnd2/tkdnd/{_tkdnd_subdir}"
+    # Dylib → binaries (code-signed by PyInstaller, dlopen-safe on macOS 12+)
+    for _f in _tkdnd_plat_dir.glob("*.dylib"):
+        binaries += [(str(_f), _tkdnd_dest)]
+    # Tcl scripts → datas (plain text, no signing needed)
+    for _f in _tkdnd_plat_dir.glob("*.tcl"):
+        datas += [(str(_f), _tkdnd_dest)]
+else:
+    print(f"WARNING: tkdnd platform dir not found: {_tkdnd_plat_dir}")
+
+# Python module files (__init__.py, TkinterDnD.py) → collected automatically
+# by PyInstaller's module analysis.  No explicit datas entry needed.
 
 # ---------------------------------------------------------------------------
 # 2. Our own package data files

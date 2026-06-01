@@ -2,28 +2,28 @@
 
 Root cause
 ----------
-The tkdnd native Tcl extension (a .dll) is extracted by PyInstaller into a
-subdirectory of _MEIPASS:
+tkinterdnd2's ``_require()`` adds the tkdnd directory to Tcl's ``auto_path``
+by calling ``lappend auto_path module_path`` from Python.  In a frozen build
+the Tcl interpreter is already initialised, and on some Windows/Tcl builds the
+package-index scan completes before the ``lappend`` arrives.
 
-    _MEIPASS/tkinterdnd2/tkdnd/win64/tkdnd2xx.dll
+Fix (three-layer approach)
+--------------------------
+1. **TCLLIBPATH** (Tcl-native, most reliable)
+   Tcl reads this environment variable at interpreter startup and prepends its
+   entries to ``auto_path`` before any package-index scan.  Setting it here
+   (before Python/Tk starts) ensures the tkdnd ``pkgIndex.tcl`` is found
+   during the very first ``package require tkdnd`` call.  Space-separated
+   (Tcl list syntax).
 
-When Tcl calls Windows LoadLibrary on that DLL, the loader searches for its
-own dependencies (tcl86.dll, tk86.dll, etc.) in:
+2. **PATH prepend** — Tcl's ``load`` on Windows uses ``LoadLibrary``.  The DLL
+   loader searches PATH for implicit dependencies of the tkdnd DLL (tcl86.dll,
+   tk86.dll, etc. which live in ``_MEIPASS``).  Prepending ``_MEIPASS`` to PATH
+   ensures those DLLs are found.
 
-  1. The DLL's own directory  (_MEIPASS/tkinterdnd2/tkdnd/win64/)
-  2. The process PATH
-  3. Windows system directories
-
-The Tcl/Tk DLLs live in _MEIPASS (root), which is NOT in any of those
-locations at startup, so LoadLibrary fails with "couldn't load library".
-
-Fix
----
-Prepend _MEIPASS to PATH before anything imports tkinterdnd2. This ensures
-the Tcl/Tk DLLs are found when the tkdnd DLL is loaded by Tcl.
-
-We also call os.add_dll_directory() (Python 3.8+ Windows API) on _MEIPASS
-and the tkdnd subdirectories for belt-and-suspenders coverage.
+3. **os.add_dll_directory()** — Python 3.8+ explicit DLL search-path API.
+   Belt-and-suspenders for Python-level DLL loading; Tcl-level loading is
+   handled by PATH above.
 """
 import os
 import sys
@@ -31,12 +31,27 @@ import sys
 if hasattr(sys, "_MEIPASS") and sys.platform == "win32":
     _meipass = sys._MEIPASS
 
-    # --- 1. Prepend _MEIPASS to PATH so LoadLibrary finds Tcl/Tk DLLs -----
+    # Determine the platform subdirectory (mirrors _require() logic).
+    _machine = os.environ.get("PROCESSOR_ARCHITECTURE", "AMD64")
+    if _machine == "ARM64":
+        _subdir = "win-arm64"
+    elif _machine in ("AMD64", "x86_64"):
+        _subdir = "win-x64"
+    else:
+        _subdir = "win-x86"
+    _tkdnd_dir = os.path.join(_meipass, "tkinterdnd2", "tkdnd", _subdir)
+
+    # ── 1. TCLLIBPATH — pre-configure Tcl's auto_path at interpreter start ──
+    if os.path.isdir(_tkdnd_dir):
+        _curr_tcllib = os.environ.get("TCLLIBPATH", "")
+        os.environ["TCLLIBPATH"] = (
+            _tkdnd_dir + (" " + _curr_tcllib if _curr_tcllib else "")
+        )
+
+    # ── 2. PATH prepend — DLL dependency resolution for LoadLibrary ─────────
     os.environ["PATH"] = _meipass + os.pathsep + os.environ.get("PATH", "")
 
-    # --- 2. os.add_dll_directory() — Python 3.8+ explicit DLL search dirs --
-    # This covers Python-level DLL loading; Tcl-level loading is handled by
-    # PATH above, but adding these dirs here is belt-and-suspenders.
+    # ── 3. os.add_dll_directory() — explicit DLL search dirs (Python 3.8+) ──
     _dirs_to_register = [_meipass]
     _tkdnd_root = os.path.join(_meipass, "tkinterdnd2", "tkdnd")
     if os.path.isdir(_tkdnd_root):
@@ -47,10 +62,10 @@ if hasattr(sys, "_MEIPASS") and sys.platform == "win32":
                 if os.path.isdir(_full):
                     _dirs_to_register.append(_full)
         except OSError:
-            pass  # permission denied or other OS error — skip subdirs
+            pass
 
     for _d in _dirs_to_register:
         try:
             os.add_dll_directory(_d)
         except (AttributeError, OSError):
-            pass  # Python < 3.8 or path doesn't exist — safe to skip
+            pass

@@ -129,9 +129,33 @@ datas += collect_data_files("fpdf")
 # python-docx / docx2txt
 datas += collect_data_files("docx")
 
-# tkinterdnd2 — include the entire package dir so Tcl can find tkdnd
+# tkinterdnd2 — bundle the platform-specific tkdnd extension correctly.
+# DLL → binaries; .tcl files → datas.  See UACRAgent_mac.spec for rationale.
+import platform as _plat
+import os as _os
 import tkinterdnd2 as _tkdnd
-datas += [(str(Path(_tkdnd.__file__).parent), "tkinterdnd2")]
+
+_tkdnd_pkg_dir  = Path(_tkdnd.__file__).parent
+# On Windows platform.machine() may return the HOST arch; PROCESSOR_ARCHITECTURE
+# is set by WOW64 and reflects the running-process architecture.
+_tkdnd_machine  = _os.environ.get("PROCESSOR_ARCHITECTURE", _plat.machine())
+if _tkdnd_machine == "ARM64":
+    _tkdnd_subdir = "win-arm64"
+elif _tkdnd_machine in ("AMD64", "x86_64"):
+    _tkdnd_subdir = "win-x64"
+else:
+    _tkdnd_subdir = "win-x86"
+
+_tkdnd_plat_dir = _tkdnd_pkg_dir / "tkdnd" / _tkdnd_subdir
+
+if _tkdnd_plat_dir.is_dir():
+    _tkdnd_dest = f"tkinterdnd2/tkdnd/{_tkdnd_subdir}"
+    for _f in _tkdnd_plat_dir.glob("*.dll"):
+        binaries += [(str(_f), _tkdnd_dest)]
+    for _f in _tkdnd_plat_dir.glob("*.tcl"):
+        datas += [(str(_f), _tkdnd_dest)]
+else:
+    print(f"WARNING: tkdnd platform dir not found: {_tkdnd_plat_dir}")
 
 # ---------------------------------------------------------------------------
 # 2. Our own package data files
