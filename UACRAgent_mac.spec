@@ -262,3 +262,64 @@ app = BUNDLE(
         "LSUIElement":                False,
     },
 )
+
+# ---------------------------------------------------------------------------
+# 8. Post-bundle: re-sign the tkdnd dylib with a plain ad-hoc signature
+# ---------------------------------------------------------------------------
+# Root cause of "Unable to load tkdnd library." on Apple Silicon macOS:
+#
+# The tkdnd dylib from the tkinterdnd2 wheel carries CS_LINKER_SIGNED
+# (flags=0x20002, adhoc|linker-signed).  macOS enforces that a dylib loaded
+# via dlopen() inside a signed app context must be signed with a compatible
+# signature.  A linker-signed dylib is treated as a separate signing context
+# and is rejected when the calling process was signed by codesign (even
+# ad-hoc).
+#
+# Files placed in `binaries` are re-signed by PyInstaller's binary pipeline,
+# removing CS_LINKER_SIGNED.  Files placed in `datas` are copied verbatim,
+# preserving the incompatible flag.  We use `datas` for the dylib to
+# guarantee exact placement at the path pkgIndex.tcl expects; we then fix
+# the signature here with a post-bundle codesign pass.
+#
+# Step 1 — re-sign the tkdnd dylib (replaces linker-signed with plain adhoc).
+# Step 2 — re-sign the entire .app bundle so the outer signature covers the
+#           newly signed dylib (modifying a bundle component invalidates the
+#           outer signature if one exists).
+import subprocess as _cs_sp, glob as _cs_gl
+
+_bundle_app   = str(HERE / "dist" / "UACRAgent.app")
+_dylib_glob   = str(
+    HERE / "dist" / "UACRAgent.app" / "Contents" / "Frameworks" /
+    "tkinterdnd2" / "tkdnd" / _tkdnd_subdir / "libtkdnd*.dylib"
+)
+
+print("INFO: re-signing tkdnd dylib(s) to remove CS_LINKER_SIGNED …")
+_signed_any = False
+for _dl in _cs_gl.glob(_dylib_glob):
+    _r = _cs_sp.run(
+        ["codesign", "--force", "--sign", "-", _dl],
+        capture_output=True, text=True,
+    )
+    if _r.returncode == 0:
+        print(f"  ✓ signed {_dl}")
+        _signed_any = True
+    else:
+        print(f"  ✗ codesign failed for {_dl}: {_r.stderr.strip()}")
+
+if not _signed_any:
+    print(
+        "WARNING: no tkdnd dylib found to sign — "
+        f"drag-and-drop may not work. Pattern was: {_dylib_glob}"
+    )
+
+print("INFO: re-signing UACRAgent.app bundle …")
+_r = _cs_sp.run(
+    ["codesign", "--force", "--deep", "--sign", "-", _bundle_app],
+    capture_output=True, text=True,
+)
+if _r.returncode == 0:
+    print("  ✓ bundle re-signed.")
+else:
+    print(f"  ✗ bundle re-sign failed: {_r.stderr.strip()}")
+
+del _cs_sp, _cs_gl, _bundle_app, _dylib_glob
