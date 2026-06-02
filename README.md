@@ -4,10 +4,10 @@
 [![GitHub](https://img.shields.io/badge/github-Joe20252030-lightgrey)](https://github.com/Joe20252030/University_Academic_Course_Review_Agent)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-> **Latest release: v0.3.2** — drag-and-drop fixed in standalone built apps:
-> platform-specific tkdnd extension now bundled correctly in PyInstaller
-> packages on both macOS and Windows, with a multi-layer Tcl `auto_path` fix
-> that ensures DnD is available from the very first interpreter start.
+> **Latest release: v0.3.2** — drag-and-drop fixed in standalone builds,
+> dialog close-button fixes, attachment cleanup on session switch and quit,
+> paste temp files moved to the app data folder, and a set of file-system
+> safety hardenings (TOCTOU guards, symlink checks, atomic write improvements).
 > See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 > Visit the **[project website](https://joe20252030.github.io/University_Academic_Course_Review_Agent/)** for an overview.
 
@@ -30,11 +30,14 @@ review materials when you need them through a persistent desktop chat workflow.
 | Area | Change |
 |---|---|
 | **Drag-and-drop fixed in built apps** | Files dragged onto the chat input were silently ignored in PyInstaller-frozen builds on both macOS and Windows — DnD now works correctly in all standalone distributions |
-| **tkdnd bundled as binary (macOS)** | The platform-specific `.dylib` is now listed under `binaries` in the spec so PyInstaller applies proper codesigning; previously it was included as a data file which macOS refuses to `dlopen()` in a signed process context |
-| **tkdnd bundled as binary (Windows)** | The platform-specific `.dll` is now listed under `binaries`; `.tcl` scripts remain as data files — only the current-machine architecture subdirectory is bundled, keeping the installer lean |
-| **`TCLLIBPATH` runtime hook (macOS & Windows)** | Runtime hooks now set `TCLLIBPATH` before any Python code runs; Tcl reads this at interpreter startup and adds the tkdnd directory to `auto_path` before the first package-index scan, fixing the race where `package require tkdnd` failed because `_require()` ran too late |
+| **tkdnd bundled as binary (macOS & Windows)** | The platform-specific `.dylib`/`.dll` is now listed under `binaries` so PyInstaller applies codesigning and dependency analysis; `.tcl` scripts remain as data files |
+| **`TCLLIBPATH` brace-quoting** | Paths are now brace-quoted before insertion into `TCLLIBPATH`, fixing silent DnD failure for Windows users whose username or install path contains spaces |
 | **App Settings `×` button now cancels correctly** | Closing App Settings via the OS window-close button previously applied live-preview theme/font changes permanently; it now routes through `_cancel`, reverting any unsaved changes |
 | **Session Settings `×` button no longer raises `TclError`** | Closing Session Settings via `×` called raw `destroy()`, racing with widget teardown; it now uses `_safe_destroy_toplevel` |
+| **Attachments cleared on session switch and quit** | Pending (unsent) attachments are now discarded when switching to a different session or closing the app; re-clicking the active session to reload preserves the queue |
+| **Paste temp files moved to app data folder** | Clipboard-pasted images are now written to `~/.uacragent/paste_tmp/` instead of the OS temp directory, keeping the app's footprint fully self-contained; stale files from crashes are swept on next launch |
+| **Safe deletion gate for temp files** | Only attachment entries explicitly marked as app-owned (`is_temp_file: true`) are ever deleted — user files are never touched regardless of their filename |
+| **File-system safety hardening** | TOCTOU double-check before `rmtree` in session deletion; unique temp names in atomic writes; symlink guard on output file delete; empty temp file cleanup on paste-save failure; thread-start failure cleanup; `reset_manifest` errors now logged |
 
 Full details in [CHANGELOG.md](CHANGELOG.md).
 

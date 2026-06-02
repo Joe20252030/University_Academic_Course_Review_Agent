@@ -1629,7 +1629,7 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         except Exception:  # noqa: BLE001
             pass
 
-        # ── Step 4: defer destroy by 200 ms ──────────────────────────────
+        # ── Step 5: defer destroy by 200 ms ──────────────────────────────
         # The Tkinter event loop keeps running during this window.  Workers
         # that were mid-stream will see _cancel_event, finish their current
         # iteration, post their final self.after(0, …) callback, and exit the

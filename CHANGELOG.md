@@ -63,6 +63,84 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `_safe_destroy_toplevel`, consistent with the rest of the dialog teardown
   paths.
 
+- **Drag-and-drop broken for users with spaces in their Windows username** —
+  `TCLLIBPATH` was set by bare string concatenation. Tcl parses `TCLLIBPATH` as
+  a whitespace-separated list, so a path such as
+  `C:\Users\John Smith\AppData\...\tkdnd\win-x64` was split at the space,
+  causing the Tcl package scan to look in the wrong directories and
+  `package require tkdnd` to fail silently. Fix: the tkdnd path is now
+  brace-quoted (`{C:/Users/John Smith/.../win-x64}`) in both runtime hooks
+  before being inserted into `TCLLIBPATH`, making it a single list element
+  regardless of spaces. Backslashes are also converted to forward slashes
+  (Tcl's preferred form) on Windows.
+
+- **Paste attachments not cleaned up on session switch or app close** —
+  clipboard-pasted images written to temp files were only deleted after a
+  successful send or when the user explicitly removed the attachment chip.
+  Switching sessions, creating a new session, or quitting the app while the
+  attachment queue was non-empty left the files on disk indefinitely. Fix: a
+  new `_discard_pending_attachments()` helper clears the queue and deletes any
+  owned temp files; it is called on session switch (when switching to a
+  *different* session — re-clicking the active session to reload preserves the
+  queue), on new session creation, and on app close.
+
+- **Paste temp images written to OS temp directory** — clipboard-pasted images
+  were created via `tempfile.mkstemp()` without a `dir` argument, scattering
+  `uacr_paste_*.png` files across the system temp directory (`/tmp`,
+  `%TEMP%`). Fix: all paste temp files now land in
+  `~/.uacragent/paste_tmp/`, an app-owned directory that is stable regardless
+  of the user's custom app data folder setting. A startup sweep deletes any
+  files left by a previous crash.
+
+- **Non-paste attachments could be accidentally deleted** — all cleanup paths
+  used `Path(path).name.startswith("uacr_paste_")` as the deletion predicate.
+  A user file named `uacr_paste_notes.pdf` attached via the + button or
+  drag-and-drop would have matched and been deleted from the user's disk. Fix:
+  only attachment dict entries explicitly marked `"is_temp_file": True` (set
+  only by the `mkstemp` path) are ever deleted; user files are never touched
+  regardless of their name.
+
+### Fixed (file-system safety hardening)
+
+- **TOCTOU race in session deletion** — `delete_session()` checked
+  `workspace.is_symlink()` once, then called `shutil.rmtree(workspace)` several
+  lines later. A concurrent process could have replaced the directory with a
+  symlink in that window, redirecting `rmtree` to an arbitrary location on
+  disk. Fix: `is_symlink()` is re-checked immediately before `rmtree`; a
+  disagreement logs a warning and aborts the deletion.
+
+- **`_atomic_write_text` used a fixed `.tmp` suffix** — two callers writing
+  files with the same stem in the same directory (e.g. a hypothetical future
+  `session.json` and `session_v2.json`) would share the same `.tmp` path and
+  the second write would silently truncate the first. Fix: `_atomic_write_text`
+  now uses `tempfile.NamedTemporaryFile(dir=path.parent, suffix=".tmp",
+  delete=False)` to generate a guaranteed-unique sibling temp file.
+
+- **Output panel delete did not guard against symlinks** — the Delete button in
+  the Generated Outputs panel called `p.unlink()` with no symlink check. A
+  symlink manually placed in the outputs directory would have been removed
+  without warning. Fix: `p.is_symlink()` is checked before `unlink()`; symlinks
+  raise an `OSError` that surfaces as a user-visible error dialog instead of
+  silently removing the entry.
+
+- **Empty temp file leaked when clipboard image save failed** — `mkstemp`
+  creates the file before `cb.save()` is called. If `cb.save()` raised an
+  exception the empty file was orphaned until the next startup sweep. Fix: the
+  except block now deletes `_tmp` before falling through.
+
+- **Paste temp files leaked if background thread failed to start** —
+  `_pending_attachments` is cleared before the worker thread starts. If
+  `Thread.start()` raised (e.g. OS resource exhaustion), the `finally` block
+  inside `_work` never ran and `_tmp_paste_paths` was lost. Fix: `Thread.start()`
+  is now wrapped in a try/except that deletes `_tmp_paste_paths` entries and
+  restores the busy state on failure.
+
+- **`reset_manifest` swallowed failures silently** — an `OSError` (disk full,
+  permission denied) in `reset_manifest` was caught and discarded with no log
+  output, making the failure invisible. Fix: the except block now calls
+  `_vs_logger.warning(…)`, consistent with `_save_manifest`'s existing
+  behaviour.
+
 ---
 
 ## [0.3.1] — 2026-06-01
