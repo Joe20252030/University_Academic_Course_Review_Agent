@@ -32,7 +32,9 @@ fastapi>=0.100
 uvicorn[standard]>=0.23
 
 # ── Desktop UI extras ────────────────────────────────────────────────────────
-tkinterdnd2>=0.3     # optional drag-and-drop support for desktop chat attachments
+tkinterdnd2==0.4.3   # pinned: 0.4.3 uses Tcl-8.6-compatible dylibs; newer releases
+                     # ship libtcl9tkdnd*.dylib (Tcl 9) which cannot be loaded by
+                     # Python 3.13's bundled Tcl 8.6 and breaks DnD in built apps.
 
 # ── Development / testing ─────────────────────────────────────────────────────
 pytest>=8.0

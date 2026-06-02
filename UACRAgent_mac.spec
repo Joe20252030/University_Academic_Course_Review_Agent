@@ -290,7 +290,7 @@ import subprocess as _cs_sp, glob as _cs_gl
 _bundle_app   = str(HERE / "dist" / "UACRAgent.app")
 _dylib_glob   = str(
     HERE / "dist" / "UACRAgent.app" / "Contents" / "Frameworks" /
-    "tkinterdnd2" / "tkdnd" / _tkdnd_subdir / "libtkdnd*.dylib"
+    "tkinterdnd2" / "tkdnd" / _tkdnd_subdir / "*.dylib"
 )
 
 print("INFO: re-signing tkdnd dylib(s) to remove CS_LINKER_SIGNED …")
