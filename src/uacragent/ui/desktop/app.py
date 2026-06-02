@@ -131,9 +131,12 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
             _tkdnd_dir = _os_dnd_diag.path.join(
                 _os_dnd_diag.path.dirname(_tm_diag.__file__), "tkdnd"
             )
-            _log_dnd_diag.getLogger(__name__).debug(
-                "tkdnd frozen-build paths — MEIPASS=%s  tkdnd_dir=%s  exists=%s  "
-                "TCLLIBPATH=%s",
+            # Log at WARNING so these paths always appear in the default log
+            # regardless of UACRAGENT_LOG_LEVEL.  Essential for diagnosing DnD
+            # failures in frozen builds where the underlying TclError is discarded.
+            _log_dnd_diag.getLogger(__name__).warning(
+                "tkdnd frozen-build diagnostic — MEIPASS=%s  tkdnd_dir=%s  "
+                "tkdnd_dir_exists=%s  TCLLIBPATH=%s",
                 _sys_init._MEIPASS,
                 _tkdnd_dir,
                 _os_dnd_diag.path.isdir(_tkdnd_dir),

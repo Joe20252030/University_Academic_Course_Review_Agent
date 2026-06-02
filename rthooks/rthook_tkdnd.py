@@ -43,6 +43,18 @@ if hasattr(sys, "_MEIPASS") and sys.platform == "win32":
         _subdir = "win-x86"
     _tkdnd_dir = os.path.join(_meipass, "tkinterdnd2", "tkdnd", _subdir)
 
+    # Fallback: if the expected arch-specific subdirectory isn't present, scan
+    # for any win-* directory that contains pkgIndex.tcl.
+    if not os.path.isdir(_tkdnd_dir):
+        _tkdnd_root = os.path.join(_meipass, "tkinterdnd2", "tkdnd")
+        if os.path.isdir(_tkdnd_root):
+            for _candidate_name in sorted(os.listdir(_tkdnd_root)):
+                if _candidate_name.startswith("win-"):
+                    _candidate = os.path.join(_tkdnd_root, _candidate_name)
+                    if os.path.isfile(os.path.join(_candidate, "pkgIndex.tcl")):
+                        _tkdnd_dir = _candidate
+                        break
+
     # ── 1. TCLLIBPATH — pre-configure Tcl's auto_path at interpreter start ──
     # Brace-quote the path so Tcl treats it as a single list element even
     # when the directory name contains spaces (e.g. "C:/Users/John Smith/…").

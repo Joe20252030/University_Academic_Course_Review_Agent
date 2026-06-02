@@ -46,6 +46,19 @@ if hasattr(sys, "_MEIPASS") and sys.platform == "darwin":
     _subdir = "osx-arm64" if _machine == "arm64" else "osx-x64"
     _tkdnd_dir = os.path.join(_meipass, "tkinterdnd2", "tkdnd", _subdir)
 
+    # Fallback: if the expected arch-specific subdirectory isn't present (e.g.
+    # a future tkinterdnd2 version reorganises its layout), scan for any
+    # osx-* directory that contains pkgIndex.tcl and use the first one found.
+    if not os.path.isdir(_tkdnd_dir):
+        _tkdnd_root = os.path.join(_meipass, "tkinterdnd2", "tkdnd")
+        if os.path.isdir(_tkdnd_root):
+            for _candidate_name in sorted(os.listdir(_tkdnd_root)):
+                if _candidate_name.startswith("osx-"):
+                    _candidate = os.path.join(_tkdnd_root, _candidate_name)
+                    if os.path.isfile(os.path.join(_candidate, "pkgIndex.tcl")):
+                        _tkdnd_dir = _candidate
+                        break
+
     # ── 1. TCLLIBPATH — pre-configure Tcl's auto_path at interpreter start ──
     # Tcl reads TCLLIBPATH at startup and prepends each entry to auto_path
     # BEFORE the first package-index scan.  This is the most reliable way to
