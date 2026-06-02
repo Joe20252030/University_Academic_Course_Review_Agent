@@ -30,7 +30,8 @@ review materials when you need them through a persistent desktop chat workflow.
 | Area | Change |
 |---|---|
 | **Drag-and-drop fixed in built apps** | Files dragged onto the chat input were silently ignored in PyInstaller-frozen builds on both macOS and Windows — DnD now works correctly in all standalone distributions |
-| **tkdnd bundled as binary (macOS & Windows)** | The platform-specific `.dylib`/`.dll` is now listed under `binaries` so PyInstaller applies codesigning and dependency analysis; `.tcl` scripts remain as data files |
+| **`tkinterdnd2` pinned to 0.4.3** | Newer tkinterdnd2 releases ship a Tcl-9-compiled dylib (`libtcl9tkdnd*.dylib`) that cannot be loaded by Python 3.13's bundled Tcl 8.6; 0.4.3 is the last Tcl-8.6-compatible release |
+| **macOS: post-bundle dylib re-signing** | The tkdnd dylib carries a `CS_LINKER_SIGNED` flag that macOS rejects inside a codesigned app bundle; the spec now re-signs it with a plain ad-hoc signature after bundling |
 | **`TCLLIBPATH` brace-quoting** | Paths are now brace-quoted before insertion into `TCLLIBPATH`, fixing silent DnD failure for Windows users whose username or install path contains spaces |
 | **App Settings `×` button now cancels correctly** | Closing App Settings via the OS window-close button previously applied live-preview theme/font changes permanently; it now routes through `_cancel`, reverting any unsaved changes |
 | **Session Settings `×` button no longer raises `TclError`** | Closing Session Settings via `×` called raw `destroy()`, racing with widget teardown; it now uses `_safe_destroy_toplevel` |

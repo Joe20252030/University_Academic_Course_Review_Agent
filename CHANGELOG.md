@@ -15,37 +15,47 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Drag-and-drop broken in standalone built apps** — files dragged onto the
   chat input were silently ignored in PyInstaller-frozen builds. Root cause
-  (two layers):
+  (three layers, all fixed):
 
-  1. *Wrong bundle type for the tkdnd extension.* The previous spec files
-     included the entire `tkinterdnd2` package directory as a data file.
-     On macOS, `dlopen()` refuses to load a dylib that lacks a valid code
-     signature in a signed process context, and PyInstaller only applies
-     binary processing (codesigning, dependency analysis) to entries listed
-     under `binaries`, not `datas`. On Windows the DLL search path was not
-     set up early enough. Fix: both spec files now split the platform-specific
-     extension directory into `binaries` (`.dylib` / `.dll`) and `datas`
-     (`.tcl` scripts). The dylibs/DLLs are code-signed and dependency-analysed
-     correctly; the Tcl scripts are copied verbatim.
+  1. *Tcl's `auto_path` scan completed before tkinterdnd2 could register
+     itself.* In a frozen build the Tcl interpreter is fully initialised
+     (including its initial `pkgIndex.tcl` scan) before Python imports
+     `tkinterdnd2`, so `tkinterdnd2._require()`'s `lappend auto_path` call
+     arrived too late. Fix: both runtime hooks now set `TCLLIBPATH` before any
+     Python code runs. Tcl reads `TCLLIBPATH` at interpreter startup — before
+     the first package-index scan — and prepends each listed path to
+     `auto_path`, guaranteeing that `pkgIndex.tcl` is found on the very first
+     `package require tkdnd` call.
 
-  2. *Tcl's `auto_path` scan completed before tkinterdnd2 could register
-     itself.* `tkinterdnd2._require()` appends the tkdnd directory to Tcl's
-     `auto_path` at import time, but in a frozen build the Tcl interpreter is
-     fully initialised (including its initial `pkgIndex.tcl` scan) before
-     Python imports `tkinterdnd2`. A subsequent `package require tkdnd` then
-     fails because the tkdnd directory was never scanned. Fix: both runtime
-     hooks (`rthook_tkdnd.py` on Windows, `rthook_tkdnd_mac.py` on macOS) now
-     set the `TCLLIBPATH` environment variable before any Python code runs.
-     Tcl reads `TCLLIBPATH` at interpreter *startup* — before the first
-     package-index scan — and prepends each listed path to `auto_path`,
-     guaranteeing that `pkgIndex.tcl` is found on the very first
-     `package require tkdnd`.
+  2. *`CS_LINKER_SIGNED` flag on the macOS dylib prevented loading.* The tkdnd
+     dylib from the tkinterdnd2 wheel carries `CS_LINKER_SIGNED`
+     (`flags=0x20002`), a signature flag set by Apple's linker at build time.
+     macOS refuses `dlopen()` of a linker-signed dylib inside an app bundle
+     that was signed separately (even with an ad-hoc signature) — the signing
+     contexts are treated as incompatible. Fix: both spec files bundle the
+     platform-specific extension directory (dylib and `.tcl` scripts) entirely
+     as `datas` to guarantee exact placement at the path `pkgIndex.tcl`
+     expects. A post-bundle `codesign --force --sign -` step then re-signs the
+     dylib with a plain ad-hoc signature, removing `CS_LINKER_SIGNED`, followed
+     by a `codesign --force --deep --sign -` pass to keep the outer bundle
+     signature consistent.
 
-  The Windows runtime hook now uses a three-layer strategy: `TCLLIBPATH`
+  3. *`tkinterdnd2>=0.3` resolves to a Tcl-9-incompatible version.* Newer
+     releases of tkinterdnd2 ship `libtcl9tkdnd*.dylib`, compiled against
+     Tcl 9. Python 3.13's bundled Tcl is version 8.6; attempting to load a
+     Tcl 9 extension under Tcl 8.6 raises a `TclError` silently wrapped as
+     "Unable to load tkdnd library." Fix: `requirements.txt` now pins
+     `tkinterdnd2==0.4.3`, the last release whose dylib is Tcl-8.6-compatible
+     (`libtkdnd2.9.3.dylib`). This pin must be revisited if a future Python
+     version upgrades its bundled Tcl to 9.
+
+  The Windows runtime hook uses a three-layer strategy: `TCLLIBPATH`
   (primary), `PATH` prepend (DLL dependency resolution for `LoadLibrary`),
-  and `os.add_dll_directory()` (belt-and-suspenders for Python-level DLL
-  loading). The macOS runtime hook uses two layers: `TCLLIBPATH` (primary)
-  and `DYLD_FALLBACK_LIBRARY_PATH` (belt-and-suspenders).
+  and `os.add_dll_directory()` (belt-and-suspenders). The macOS runtime hook
+  uses two layers: `TCLLIBPATH` (primary) and `DYLD_FALLBACK_LIBRARY_PATH`
+  (belt-and-suspenders). Both hooks include a fallback scan that finds the
+  correct platform subdirectory even if the naming convention changes in a
+  future tkinterdnd2 release.
 
 - **App Settings `×` close button applied live-preview changes permanently** —
   closing the App Settings dialog via the OS window-close button (`×`) called
