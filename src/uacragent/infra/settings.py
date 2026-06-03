@@ -172,6 +172,8 @@ _KNOWN_ALIASES: frozenset[str] = frozenset({
     # Logging / API hardening — not pydantic-settings fields but recognised app env vars.
     "UACRAGENT_LOG_LEVEL",
     "UACRAGENT_ALLOWED_BASE_DIR",
+    "UACRAGENT_BIND_HOST",
+    "UACRAGENT_API_WORKSPACE_TTL_HOURS",
     # OpenAI conversation storage opt-in.
     "OPENAI_STORE_RESPONSES", "openai_store_responses",
 })
