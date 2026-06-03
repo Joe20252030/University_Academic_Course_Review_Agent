@@ -274,6 +274,11 @@ def _check_ocr_available() -> bool:
         return False
 
 
+# python-pptx MSO_SHAPE_TYPE.PICTURE value.  Defined as a module constant so
+# the magic number appears exactly once and is clearly labelled.
+_MSO_PICTURE_TYPE: int = 13
+
+
 def _ocr_slide_images(slide: object) -> list[str]:
     """Run Tesseract OCR on all image shapes in *slide*.
 
@@ -290,7 +295,7 @@ def _ocr_slide_images(slide: object) -> list[str]:
         for shape in slide.shapes:  # type: ignore[attr-defined]
             try:
                 # Only process picture shapes that expose image bytes.
-                if not shape.shape_type == 13:  # MSO_SHAPE_TYPE.PICTURE = 13
+                if shape.shape_type != _MSO_PICTURE_TYPE:
                     continue
                 img_bytes = shape.image.blob
                 img = _PILImage.open(_io.BytesIO(img_bytes)).convert("RGB")

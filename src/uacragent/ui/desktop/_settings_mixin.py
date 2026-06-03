@@ -2063,9 +2063,10 @@ class SettingsMixin:
     def _on_pick_exam_info(self) -> None:
         path = filedialog.askopenfilename(
             title=self._t("pick_exam_info_title"),
-            filetypes=[("All supported", "*.pdf *.txt *.md *.docx"),
+            filetypes=[("All supported", "*.pdf *.txt *.md *.docx *.pptx *.ppt"),
                        ("PDF", "*.pdf"), ("Text", "*.txt"),
-                       ("Markdown", "*.md"), ("Word", "*.docx")])
+                       ("Markdown", "*.md"), ("Word", "*.docx"),
+                       ("Presentations", "*.pptx *.ppt")])
         if path:
             self._exam_info_path_var.set(path)
             if hasattr(self, "_exam_info_path_label"):

@@ -1620,6 +1620,20 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         except Exception:  # noqa: BLE001
             pass
 
+        # ── Step 3b: clean up any in-progress update download ────────────
+        # If the user closes the app while a .dmg/.exe is being downloaded,
+        # the daemon download thread is killed by the process exit.  Delete
+        # the partial file so it does not linger in the OS temp directory.
+        # _pending_update_path is set by _show_update_dialog when a download
+        # starts and cleared when apply_update() succeeds or fails cleanly.
+        try:
+            _up = getattr(self, "_pending_update_path", None)
+            if _up is not None:
+                Path(_up).unlink(missing_ok=True)
+                self._pending_update_path = None
+        except Exception:  # noqa: BLE001
+            pass
+
         # ── Step 4: save session and clear secrets ────────────────────────
         # _save_current_session() returns False when the write fails.
         # A blocking native dialog is the only reliable way to show the error
@@ -1732,7 +1746,7 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
             self.update_idletasks()
             px, py = self.winfo_rootx(), self.winfo_rooty()
             pw, ph = self.winfo_width(), self.winfo_height()
-            dw, dh = 480, 360
+            dw, dh = 420, 240
             dlg.geometry(f"{dw}x{dh}+{px + (pw - dw)//2}+{py + (ph - dh)//2}")
 
             # Keep on top of the main window but not system-modal
@@ -1748,35 +1762,45 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
 
             dlg.protocol("WM_DELETE_WINDOW", _on_dlg_close)
 
-            # Release notes -- show first 400 chars to keep dialog compact
-            notes = getattr(info, "body", "") or ""
-            notes_preview = (notes[:400] + "…") if len(notes) > 400 else notes
-
-            body_text = self._t("update_available_body").format(
-                current=_running_version(),
-                new=getattr(info, "version", ""),
-                notes=notes_preview,
-            )
+            html_url = getattr(info, "html_url", "") or ""
 
             # --- Title label ---
             tk.Label(
                 dlg, text=self._t("update_available_title"),
                 bg=c["text_bg"], fg=c["btn_primary_bg"],
                 font=("TkDefaultFont", 15, "bold"),
-                anchor="w", padx=20, pady=(14, 0),
-            ).pack(fill="x", pady=(14, 0))
+                anchor="w", padx=20,
+            ).pack(fill="x", pady=(16, 0))
 
-            # --- Body text ---
-            body_lbl = tk.Text(
-                dlg, wrap="word", relief="flat", bd=0, highlightthickness=0,
+            # --- Version info ---
+            body_text = self._t("update_available_body").format(
+                current=_running_version(),
+                new=getattr(info, "version", ""),
+            )
+            tk.Label(
+                dlg, text=body_text,
                 bg=c["text_bg"], fg=c["text_fg"],
                 font=("TkDefaultFont", 12),
-                padx=20, pady=8, height=9,
-                state="normal",
-            )
-            body_lbl.insert("1.0", body_text)
-            body_lbl.configure(state="disabled")
-            body_lbl.pack(fill="both", expand=True)
+                justify="left", anchor="w", padx=20,
+            ).pack(fill="x", pady=(8, 0))
+
+            # --- Release notes link (opens browser) ---
+            if html_url:
+                import webbrowser as _wb
+                link_lbl = tk.Label(
+                    dlg,
+                    text=self._t("update_release_notes_link"),
+                    bg=c["text_bg"],
+                    fg=c.get("link_fg", "#1b3167"),
+                    font=("TkDefaultFont", 11, "underline"),
+                    cursor="hand2",
+                    anchor="w", padx=20,
+                )
+                link_lbl.pack(fill="x", pady=(6, 0))
+                link_lbl.bind(
+                    "<Button-1>",
+                    lambda _e, u=html_url: _wb.open(u),
+                )
 
             # --- Status label (shown during download) ---
             _status_var = tk.StringVar(value="")
@@ -1823,18 +1847,54 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
                         self.after(0, lambda e=str(exc): _on_download_failed(e))
 
                 def _on_download_done(dl_path) -> None:
+                    import sys as _sys_upd
+                    # Track the path so _on_close() can remove it if the app
+                    # is closed before the installer has finished running.
+                    self._pending_update_path = dl_path
+
                     try:
                         _status_var.set(self._t("update_download_done"))
-                        if sys.platform == "darwin":
-                            self.after(500, lambda p=dl_path: (
-                                apply_update(p),
-                                _status_var.set(self._t("update_mac_open_msg")),
-                            ))
-                        else:
+                    except Exception:
+                        pass
+
+                    def _apply_now(path=dl_path) -> None:
+                        """Call apply_update() with proper error handling.
+
+                        Runs inside a Tkinter after() callback so exceptions
+                        must be caught here — they cannot propagate to the
+                        outer try/except in _on_download_done().
+                        """
+                        try:
+                            apply_update(path)
+                            # macOS: DMG opened in Finder; app keeps running.
+                            # Clear the tracker — file is now managed by the
+                            # user (they'll eject/delete the DMG themselves).
+                            self._pending_update_path = None
+                            try:
+                                _status_var.set(self._t("update_mac_open_msg"))
+                            except Exception:
+                                pass
+                            # Windows: apply_update() calls sys.exit(0) so
+                            # execution never reaches here on Windows.
+                        except Exception as exc:
+                            # apply_update() failed (e.g. subprocess error,
+                            # file was quarantined by antivirus).
+                            # Delete the downloaded file and show the error.
+                            self._pending_update_path = None
+                            try:
+                                Path(path).unlink(missing_ok=True)
+                            except Exception:
+                                pass
+                            _on_download_failed(str(exc))
+
+                    if _sys_upd.platform == "darwin":
+                        self.after(500, _apply_now)
+                    else:
+                        try:
                             _status_var.set(self._t("update_win_launch_msg"))
-                            self.after(1000, lambda p=dl_path: apply_update(p))
-                    except Exception as exc:
-                        _on_download_failed(str(exc))
+                        except Exception:
+                            pass
+                        self.after(1000, _apply_now)
 
                 def _on_download_failed(error: str) -> None:
                     _status_var.set(

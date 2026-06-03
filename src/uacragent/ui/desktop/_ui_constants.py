@@ -31,10 +31,10 @@ _SESSION_LIST_WIDTH = 220
 _SUPPORTED_FILETYPES = [
     # Keep this list in sync with DocumentLoader.load_single_file() in infra/loaders.py.
     ("All supported",
-     "*.pdf *.docx *.pptx *.txt *.md *.csv *.py *.js *.ts *.html *.htm *.xml *.json"),
+     "*.pdf *.docx *.pptx *.ppt *.txt *.md *.csv *.py *.js *.ts *.html *.htm *.xml *.json"),
     ("PDF files",           "*.pdf"),
     ("Word documents",      "*.docx"),
-    ("Presentations",       "*.pptx"),
+    ("Presentations",       "*.pptx *.ppt"),
     ("Text / Markdown",     "*.txt *.md"),
     ("CSV files",           "*.csv"),
     ("Code files",          "*.py *.js *.ts"),
@@ -522,9 +522,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "update_available_body": (
             "A new version of UACRAgent is available!\n\n"
             "Current version : {current}\n"
-            "New version     : {new}\n\n"
-            "{notes}"
+            "New version     : {new}"
         ),
+        "update_release_notes_link": "View release notes ↗",
         "update_now_btn":          "Update Now",
         "update_later_btn":        "Remind Me Later",
         "update_skip_btn":         "Skip This Version",
@@ -960,9 +960,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "update_available_body": (
             "UACRAgent 有新版本可用！\n\n"
             "当前版本：{current}\n"
-            "新版本：  {new}\n\n"
-            "{notes}"
+            "新版本：  {new}"
         ),
+        "update_release_notes_link": "查看更新说明 ↗",
         "update_now_btn":          "立即更新",
         "update_later_btn":        "稍后提醒",
         "update_skip_btn":         "跳过此版本",

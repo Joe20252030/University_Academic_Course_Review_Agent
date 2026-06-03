@@ -213,9 +213,9 @@ class ChatMixin:
         paths = filedialog.askopenfilenames(
             title=self._t("attach_files_title"),
             filetypes=[
-                (self._t("attach_supported"), "*.png *.jpg *.jpeg *.gif *.webp *.bmp *.pdf *.docx *.pptx *.txt *.md *.py *.csv *.json *.xml *.html"),
+                (self._t("attach_supported"), "*.png *.jpg *.jpeg *.gif *.webp *.bmp *.pdf *.docx *.pptx *.ppt *.txt *.md *.py *.csv *.json *.xml *.html"),
                 (self._t("attach_images"),    "*.png *.jpg *.jpeg *.gif *.webp *.bmp"),
-                (self._t("attach_docs"),      "*.pdf *.docx *.pptx"),
+                (self._t("attach_docs"),      "*.pdf *.docx *.pptx *.ppt"),
                 (self._t("attach_text"),      "*.txt *.md *.py *.csv *.json"),
                 (self._t("attach_all"),       "*.*"),
             ],
@@ -1443,6 +1443,14 @@ class ChatMixin:
             return
         display_error = _truncate_error(error)
         self._append_chat("system", self._t("chat_error").format(error=display_error))
+
+        # Save the session now so the human turn (already appended to history
+        # by agent.chat()) is not lost if the app is force-killed before the
+        # next successful send.  This also ensures any stabilised paste images
+        # copied to chat_images/ are referenced in the persisted session, so
+        # they are never orphaned on disk.
+        self._save_current_session()
+
         error_lower = error.lower()
         if any(k in error_lower for k in ("api key", "api_key", "invalid_argument",
                                            "authentication", "permission_denied",

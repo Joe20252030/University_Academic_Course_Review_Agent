@@ -1,8 +1,23 @@
 ; UACRAgent Inno Setup script
-; Build: pyinstaller UACRAgent_win.spec, then iscc UACRAgent_installer.iss
+;
+; Build sequence:
+;   pyinstaller UACRAgent_win.spec
+;   iscc /DAppVersion=X.Y.Z UACRAgent_installer.iss
+;
+; The version MUST be passed on the command line so the output filename
+; matches the pattern the auto-updater looks for:
+;   UACRAgent-vX.Y.Z-windows-x64-setup.exe
+;
+; In CI (e.g. GitHub Actions) extract the version from pyproject.toml:
+;   VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+;   iscc /DAppVersion=$VERSION UACRAgent_installer.iss
+
+#ifndef AppVersion
+  ; Fallback: let the build fail loudly rather than silently use a stale version.
+  #error "AppVersion must be defined via the command line: iscc /DAppVersion=X.Y.Z"
+#endif
 
 #define AppName      "UACRAgent"
-#define AppVersion   "0.3.2"
 #define AppPublisher "Lizhuo Xu"
 #define AppURL       "https://joe20252030.github.io/University_Academic_Course_Review_Agent/"
 #define AppExeName   "UACRAgent.exe"
@@ -22,7 +37,8 @@ DefaultGroupName={#AppName}
 AllowNoIcons=yes
 LicenseFile=LICENSE
 OutputDir=installer_output
-OutputBaseFilename=UACRAgent-{#AppVersion}-windows-setup
+; Filename must match the auto-updater asset pattern: UACRAgent-v{version}-windows-x64-setup.exe
+OutputBaseFilename=UACRAgent-v{#AppVersion}-windows-x64-setup
 SetupIconFile=assets\logo.ico
 Compression=lzma2/ultra64
 SolidCompression=yes

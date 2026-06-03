@@ -33,6 +33,7 @@ import logging
 import os
 import sys
 import tempfile
+import time
 import urllib.request
 import urllib.error
 from collections.abc import Callable
@@ -114,25 +115,15 @@ def _running_version() -> str:
 # ---------------------------------------------------------------------------
 # Skipped-version persistence
 # ---------------------------------------------------------------------------
+# These are thin re-exports of the canonical implementations in persistence.py.
+# Both modules are in the same package (infra/) with no circular dependency,
+# so a direct import is safe.  app.py imports these from updater.py for
+# locality; persistence.py is the single source of truth for config I/O.
 
-def get_skipped_update_version() -> str:
-    """Return the version tag the user chose to skip, or empty string."""
-    try:
-        from uacragent.infra.persistence import _load_config  # noqa: PLC0415
-        return _load_config().get("skipped_update_version", "")
-    except Exception:
-        return ""
-
-
-def set_skipped_update_version(tag: str) -> None:
-    """Persist a version tag so the updater never prompts for it again."""
-    try:
-        from uacragent.infra.persistence import _load_config, _save_config  # noqa: PLC0415
-        cfg = _load_config()
-        cfg["skipped_update_version"] = tag
-        _save_config(cfg)
-    except Exception as exc:
-        logger.warning("Could not persist skipped update version: %s", exc)
+from uacragent.infra.persistence import (  # noqa: E402
+    get_skipped_update_version,
+    set_skipped_update_version,
+)
 
 
 def clear_skipped_update_version() -> None:
@@ -197,6 +188,9 @@ def check_for_update() -> UpdateInfo | None:
     remote_version = tag.lstrip("v")
     current_version = _running_version()
 
+    # Tuple comparison is element-wise (major, minor, patch), so this
+    # triggers for ANY version strictly greater than the current one --
+    # e.g. 0.3.2 → 0.3.3, 0.4.0, 1.0.0 all pass equally.
     if _parse_version(remote_version) <= _parse_version(current_version):
         logger.debug(
             "No update: current=%s, latest=%s", current_version, remote_version
@@ -339,7 +333,6 @@ def apply_update(downloaded_path: Path) -> None:
             close_fds=True,
         )
         # Give the OS a moment to start the installer before we exit.
-        import time
         time.sleep(0.5)
         sys.exit(0)
 
