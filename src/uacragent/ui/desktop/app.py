@@ -33,6 +33,7 @@ variables are initialised once in ``ConversationApp.__init__`` and
 from __future__ import annotations
 
 import os
+import sys
 import threading
 import time
 import tkinter as tk
@@ -340,6 +341,11 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         # Show privacy notice on first launch (deferred so the main window
         # is fully visible and positioned before the modal dialog appears).
         self.after(200, self._check_privacy_consent)
+
+        # Schedule a silent background update check 4 seconds after launch.
+        # The delay avoids adding any perceived startup latency; the check
+        # runs in a daemon thread so it never blocks the UI.
+        self.after(4000, self._start_update_check)
 
     # ------------------------------------------------------------------
     # StringVar initialisation (settings fields)
@@ -733,12 +739,11 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         # individually in _append_chat via _bind_chat_scroll).
         # Guards prevent any scroll when content fully fits in the viewport
         # (lo==0 and hi==1) and stop over-scroll past either end.
-        import sys as _sys_plat
-        if _sys_plat.platform.startswith("darwin"):
+        if sys.platform.startswith("darwin"):
             self._msg_canvas.bind(
                 "<MouseWheel>",
                 lambda e: self._bounded_chat_scroll(int(-1 * e.delta)))
-        elif _sys_plat.platform.startswith("win"):
+        elif sys.platform.startswith("win"):
             self._msg_canvas.bind(
                 "<MouseWheel>",
                 lambda e: self._bounded_chat_scroll(int(-1 * (e.delta / 120))))
@@ -1654,6 +1659,241 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         except tk.TclError as exc:
             if "can't delete Tcl command" not in str(exc):
                 raise
+
+    # ------------------------------------------------------------------
+    # Auto-updater
+    # ------------------------------------------------------------------
+
+    def _start_update_check(self) -> None:
+        """Kick off a silent background update check.
+
+        Runs in a daemon thread so it never blocks the Tkinter main loop.
+        If a newer release is found the result is dispatched back to the
+        main thread via ``after(0, ...)`` to show the update dialog.
+        """
+        import threading as _threading
+
+        def _check() -> None:
+            try:
+                from uacragent.infra.updater import check_for_update
+                info = check_for_update()
+            except Exception:
+                info = None
+            if info is not None:
+                try:
+                    self.after(0, lambda i=info: self._show_update_dialog(i))
+                except Exception:
+                    pass
+
+        _threading.Thread(target=_check, daemon=True, name="update-check").start()
+
+    def _show_update_dialog(self, info: object) -> None:
+        """Show a non-blocking Toplevel dialog when a newer release is found.
+
+        The dialog offers three actions:
+          Update Now   -- downloads the asset and opens/launches the installer.
+          Remind Later -- dismisses without persisting anything (will prompt again
+                          on the next launch).
+          Skip Version -- persists the tag in config.json so this release never
+                          prompts again.
+        """
+        import threading as _threading
+
+        try:
+            from uacragent.infra.updater import (
+                download_update, apply_update,
+                set_skipped_update_version, _running_version,
+            )
+        except Exception:
+            return
+
+        # -----------------------------------------------------------------
+        # Guard: do not open a second dialog if one is already visible.
+        # -----------------------------------------------------------------
+        if getattr(self, "_update_dialog", None) is not None:
+            try:
+                if self._update_dialog.winfo_exists():  # type: ignore[attr-defined]
+                    return
+            except Exception:
+                pass
+
+        try:
+            from ._ui_constants import _THEME_COLORS
+            _mode = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
+            c = _THEME_COLORS.get(_mode, _THEME_COLORS["light"])
+
+            dlg = tk.Toplevel(self)
+            self._update_dialog = dlg
+            dlg.title(self._t("update_available_title"))
+            dlg.resizable(False, False)
+            dlg.configure(bg=c["text_bg"])
+
+            # Center over main window
+            self.update_idletasks()
+            px, py = self.winfo_rootx(), self.winfo_rooty()
+            pw, ph = self.winfo_width(), self.winfo_height()
+            dw, dh = 480, 360
+            dlg.geometry(f"{dw}x{dh}+{px + (pw - dw)//2}+{py + (ph - dh)//2}")
+
+            # Keep on top of the main window but not system-modal
+            dlg.transient(self)
+
+            # Close guard
+            def _on_dlg_close():
+                try:
+                    dlg.destroy()
+                except Exception:
+                    pass
+                self._update_dialog = None
+
+            dlg.protocol("WM_DELETE_WINDOW", _on_dlg_close)
+
+            # Release notes -- show first 400 chars to keep dialog compact
+            notes = getattr(info, "body", "") or ""
+            notes_preview = (notes[:400] + "…") if len(notes) > 400 else notes
+
+            body_text = self._t("update_available_body").format(
+                current=_running_version(),
+                new=getattr(info, "version", ""),
+                notes=notes_preview,
+            )
+
+            # --- Title label ---
+            tk.Label(
+                dlg, text=self._t("update_available_title"),
+                bg=c["text_bg"], fg=c["btn_primary_bg"],
+                font=("TkDefaultFont", 15, "bold"),
+                anchor="w", padx=20, pady=(14, 0),
+            ).pack(fill="x", pady=(14, 0))
+
+            # --- Body text ---
+            body_lbl = tk.Text(
+                dlg, wrap="word", relief="flat", bd=0, highlightthickness=0,
+                bg=c["text_bg"], fg=c["text_fg"],
+                font=("TkDefaultFont", 12),
+                padx=20, pady=8, height=9,
+                state="normal",
+            )
+            body_lbl.insert("1.0", body_text)
+            body_lbl.configure(state="disabled")
+            body_lbl.pack(fill="both", expand=True)
+
+            # --- Status label (shown during download) ---
+            _status_var = tk.StringVar(value="")
+            _status_lbl = tk.Label(
+                dlg, textvariable=_status_var,
+                bg=c["text_bg"], fg=c.get("status_fg", "#6b7280"),
+                font=("TkDefaultFont", 11, "italic"),
+                padx=20, pady=0,
+            )
+            _status_lbl.pack(fill="x")
+
+            # --- Buttons ---
+            btn_row = tk.Frame(dlg, bg=c["text_bg"])
+            btn_row.pack(fill="x", padx=20, pady=(4, 16))
+
+            from ._custom_widgets import _RoundedChip
+
+            def _do_update_now():
+                """Download in background; apply when done."""
+                _update_btn.set_state(False)
+                _later_btn.set_state(False)
+                _skip_btn.set_state(False)
+                _status_var.set(
+                    self._t("update_downloading").format(
+                        version=getattr(info, "version", "")
+                    )
+                )
+
+                def _progress_cb(received: int, total: int) -> None:
+                    if total > 0:
+                        pct = int(received * 100 / total)
+                        try:
+                            self.after(0, lambda p=pct: _status_var.set(
+                                self._t("update_download_progress").format(pct=p)
+                            ))
+                        except Exception:
+                            pass
+
+                def _download_worker() -> None:
+                    try:
+                        dl_path = download_update(info, progress_cb=_progress_cb)
+                        self.after(0, lambda p=dl_path: _on_download_done(p))
+                    except Exception as exc:
+                        self.after(0, lambda e=str(exc): _on_download_failed(e))
+
+                def _on_download_done(dl_path) -> None:
+                    try:
+                        _status_var.set(self._t("update_download_done"))
+                        if sys.platform == "darwin":
+                            self.after(500, lambda p=dl_path: (
+                                apply_update(p),
+                                _status_var.set(self._t("update_mac_open_msg")),
+                            ))
+                        else:
+                            _status_var.set(self._t("update_win_launch_msg"))
+                            self.after(1000, lambda p=dl_path: apply_update(p))
+                    except Exception as exc:
+                        _on_download_failed(str(exc))
+
+                def _on_download_failed(error: str) -> None:
+                    _status_var.set(
+                        self._t("update_download_failed").format(error=error)
+                    )
+                    _later_btn.set_state(True)
+
+                _threading.Thread(
+                    target=_download_worker, daemon=True, name="update-dl"
+                ).start()
+
+            def _do_later():
+                _on_dlg_close()
+
+            def _do_skip():
+                try:
+                    set_skipped_update_version(getattr(info, "tag", ""))
+                except Exception:
+                    pass
+                _on_dlg_close()
+
+            _update_btn = _RoundedChip(
+                btn_row,
+                text=self._t("update_now_btn"),
+                chip_bg=c["btn_primary_bg"], chip_fg=c["btn_primary_fg"],
+                parent_bg=c["text_bg"],
+                font=("TkDefaultFont", 12, "bold"),
+                padx=14, pady=6,
+                hover_bg=c.get("btn_primary_hover", "#e8961a"),
+                command=_do_update_now,
+            )
+            _update_btn.pack(side="left", padx=(0, 8))
+
+            _later_btn = _RoundedChip(
+                btn_row,
+                text=self._t("update_later_btn"),
+                chip_bg=c.get("qa_bg", "#edf0f8"), chip_fg=c["text_fg"],
+                parent_bg=c["text_bg"],
+                font=("TkDefaultFont", 12),
+                padx=12, pady=6,
+                hover_bg=c.get("qa_bg_hover", "#dce3f2"),
+                command=_do_later,
+            )
+            _later_btn.pack(side="left", padx=(0, 8))
+
+            _skip_btn = _RoundedChip(
+                btn_row,
+                text=self._t("update_skip_btn"),
+                chip_bg=c["text_bg"], chip_fg=c.get("status_fg", "#9aa5be"),
+                parent_bg=c["text_bg"],
+                font=("TkDefaultFont", 11),
+                padx=10, pady=6,
+                hover_bg=c.get("qa_bg", "#edf0f8"),
+                command=_do_skip,
+            )
+            _skip_btn.pack(side="left")
+
+        except Exception:
+            self._update_dialog = None
 
     # ------------------------------------------------------------------
     # Paste-temp housekeeping

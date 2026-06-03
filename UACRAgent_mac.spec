@@ -84,6 +84,65 @@ datas += collect_data_files("fpdf")
 # python-docx / docx2txt
 datas += collect_data_files("docx")
 
+# python-pptx (PowerPoint support)
+try:
+    datas         += collect_data_files("pptx")
+    hiddenimports += collect_submodules("pptx")
+    hiddenimports += ["pptx", "pptx.util", "pptx.presentation",
+                      "pptx.shapes.autoshape", "pptx.shapes.picture"]
+except Exception as _e:
+    print(f"WARNING: python-pptx collection failed: {_e}")
+
+# pytesseract
+hiddenimports += ["pytesseract"]
+
+# ---------------------------------------------------------------------------
+# Tesseract binary + language data (for image OCR in .pptx slides)
+# ---------------------------------------------------------------------------
+# Strategy: locate the Tesseract binary installed on the BUILD machine and
+# bundle it alongside its tessdata directory.  Only the English language pack
+# (eng.traineddata) is included to keep the bundle lean; add more .traineddata
+# files here if additional language support is needed.
+#
+# Expected Homebrew locations:
+#   Apple Silicon : /opt/homebrew/bin/tesseract  + /opt/homebrew/share/tessdata/
+#   Intel Mac     : /usr/local/bin/tesseract    + /usr/local/share/tessdata/
+#
+# rthook_tesseract.py configures TESSDATA_PREFIX and pytesseract.tesseract_cmd
+# at runtime so application code never needs to know the bundled path.
+
+import shutil as _shutil
+_tess_bin = (
+    _shutil.which("tesseract")
+    or "/opt/homebrew/bin/tesseract"
+    or "/usr/local/bin/tesseract"
+)
+_tess_bin_path = Path(_tess_bin) if _tess_bin and Path(_tess_bin).is_file() else None
+
+if _tess_bin_path:
+    binaries += [(str(_tess_bin_path), ".")]
+    # Tessdata directory: resolve relative to binary location.
+    _possible_tessdata = [
+        _tess_bin_path.parent.parent / "share" / "tessdata",  # Homebrew
+        Path("/usr/share/tessdata"),                            # macOS system
+        Path("/usr/local/share/tessdata"),                      # Homebrew Intel
+    ]
+    _tessdata_dir = next(
+        (p for p in _possible_tessdata if (p / "eng.traineddata").is_file()),
+        None,
+    )
+    if _tessdata_dir:
+        # Bundle only English by default; add more traineddata files here if needed.
+        _eng_data = _tessdata_dir / "eng.traineddata"
+        datas += [(str(_eng_data), "tessdata")]
+        print(f"INFO: Bundling Tesseract from {_tess_bin_path}, tessdata from {_tessdata_dir}")
+    else:
+        print("WARNING: eng.traineddata not found — OCR will be unavailable in the built app.")
+else:
+    print("WARNING: tesseract binary not found on PATH or in Homebrew locations.")
+    print("         Install with:  brew install tesseract")
+    print("         OCR on PPTX image slides will be unavailable in the built app.")
+
 # tkinterdnd2 — bundle the platform-specific tkdnd extension correctly.
 #
 # Both the dylib AND the .tcl scripts go into datas, not binaries.
@@ -175,7 +234,8 @@ hiddenimports += [
     "uacragent.infra.settings",
     "uacragent.infra.llm",
     "uacragent.infra.auth",
-    "uacragent.infra.loaders",                # document loader (PDF/DOCX/txt…)
+    "uacragent.infra.loaders",                # document loader (PDF/DOCX/PPTX/txt…)
+    "uacragent.infra.updater",                # auto-updater (GitHub Releases)
     "uacragent.infra.workspace",              # WorkspacePaths dataclass
     # ── export ────────────────────────────────────────────────────────────
     "uacragent.export.docx",
@@ -199,7 +259,10 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[str(HERE / "rthooks" / "rthook_tkdnd_mac.py")],
+    runtime_hooks=[
+        str(HERE / "rthooks" / "rthook_tkdnd_mac.py"),
+        str(HERE / "rthooks" / "rthook_tesseract.py"),
+    ],
     excludes=[
         "pytest", "_pytest",
         "fastapi", "uvicorn", "starlette",

@@ -19,6 +19,8 @@ onnxruntime>=1.17    # local embedding runtime in frozen app (chromadb ONNX path
 # ── Document loading / parsing ────────────────────────────────────────────────
 pypdf>=4.0
 docx2txt>=0.8        # used by langchain_community.document_loaders.Docx2txtLoader
+python-pptx>=0.6     # PowerPoint (.pptx) text and image extraction
+pytesseract>=0.3     # OCR on image slides inside .pptx files (requires Tesseract)
 sentence-transformers>=3.0  # local embedding in source mode (requires torch)
 tiktoken>=0.7        # tokeniser used by langchain-openai
 

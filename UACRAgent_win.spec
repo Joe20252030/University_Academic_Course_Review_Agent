@@ -129,6 +129,59 @@ datas += collect_data_files("fpdf")
 # python-docx / docx2txt
 datas += collect_data_files("docx")
 
+# python-pptx (PowerPoint support)
+try:
+    datas         += collect_data_files("pptx")
+    hiddenimports += collect_submodules("pptx")
+    hiddenimports += ["pptx", "pptx.util", "pptx.presentation",
+                      "pptx.shapes.autoshape", "pptx.shapes.picture"]
+except Exception as _e:
+    print(f"WARNING: python-pptx collection failed: {_e}")
+
+# pytesseract
+hiddenimports += ["pytesseract"]
+
+# ---------------------------------------------------------------------------
+# Tesseract binary + language data (for image OCR in .pptx slides)
+# ---------------------------------------------------------------------------
+# Default Tesseract installation paths on Windows:
+#   Installer (GitHub releases) : C:\Program Files\Tesseract-OCR\tesseract.exe
+#                                  C:\Program Files\Tesseract-OCR\tessdata\
+#
+# rthook_tesseract.py configures TESSDATA_PREFIX and pytesseract.tesseract_cmd
+# at runtime so application code never needs to know the bundled path.
+
+import shutil as _shutil
+import os as _os
+
+_tess_bin = (
+    _shutil.which("tesseract")
+    or r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+)
+_tess_bin_path = Path(_tess_bin) if _tess_bin and Path(_tess_bin).is_file() else None
+
+if _tess_bin_path:
+    binaries += [(str(_tess_bin_path), ".")]
+    # Tessdata lives next to the binary in Tesseract-OCR installation.
+    _possible_tessdata = [
+        _tess_bin_path.parent / "tessdata",
+        Path(r"C:\Program Files\Tesseract-OCR\tessdata"),
+        Path(r"C:\Program Files (x86)\Tesseract-OCR\tessdata"),
+    ]
+    _tessdata_dir = next(
+        (p for p in _possible_tessdata if (p / "eng.traineddata").is_file()),
+        None,
+    )
+    if _tessdata_dir:
+        _eng_data = _tessdata_dir / "eng.traineddata"
+        datas += [(str(_eng_data), "tessdata")]
+        print(f"INFO: Bundling Tesseract from {_tess_bin_path}, tessdata from {_tessdata_dir}")
+    else:
+        print("WARNING: eng.traineddata not found — OCR will be unavailable in the built app.")
+else:
+    print("WARNING: tesseract.exe not found. Download from https://github.com/UB-Mannheim/tesseract/wiki")
+    print("         OCR on PPTX image slides will be unavailable in the built app.")
+
 # tkinterdnd2 — bundle the platform-specific tkdnd extension correctly.
 #
 # Both the DLL AND the .tcl scripts go into datas, not binaries.
@@ -210,7 +263,8 @@ hiddenimports += [
     "uacragent.infra.settings",
     "uacragent.infra.llm",
     "uacragent.infra.auth",
-    "uacragent.infra.loaders",                # document loader (PDF/DOCX/txt…)
+    "uacragent.infra.loaders",                # document loader (PDF/DOCX/PPTX/txt…)
+    "uacragent.infra.updater",                # auto-updater (GitHub Releases)
     "uacragent.infra.workspace",              # WorkspacePaths dataclass
     # ── export ────────────────────────────────────────────────────────────
     "uacragent.export.docx",
@@ -234,7 +288,10 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[str(HERE / "rthooks" / "rthook_tkdnd.py")],
+    runtime_hooks=[
+        str(HERE / "rthooks" / "rthook_tkdnd.py"),
+        str(HERE / "rthooks" / "rthook_tesseract.py"),
+    ],
     excludes=[
         "pytest", "_pytest",
         "fastapi", "uvicorn", "starlette",

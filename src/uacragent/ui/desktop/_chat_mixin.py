@@ -17,7 +17,11 @@ from uacragent.export.pdf import save_pdf
 from uacragent.infra.persistence import get_app_data_dir, get_paste_tmp_dir, save_session
 from uacragent.infra.workspace import workspace_paths, ensure_workspace_dirs
 
-from ._ui_constants import _strip_markdown, _open_file_in_os, _open_folder_in_os
+from ._custom_widgets import _RoundedChip, _Tooltip, draw_rounded_rect
+from ._ui_constants import (
+    _THEME_COLORS,
+    _strip_markdown, _open_file_in_os, _open_folder_in_os,
+)
 
 
 _logger = logging.getLogger(__name__)
@@ -101,7 +105,6 @@ class ChatMixin:
         Inactive: qa_bg chip fill (visible against input_bg).
         Active:   btn_primary_bg (gold) to show search is on for the next send.
         """
-        from ._ui_constants import _THEME_COLORS
         mode = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
         c = _THEME_COLORS.get(mode, _THEME_COLORS["light"])
         _tbg  = c.get("qa_bg", "#edf0f8")
@@ -138,6 +141,68 @@ class ChatMixin:
             pass
 
     # ------------------------------------------------------------------
+    # Paste-attachment stabilisation
+    # ------------------------------------------------------------------
+
+    def _stabilize_paste_attachments(
+        self, attachments: list[dict]
+    ) -> list[dict]:
+        """Copy paste-image temp files to a stable workspace location.
+
+        Paste images live in ``paste_tmp/`` and are deleted as soon as the
+        LLM call finishes.  Copying them to
+        ``<workspace>/.uacragent/uploads/chat_images/`` before the message
+        is rendered in chat history ensures the chip remains re-openable in
+        future sessions.
+
+        Returns a new list.  Each paste-image dict is replaced by a copy
+        with the path updated to the stable workspace location and
+        ``"is_temp_file"`` cleared so the workspace copy is never deleted.
+        Non-paste attachments are returned as-is.
+
+        Silently falls back to the original dict on any error so a copy
+        failure never blocks the send.  The caller must still delete the
+        original paste_tmp paths (tracked separately via ``_tmp_paste_paths``).
+        """
+        if not self._workspace_committed:
+            return attachments
+
+        ws_folder = getattr(self._session, "workspace_folder", None)
+        if not ws_folder:
+            return attachments
+
+        result: list[dict] = []
+        for att in attachments:
+            if not att.get("is_temp_file"):
+                result.append(att)
+                continue
+
+            src = att.get("path", "")
+            if not src or not Path(src).is_file():
+                result.append(att)
+                continue
+
+            try:
+                import shutil as _shutil
+                chat_images_dir = (
+                    Path(ws_folder) / ".uacragent" / "uploads" / "chat_images"
+                )
+                chat_images_dir.mkdir(parents=True, exist_ok=True)
+
+                dest = chat_images_dir / Path(src).name
+                if not dest.exists():
+                    _shutil.copy2(src, dest)
+
+                # Build updated dict: stable path, no longer a temp file.
+                result.append({**att, "path": str(dest), "is_temp_file": False})
+            except Exception:  # noqa: BLE001
+                # Copy failed — keep original path; chip will show as
+                # unavailable in history rather than crashing.
+                result.append(att)
+
+        return result
+
+    # ------------------------------------------------------------------
     # File attachment
     # ------------------------------------------------------------------
 
@@ -148,9 +213,9 @@ class ChatMixin:
         paths = filedialog.askopenfilenames(
             title=self._t("attach_files_title"),
             filetypes=[
-                (self._t("attach_supported"), "*.png *.jpg *.jpeg *.gif *.webp *.bmp *.pdf *.docx *.txt *.md *.py *.csv *.json *.xml *.html"),
+                (self._t("attach_supported"), "*.png *.jpg *.jpeg *.gif *.webp *.bmp *.pdf *.docx *.pptx *.txt *.md *.py *.csv *.json *.xml *.html"),
                 (self._t("attach_images"),    "*.png *.jpg *.jpeg *.gif *.webp *.bmp"),
-                (self._t("attach_docs"),      "*.pdf *.docx"),
+                (self._t("attach_docs"),      "*.pdf *.docx *.pptx"),
                 (self._t("attach_text"),      "*.txt *.md *.py *.csv *.json"),
                 (self._t("attach_all"),       "*.*"),
             ],
@@ -506,9 +571,6 @@ class ChatMixin:
         All chips use _RoundedChip for consistent rounded styling.
         Clicking anywhere on a chip removes the file / turns off search.
         """
-        from ._custom_widgets import _RoundedChip
-        from ._ui_constants import _THEME_COLORS
-
         strip = self._attach_strip
         for w in strip.winfo_children():
             w.destroy()
@@ -553,8 +615,6 @@ class ChatMixin:
             ).pack(side="left", padx=(0, 6), pady=2)
 
         # ── File attachment chips ─────────────────────────────────────────────
-        from ._ui_constants import _open_file_in_os
-
         for idx, att in enumerate(self._pending_attachments):
             mime = att.get("mime", "")
             if mime.startswith("image/"):
@@ -772,7 +832,6 @@ class ChatMixin:
     def _show_dnd_overlay(self) -> None:
         """Show the drop overlay that covers the message canvas."""
         try:
-            from ._ui_constants import _THEME_COLORS
             mode = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
             c = _THEME_COLORS.get(mode, _THEME_COLORS["light"])
             _dnd_bg = c.get("qa_bg", "#edf0f8")
@@ -1226,6 +1285,20 @@ class ChatMixin:
         self._search_active = False
         self._rebuild_attach_strip()
         self._refresh_search_btn()
+
+        # Record original paste_tmp paths NOW — before stabilisation updates
+        # them — so the originals are still cleaned up after the LLM call.
+        # Only entries explicitly marked "is_temp_file" are tracked.
+        _tmp_paste_paths = [
+            att["path"] for att in captured_attachments
+            if att.get("is_temp_file") and att.get("path")
+        ]
+
+        # Copy paste images to a stable workspace location so their chips
+        # remain openable in session history after the temp files are deleted.
+        # Falls back silently if the workspace is not yet committed.
+        captured_attachments = self._stabilize_paste_attachments(captured_attachments)
+
         # If the session has files that were never indexed (e.g. the user
         # cancelled the model-download dialog), warn before every send so it is
         # always clear why responses lack document context.  We do not block
@@ -1258,14 +1331,6 @@ class ChatMixin:
         captured_token   = self._request_token
 
         _progress = self._make_progress_cb(update_status_bar=False)
-
-        # Identify temp files owned by this app (clipboard image pastes) so they
-        # can be deleted after the LLM call regardless of outcome.  Only entries
-        # explicitly marked "is_temp_file" are included — never user files.
-        _tmp_paste_paths = [
-            att["path"] for att in captured_attachments
-            if att.get("is_temp_file") and att.get("path")
-        ]
 
         def _work() -> None:
             try:
@@ -1474,8 +1539,6 @@ class ChatMixin:
         if not hasattr(self, "_msg_frame"):
             return
 
-        from ._ui_constants import _THEME_COLORS
-
         _mode = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
         c = _THEME_COLORS.get(_mode, _THEME_COLORS["light"])
         card_bg = c.get("text_bg", "#ffffff")
@@ -1551,6 +1614,8 @@ class ChatMixin:
             return "🖼"
         if mime == "application/pdf":
             return "📄"
+        if "presentationml" in mime or mime == "application/vnd.ms-powerpoint":
+            return "📊"
         if mime.startswith("text/"):
             return "📝"
         return "📎"
@@ -1558,8 +1623,6 @@ class ChatMixin:
     def _append_chat_user(self, c, card_bg, sz, text, _H_PAD, _V_PAD,
                           attachments: list | None = None) -> None:
         """Render a user message inside a rounded box."""
-        from ._custom_widgets import draw_rounded_rect
-
         label_text = self._t("chat_you")
         bubble_bg  = c.get("user_bubble_bg",    "#e8f0fe")
         label_fg   = c.get("user_fg",           "#1b3167")
@@ -1609,37 +1672,60 @@ class ChatMixin:
         )
 
         # ── Attachment chips (shown when files were attached to this message) ─
-        chip_bg     = c.get("user_bubble_border", "#c5d5f0")
-        chip_fg     = c.get("user_fg", "#1b3167")
-        chip_sz     = max(sz - 2, 9)
-        att_widgets = []
+        # Available (path resolves)  : coloured chip, hand cursor, click to open.
+        # Unavailable (path missing) : greyed chip, ⚠ suffix, tooltip, no click.
+        chip_bg_ok   = c.get("user_bubble_border", "#c5d5f0")  # normal chip fill
+        chip_fg_ok   = c.get("user_fg", "#1b3167")
+        chip_bg_na   = c.get("row_even_bg",  "#ebebeb")        # greyed fill
+        chip_fg_na   = c.get("status_fg",    "#9aa5be")        # muted text
+        tip_bg       = c.get("tooltip_bg",   "#1a2744")
+        tip_fg       = c.get("tooltip_fg",   "#ffffff")
+        chip_sz      = max(sz - 2, 9)
+        att_widgets: list = []
         if attachments:
-            from ._ui_constants import _open_file_in_os
-            import pathlib as _pl
             att_row = tk.Frame(shell, bg=bubble_bg)
             att_row.pack(fill="x", padx=_H_PAD, pady=(2, _V_PAD))
             for att in attachments:
                 icon  = self._mime_icon(att.get("mime", ""))
                 name  = att.get("name", "file")
                 path  = att.get("path", "")
-                label = f"{icon} {name[:9] + '…' + name[-8:] if len(name) > 20 else name}"
-                # Only bind a click handler when the path points to an
-                # existing regular file.  This guards against tampered
-                # session files that store arbitrary paths, and also
-                # provides clean UX when a file has been moved or deleted.
-                path_valid = bool(path) and _pl.Path(path).is_file()
-                cursor = "hand2" if path_valid else "arrow"
+                short = name[:9] + "…" + name[-8:] if len(name) > 20 else name
+
+                # Validate path — guards against moved/deleted files and
+                # against tampered session files with arbitrary paths.
+                path_valid = bool(path) and Path(path).is_file()
+
+                if path_valid:
+                    label  = f"{icon} {short}"
+                    c_bg   = chip_bg_ok
+                    c_fg   = chip_fg_ok
+                    cursor = "hand2"
+                else:
+                    label  = f"{icon} {short}  ⚠"
+                    c_bg   = chip_bg_na
+                    c_fg   = chip_fg_na
+                    cursor = "arrow"
+
                 chip = tk.Label(
                     att_row, text=label,
-                    bg=chip_bg, fg=chip_fg,
+                    bg=c_bg, fg=c_fg,
                     font=("TkDefaultFont", chip_sz),
                     relief="flat", padx=5, pady=2,
                     cursor=cursor,
                 )
                 chip.pack(side="left", padx=(0, 4), pady=0)
+
                 if path_valid:
                     chip.bind("<Button-1>",
                               lambda _e, p=path: _open_file_in_os(p))
+                else:
+                    # Tooltip explains why the chip is not clickable.
+                    _Tooltip(
+                        chip,
+                        text=self._t("att_unavailable_tooltip"),
+                        bg=tip_bg, fg=tip_fg,
+                    )
+
                 att_widgets.append(chip)
             att_widgets.append(att_row)
 
@@ -1735,7 +1821,6 @@ class ChatMixin:
         if shell is None or not shell.winfo_exists():
             return
 
-        from ._ui_constants import _THEME_COLORS
         _mode = self._color_mode_var.get() if hasattr(self, "_color_mode_var") else "light"
         c = _THEME_COLORS.get(_mode, _THEME_COLORS["light"])
         bubble_bg = getattr(self, "_last_assistant_bubble_bg", c.get("asst_bubble_bg", "#fdf6ee"))

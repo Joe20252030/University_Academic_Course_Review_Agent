@@ -31,13 +31,14 @@ _SESSION_LIST_WIDTH = 220
 _SUPPORTED_FILETYPES = [
     # Keep this list in sync with DocumentLoader.load_single_file() in infra/loaders.py.
     ("All supported",
-     "*.pdf *.docx *.txt *.md *.csv *.py *.js *.ts *.html *.htm *.xml *.json"),
-    ("PDF files",       "*.pdf"),
-    ("Word documents",  "*.docx"),
-    ("Text / Markdown", "*.txt *.md"),
-    ("CSV files",       "*.csv"),
-    ("Code files",      "*.py *.js *.ts"),
-    ("Web / Data",      "*.html *.htm *.xml *.json"),
+     "*.pdf *.docx *.pptx *.txt *.md *.csv *.py *.js *.ts *.html *.htm *.xml *.json"),
+    ("PDF files",           "*.pdf"),
+    ("Word documents",      "*.docx"),
+    ("Presentations",       "*.pptx"),
+    ("Text / Markdown",     "*.txt *.md"),
+    ("CSV files",           "*.csv"),
+    ("Code files",          "*.py *.js *.ts"),
+    ("Web / Data",          "*.html *.htm *.xml *.json"),
 ]
 _DOC_TYPE_LABELS = {
     DocumentType.syllabus: "Syllabus",
@@ -513,8 +514,30 @@ _STRINGS: dict[str, dict[str, str]] = {
         "add_files_dialog_title": "Select {doctype} files",
         "search_off":         "Web search OFF",
         "dnd_drop_label":     "📎  Drop files here to attach",
-        "tooltip_web_search": "Web Search  On / Off",
-        "tooltip_attach":     "Attach files",
+        "tooltip_web_search":       "Web Search  On / Off",
+        "tooltip_attach":           "Attach files",
+        "att_unavailable_tooltip":  "File no longer available at its original location",
+        # --- Auto-updater dialog ---
+        "update_available_title":  "Update Available",
+        "update_available_body": (
+            "A new version of UACRAgent is available!\n\n"
+            "Current version : {current}\n"
+            "New version     : {new}\n\n"
+            "{notes}"
+        ),
+        "update_now_btn":          "Update Now",
+        "update_later_btn":        "Remind Me Later",
+        "update_skip_btn":         "Skip This Version",
+        "update_downloading":      "Downloading update {version}…",
+        "update_download_progress": "Downloading… {pct}%",
+        "update_download_done":    "Download complete. Launching installer…",
+        "update_download_failed":  "Update download failed:\n{error}",
+        "update_mac_open_msg": (
+            "The installer has been opened in Finder.\n"
+            "Drag UACRAgent.app to your Applications folder to finish updating."
+        ),
+        "update_win_launch_msg":   "Installing update — the app will close now.",
+        "update_check_failed":     "Could not check for updates: {error}",
     },
     "zh_CN": {
         # Session list
@@ -929,8 +952,30 @@ _STRINGS: dict[str, dict[str, str]] = {
         "add_files_dialog_title": "选择 {doctype} 文件",
         "search_off":         "网络搜索已关闭",
         "dnd_drop_label":     "📎  拖放文件以附加",
-        "tooltip_web_search": "网络搜索  开 / 关",
-        "tooltip_attach":     "附加文件",
+        "tooltip_web_search":       "网络搜索  开 / 关",
+        "tooltip_attach":           "附加文件",
+        "att_unavailable_tooltip":  "文件已不在其原始位置，无法打开",
+        # --- Auto-updater dialog ---
+        "update_available_title":  "发现新版本",
+        "update_available_body": (
+            "UACRAgent 有新版本可用！\n\n"
+            "当前版本：{current}\n"
+            "新版本：  {new}\n\n"
+            "{notes}"
+        ),
+        "update_now_btn":          "立即更新",
+        "update_later_btn":        "稍后提醒",
+        "update_skip_btn":         "跳过此版本",
+        "update_downloading":      "正在下载更新 {version}…",
+        "update_download_progress": "下载中… {pct}%",
+        "update_download_done":    "下载完成，正在启动安装程序…",
+        "update_download_failed":  "更新下载失败：\n{error}",
+        "update_mac_open_msg": (
+            "安装包已在 Finder 中打开。\n"
+            "将 UACRAgent.app 拖入「应用程序」文件夹即可完成更新。"
+        ),
+        "update_win_launch_msg":   "正在安装更新——应用即将关闭。",
+        "update_check_failed":     "无法检查更新：{error}",
     },
 }
 

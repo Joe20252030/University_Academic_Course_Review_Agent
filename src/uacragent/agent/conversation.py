@@ -53,6 +53,8 @@ _MIME_MAP: dict[str, str] = {
     ".bmp":  "image/bmp",
     ".pdf":  "application/pdf",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".ppt":  "application/vnd.ms-powerpoint",
     ".txt":  "text/plain",
     ".md":   "text/markdown",
     ".py":   "text/x-python",
@@ -122,6 +124,77 @@ def _extract_docx_text(path: str) -> str:
     raise last_exc or RuntimeError("DOCX extraction produced no output")
 
 
+def _extract_pptx_text(path: str) -> str:
+    """Extract text content from a .pptx file for use as a chat attachment.
+
+    Reuses the same extraction logic as the document loader
+    (text frames + speaker notes + OCR on image shapes) but returns a
+    single flat string instead of a list of LangChain Documents.
+
+    Raises the underlying exception on failure so the caller's error-handling
+    wrapper can return an informative notice to the LLM.
+    """
+    from uacragent.infra.loaders import DocumentLoader as _DL, _check_ocr_available, _ocr_slide_images  # noqa: PLC0415
+
+    ext = Path(path).suffix.lower()
+    if ext == ".ppt":
+        return (
+            "[LEGACY FORMAT: This file is in the old PowerPoint 97-2003 "
+            "binary format (.ppt) which cannot be read directly.  Ask the "
+            "user to save it as a .pptx file and re-attach it.]"
+        )
+
+    try:
+        from pptx import Presentation  # type: ignore[import-untyped]
+    except ImportError:
+        return (
+            "[PPTX EXTRACTION UNAVAILABLE: python-pptx is not installed.  "
+            "Ask the user to convert the file to PDF or plain text.]"
+        )
+
+    prs = Presentation(path)
+    _ocr_ok = _check_ocr_available()
+    slide_texts: list[str] = []
+
+    for slide_idx, slide in enumerate(prs.slides, start=1):
+        parts: list[str] = [f"[Slide {slide_idx}]"]
+        try:
+            if slide.shapes.title and slide.shapes.title.has_text_frame:
+                title = slide.shapes.title.text_frame.text.strip()
+                if title:
+                    parts.append(f"Title: {title}")
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            for shape in slide.shapes:
+                try:
+                    if shape is slide.shapes.title:
+                        continue
+                except Exception:  # noqa: BLE001
+                    pass
+                if shape.has_text_frame:
+                    text = shape.text_frame.text.strip()
+                    if text:
+                        parts.append(text)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
+                notes = slide.notes_slide.notes_text_frame.text.strip()
+                if notes:
+                    parts.append(f"[Notes] {notes}")
+        except Exception:  # noqa: BLE001
+            pass
+        if _ocr_ok:
+            ocr = _ocr_slide_images(slide)
+            if ocr:
+                parts.append("[Image text (OCR)]")
+                parts.extend(ocr)
+        slide_texts.append("\n".join(parts))
+
+    return "\n\n".join(slide_texts) if slide_texts else f"[Empty presentation: {Path(path).name}]"
+
+
 def _extract_file_text(path: str, mime: str) -> str:
     """Extract text from a file given its path and MIME type.
 
@@ -142,6 +215,11 @@ def _extract_file_text(path: str, mime: str) -> str:
             return "\n\n".join(d.page_content for d in docs)
         elif mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
             return _extract_docx_text(path)
+        elif mime in (
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "application/vnd.ms-powerpoint",
+        ):
+            return _extract_pptx_text(path)
         elif mime in _TEXT_MIMES:
             return Path(path).read_text(encoding="utf-8", errors="replace")
         else:

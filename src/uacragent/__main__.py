@@ -126,8 +126,9 @@ def _cli(args: argparse.Namespace) -> None:
     # the CLI sets workspace_folder directly (bypassing workspace_paths).  Apply
     # the same regex here so "--workspace-id ../../Documents" cannot place session
     # files outside the intended cli_run directory.
-    import re as _re
-    _SAFE_ID_RE = _re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+    # Import the canonical regex from workspace.py to avoid duplicating the
+    # character-class definition.
+    from uacragent.infra.workspace import _SAFE_ID_RE  # noqa: PLC0415
     safe_workspace_id = args.workspace_id
     if not _SAFE_ID_RE.match(safe_workspace_id):
         raise SystemExit(

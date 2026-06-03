@@ -395,6 +395,18 @@ def set_app_appearance(color_mode: str, font_size: str, language: str) -> None:
     _save_config(cfg)
 
 
+def get_skipped_update_version() -> str:
+    """Return the release tag the user chose to skip, or empty string."""
+    return _load_config().get("skipped_update_version", "")
+
+
+def set_skipped_update_version(tag: str) -> None:
+    """Persist a release tag so the updater never prompts for it again."""
+    cfg = _load_config()
+    cfg["skipped_update_version"] = tag
+    _save_config(cfg)
+
+
 def get_privacy_accepted() -> bool:
     """Return True if the user has accepted the privacy notice."""
     return bool(_load_config().get("privacy_notice_accepted", False))

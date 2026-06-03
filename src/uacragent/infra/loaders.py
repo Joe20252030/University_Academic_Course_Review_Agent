@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import re
 import shutil
+import sys
 from pathlib import Path
 from collections.abc import Callable
 
@@ -253,6 +254,57 @@ def run_splitting_pipeline(
 
 
 # ---------------------------------------------------------------------------
+# OCR helpers (used by _load_pptx)
+# ---------------------------------------------------------------------------
+
+def _check_ocr_available() -> bool:
+    """Return True when both pytesseract and PIL are importable AND Tesseract
+    is reachable (either bundled via rthook_tesseract.py or system-installed).
+
+    In a frozen PyInstaller build the Tesseract binary is bundled in _MEIPASS
+    and rthook_tesseract.py sets pytesseract.tesseract_cmd before this code
+    runs, so the get_tesseract_version() call will succeed.
+    """
+    try:
+        import pytesseract as _pyt  # noqa: PLC0415
+        from PIL import Image as _PILImage  # noqa: PLC0415, F401
+        _pyt.get_tesseract_version()
+        return True
+    except Exception:
+        return False
+
+
+def _ocr_slide_images(slide: object) -> list[str]:
+    """Run Tesseract OCR on all image shapes in *slide*.
+
+    Returns a list of non-empty OCR text strings (one per image that
+    yielded readable text).  Returns an empty list on any failure so
+    callers can degrade to text-only without crashing.
+    """
+    results: list[str] = []
+    try:
+        import pytesseract as _pyt  # noqa: PLC0415
+        from PIL import Image as _PILImage  # noqa: PLC0415
+        import io as _io
+
+        for shape in slide.shapes:  # type: ignore[attr-defined]
+            try:
+                # Only process picture shapes that expose image bytes.
+                if not shape.shape_type == 13:  # MSO_SHAPE_TYPE.PICTURE = 13
+                    continue
+                img_bytes = shape.image.blob
+                img = _PILImage.open(_io.BytesIO(img_bytes)).convert("RGB")
+                text = _pyt.image_to_string(img, lang="eng").strip()
+                if text:
+                    results.append(text)
+            except Exception:  # noqa: BLE001
+                continue
+    except Exception:  # noqa: BLE001
+        pass
+    return results
+
+
+# ---------------------------------------------------------------------------
 # DocumentLoader
 # ---------------------------------------------------------------------------
 
@@ -265,11 +317,13 @@ class DocumentLoader:
     def load_single_file(self, path: str) -> list[Document]:
         """Load a single file and return raw LangChain Documents.
 
-        Supported formats:
-        - PDF  (.pdf)   — via PyPDFLoader (text-layer extraction)
-        - Word (.docx)  — via Docx2txtLoader
-        - Text (.txt, .md, .py, .js, .ts, .html, .htm, .xml, .json)
-        - CSV  (.csv)   — read and formatted as a plain-text table
+        Supported formats
+        -----------------
+        - PDF   (.pdf)             -- PyPDFLoader (text-layer extraction)
+        - Word  (.docx)            -- Docx2txtLoader
+        - Slides(.pptx, .ppt)      -- python-pptx + pytesseract OCR
+        - Text  (.txt, .md, .py, .js, .ts, .html, .htm, .xml, .json)
+        - CSV   (.csv)             -- row-chunked plain-text table
         """
         try:
             ext = Path(path).suffix.lower()
@@ -286,12 +340,148 @@ class DocumentLoader:
                 return Docx2txtLoader(path).load()
             elif ext == ".csv":
                 return self._load_csv(path)
+            elif ext in {".pptx", ".ppt"}:
+                return self._load_pptx(path)
             else:
                 raise IngestError(f"Unsupported file type: {path}")
         except IngestError:
             raise
         except Exception as exc:  # noqa: BLE001
             raise IngestError(f"Failed to load {path}: {exc}") from exc
+
+    @staticmethod
+    def _load_pptx(path: str) -> list[Document]:
+        """Load a PowerPoint file (.pptx or .ppt) as a list of Documents.
+
+        Extraction strategy
+        -------------------
+        For each slide a single Document is produced containing:
+          - Slide number header
+          - Title text (if present)
+          - All text-frame body content (bullets, labels, notes boxes)
+          - Speaker notes
+          - OCR text from any image shapes (using pytesseract + PIL)
+
+        OCR is attempted when:
+          - python-pptx is available (required)
+          - pytesseract AND Pillow are available (optional -- degrades to
+            text-only when absent or when Tesseract is not installed)
+
+        Legacy binary .ppt files are NOT supported by python-pptx; an
+        IngestError with a clear conversion message is raised instead.
+        """
+        ext = Path(path).suffix.lower()
+
+        # ------------------------------------------------------------------
+        # .ppt binary format: python-pptx cannot open it.  Give a clear,
+        # actionable error rather than a confusing low-level exception.
+        # ------------------------------------------------------------------
+        if ext == ".ppt":
+            raise IngestError(
+                f"'{Path(path).name}' is in the legacy PowerPoint 97-2003 "
+                "binary format (.ppt) which cannot be read directly.\n"
+                "Please open the file in PowerPoint or LibreOffice Impress "
+                "and save it as a modern .pptx file, then re-add it."
+            )
+
+        # ------------------------------------------------------------------
+        # python-pptx is a required dependency for .pptx loading.
+        # ------------------------------------------------------------------
+        try:
+            from pptx import Presentation  # type: ignore[import-untyped]
+            from pptx.util import Pt as _Pt   # noqa: F401 -- validates import
+        except ImportError as exc:
+            raise IngestError(
+                "python-pptx is required to load .pptx files. "
+                "Install it with:  pip install python-pptx"
+            ) from exc
+
+        # ------------------------------------------------------------------
+        # Determine whether OCR is available.
+        # ------------------------------------------------------------------
+        _ocr_available = _check_ocr_available()
+
+        # ------------------------------------------------------------------
+        # Open and iterate slides.
+        # ------------------------------------------------------------------
+        try:
+            prs = Presentation(path)
+        except Exception as exc:  # noqa: BLE001
+            raise IngestError(
+                f"Could not open '{Path(path).name}': {exc}. "
+                "The file may be corrupt or password-protected."
+            ) from exc
+
+        docs: list[Document] = []
+        fname = Path(path).name
+
+        for slide_idx, slide in enumerate(prs.slides, start=1):
+            parts: list[str] = [f"[Slide {slide_idx}]"]
+
+            # -- Title ------------------------------------------------
+            try:
+                if slide.shapes.title and slide.shapes.title.has_text_frame:
+                    title_text = slide.shapes.title.text_frame.text.strip()
+                    if title_text:
+                        parts.append(f"Title: {title_text}")
+            except Exception:  # noqa: BLE001
+                pass
+
+            # -- Text frames (body, labels, text boxes) ---------------
+            try:
+                for shape in slide.shapes:
+                    # Skip the title shape -- already handled above.
+                    try:
+                        if shape is slide.shapes.title:
+                            continue
+                    except Exception:  # noqa: BLE001
+                        pass
+                    if shape.has_text_frame:
+                        text = shape.text_frame.text.strip()
+                        if text:
+                            parts.append(text)
+            except Exception:  # noqa: BLE001
+                pass
+
+            # -- Speaker notes ----------------------------------------
+            try:
+                if (
+                    slide.has_notes_slide
+                    and slide.notes_slide.notes_text_frame
+                ):
+                    notes = slide.notes_slide.notes_text_frame.text.strip()
+                    if notes:
+                        parts.append(f"[Notes] {notes}")
+            except Exception:  # noqa: BLE001
+                pass
+
+            # -- Image OCR (if available) ------------------------------
+            if _ocr_available:
+                ocr_texts = _ocr_slide_images(slide)
+                if ocr_texts:
+                    parts.append("[Image text (OCR)]")
+                    parts.extend(ocr_texts)
+
+            content = "\n".join(parts)
+            if content.strip():
+                docs.append(Document(
+                    page_content=content,
+                    metadata={
+                        "source":      path,
+                        "slide_number": slide_idx,
+                        "filename":    fname,
+                    },
+                ))
+
+        if not docs:
+            # Presentation had slides but all were empty -- return a placeholder
+            # so the upstream caller does not treat a zero-doc result as a crash.
+            docs = [Document(
+                page_content=f"[Empty presentation: {fname}]",
+                metadata={"source": path},
+            )]
+
+        return docs
 
     @staticmethod
     def _load_csv(path: str) -> list[Document]:
@@ -490,9 +680,11 @@ class DocumentLoader:
                     # ── B7: detect image-only / scanned PDFs ──────────────
                     # PyPDFLoader returns pages with empty page_content when
                     # the PDF has no embedded text layer (e.g. scanned pages).
-                    # This produces zero usable chunks — detect it early and
+                    # This produces zero usable chunks -- detect it early and
                     # give a clear, actionable error instead of the generic
                     # "No document chunks" message.
+                    # PPTX files that contain only images are handled by the
+                    # OCR path in _load_pptx() -- skip this check for them.
                     if Path(path).suffix.lower() == ".pdf" and docs:
                         if all(not d.page_content.strip() for d in docs):
                             raise IngestError(
