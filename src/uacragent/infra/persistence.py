@@ -38,6 +38,7 @@ from __future__ import annotations
 import json
 import logging
 import logging.handlers
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -78,21 +79,80 @@ def get_api_run_dir() -> Path:
     return get_app_data_dir() / "api_run"
 
 
-def get_paste_tmp_dir() -> Path:
-    """Return (and create) the directory for clipboard-paste temp image files.
+def get_paste_tmp_base_dir() -> Path:
+    """Return the shared base directory for all paste-temp subdirectories.
 
-    Intentionally rooted at ``_UAR_DIR`` (``~/.uacragent/paste_tmp/``), NOT
-    at ``get_app_data_dir()``.  This means the location is fixed and unaffected
-    when the user relocates their app data folder via App Settings — the startup
-    sweep in ``app.py`` always knows exactly where to look regardless of any
-    configuration change.
-
-    The directory is exclusive to this app, so a full wipe on startup is safe
-    (see ``_sweep_stale_paste_tmp`` in ``app.py``).
+    Layout:  ``~/.uacragent/paste_tmp/``
+    Each running instance writes its paste images into a PID-scoped child of
+    this directory (see :func:`get_paste_tmp_dir`).  The base directory is
+    intentionally rooted at ``_UAR_DIR``, not at ``get_app_data_dir()``, so
+    the sweep always knows where to look even after the user changes the app
+    data folder.
     """
     d = _UAR_DIR / "paste_tmp"
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def get_paste_tmp_dir() -> Path:
+    """Return (and create) the **per-instance** paste temp directory.
+
+    Each running instance writes its clipboard-paste images into a dedicated
+    subdirectory named after its process ID:
+
+        ``~/.uacragent/paste_tmp/<pid>/``
+
+    This isolates paste images from simultaneous instances so the startup sweep
+    (:meth:`~uacragent.ui.desktop.app.ConversationApp._sweep_stale_paste_tmp`)
+    can safely remove only the subdirectories of dead processes without
+    touching files owned by any live instance.
+    """
+    d = get_paste_tmp_base_dir() / str(os.getpid())
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _pid_is_alive(pid: int) -> bool:
+    """Return ``True`` when a process with *pid* is currently running.
+
+    Platform behaviour
+    ------------------
+    Unix / macOS
+        Sends signal 0 to the PID (probes existence without delivering a real
+        signal).  ``ProcessLookupError`` means the process is gone.
+        ``PermissionError`` means the process exists but is owned by another
+        user — still alive.
+
+    Windows
+        Calls ``OpenProcess`` with ``PROCESS_QUERY_LIMITED_INFORMATION``.
+        A non-NULL handle means the process is alive.
+
+    Conservative: returns ``True`` on any unexpected error so the sweep never
+    accidentally deletes files when it cannot determine liveness.
+    """
+    if pid <= 0:
+        return False
+    try:
+        import sys as _sys
+        if _sys.platform.startswith("win"):
+            import ctypes as _ct
+            _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            handle = _ct.windll.kernel32.OpenProcess(
+                _PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+            )
+            if handle:
+                _ct.windll.kernel32.CloseHandle(handle)
+                return True
+            return False
+        else:
+            os.kill(pid, 0)   # signal 0 = probe only
+            return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True   # process exists, owned by another user
+    except Exception:  # noqa: BLE001
+        return True   # unknown error — assume alive (conservative)
 
 
 def get_chroma_onnx_models_dir() -> Path:

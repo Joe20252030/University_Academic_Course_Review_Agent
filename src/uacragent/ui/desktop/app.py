@@ -48,7 +48,9 @@ from uacragent.domain.types import DocumentType, ExamFormat, ExamType, ExportFor
 # Only names used directly in this file are imported here.
 # Each mixin module (SessionMixin, AppearanceMixin, ChatMixin, etc.) imports
 # the persistence, export, and provider functions it needs independently.
-from uacragent.infra.persistence import get_app_data_dir, get_paste_tmp_dir
+from uacragent.infra.persistence import (
+    get_app_data_dir, get_paste_tmp_dir, get_paste_tmp_base_dir, _pid_is_alive,
+)
 
 # Re-export module-level constants and helpers so existing callers that
 # ``from uacragent.ui.desktop.app import _strip_markdown`` still work.
@@ -1620,6 +1622,17 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
         except Exception:  # noqa: BLE001
             pass
 
+        # ── Step 3a: remove the per-instance paste-temp directory ────────
+        # After _discard_pending_attachments() runs, all paste images owned
+        # by this instance are deleted.  Remove the now-empty PID subdirectory
+        # so it does not linger until the next startup sweep.
+        try:
+            import shutil as _shutil_close
+            _own_paste_dir = get_paste_tmp_dir()
+            _shutil_close.rmtree(_own_paste_dir, ignore_errors=True)
+        except Exception:  # noqa: BLE001
+            pass
+
         # ── Step 3b: clean up any in-progress update download ────────────
         # If the user closes the app while a .dmg/.exe is being downloaded,
         # the daemon download thread is killed by the process exit.  Delete
@@ -1960,20 +1973,37 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
     # ------------------------------------------------------------------
 
     def _sweep_stale_paste_tmp(self) -> None:
-        """Delete any leftover uacr_paste_*.png files from a previous crash.
+        """Remove paste-temp subdirectories left by crashed or dead instances.
 
-        Called once at startup.  The paste_tmp/ directory is exclusively owned
-        by this app, so wiping its contents on a fresh launch is always safe —
-        no file in that directory could belong to any other process or session
-        that is still running.
+        Layout: ``~/.uacragent/paste_tmp/<pid>/``
+
+        Each running instance writes its clipboard-paste images into a PID-named
+        subdirectory.  This sweep scans the base directory, identifies any
+        subdirectory whose PID is no longer a running process, and removes the
+        entire subdirectory.
+
+        The current instance's own subdirectory and any live instance's directory
+        are never touched, making this sweep safe to run while other instances
+        are active.
         """
+        import shutil as _shutil
+
         try:
-            paste_dir = get_paste_tmp_dir()
-            for _f in paste_dir.glob("uacr_paste_*.png"):
-                try:
-                    _f.unlink()
-                except OSError:
-                    pass
+            paste_base = get_paste_tmp_base_dir()
+            my_pid = os.getpid()
+
+            for _entry in paste_base.iterdir():
+                # Only consider integer-named subdirectories (PID folders).
+                if not _entry.is_dir() or not _entry.name.isdigit():
+                    continue
+                pid = int(_entry.name)
+                if pid == my_pid:
+                    continue   # never touch our own directory
+                if not _pid_is_alive(pid):
+                    try:
+                        _shutil.rmtree(_entry, ignore_errors=True)
+                    except Exception:  # noqa: BLE001
+                        pass
         except Exception:  # noqa: BLE001
             pass
 
