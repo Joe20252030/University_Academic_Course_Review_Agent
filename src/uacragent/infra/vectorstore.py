@@ -20,7 +20,7 @@ from langchain_core.vectorstores import VectorStore
 from pydantic import Field as _PydanticField
 
 from uacragent.domain.types import DocumentType, TaskType
-from uacragent.infra.persistence import get_chroma_onnx_model_dir
+from uacragent.infra.persistence import get_chroma_onnx_model_dir, _atomic_write_text
 from uacragent.infra.settings import Settings
 from uacragent.infra.workspace import WorkspacePaths
 
@@ -726,15 +726,13 @@ def _save_manifest(
     if settings is not None:
         data["embedding_config"] = _embedding_fingerprint(settings)
     try:
-        import os as _os
-        tmp = mp.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-        _os.replace(tmp, mp)
+        # Use _atomic_write_text (unique NamedTemporaryFile per call) rather than
+        # a fixed .tmp sibling name.  The fixed name causes silent data corruption
+        # when two concurrent operations write the manifest for the same workspace:
+        # both processes would share indexed_files.tmp and overwrite each other's
+        # in-progress write.  A unique temp name per call eliminates the collision.
+        _atomic_write_text(mp, json.dumps(data, indent=2, ensure_ascii=False))
     except Exception as exc:  # noqa: BLE001
-        try:
-            tmp.unlink(missing_ok=True)  # type: ignore[possibly-undefined]
-        except Exception:  # noqa: BLE001
-            pass
         # Non-fatal but important: a failed manifest write means the next session
         # open cannot detect which files are already indexed, so it will trigger a
         # full re-embedding run (burning API quota) instead of the fast path.
