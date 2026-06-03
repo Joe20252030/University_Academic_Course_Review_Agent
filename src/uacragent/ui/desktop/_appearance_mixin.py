@@ -929,56 +929,86 @@ class AppearanceMixin:
         btn_row.grid(row=row, column=0, columnspan=3, sticky="e")
 
         def _save() -> None:
-            # Persist appearance settings
+            # ── 1. Appearance settings (always applied on Save) ──────────────
             set_app_appearance(
                 self._color_mode_var.get(),
                 self._font_size_var.get(),
                 self._language_var.get(),
             )
-            # Apply language now (was not applied live to avoid mid-dialog churn)
+            # Apply language now (was deferred to avoid mid-dialog churn)
             self._apply_language()
-            # Persist provider privacy settings and apply immediately.
+
+            # ── 2. Provider privacy settings ──────────────────────────────────
             # Updating os.environ alone is not enough — the cached LLM client
-            # (self._agent) was built with the old store= value.  Nulling it
-            # forces a fresh ChatOpenAI construction on the next chat request,
-            # picking up the new setting without requiring a restart.
-            from uacragent.infra.persistence import set_provider_privacy
+            # was built with the old store= value.  Nulling _agent forces a
+            # fresh client construction on the next request.
+            from uacragent.infra.persistence import set_provider_privacy, is_safe_app_data_target  # noqa: PLC0415
             import os as _os
             _store = self._openai_store_var.get()
             set_provider_privacy(openai_store_responses=_store)
             _os.environ["OPENAI_STORE_RESPONSES"] = "true" if _store else "false"
             if hasattr(self, "_agent"):
                 self._agent = None
-            # Persist app data dir if changed
+
+            # ── 3. App data folder change ─────────────────────────────────────
+            # All filesystem work (folder creation, relaunch) happens ONLY after
+            # the user explicitly confirms.  Cancelling at any point leaves the
+            # filesystem unchanged — no unmanaged empty folders are created.
             chosen = path_var.get().strip()
-            if chosen:
-                p = Path(chosen)
-                try:
-                    p.mkdir(parents=True, exist_ok=True)
-                except Exception as exc:
-                    self._show_info_dialog(self._t("mb_cannot_create_folder"), str(exc))
-                    return
-                current_app_data = get_app_data_dir().resolve()
-                new_app_data = p.resolve()
-                if new_app_data != current_app_data:
-                    if not self._show_confirm_dialog(
-                        self._t("app_data_change_title"),
-                        self._t("app_data_change_body").format(path=new_app_data),
-                        confirm_text=self._t("app_data_change_confirm"),
-                    ):
-                        return
-                    if not self._save_current_session():
-                        self._show_info_dialog(
-                            self._t("mb_session_not_saved_title"),
-                            self._t("mb_session_not_saved_body"),
-                        )
-                set_app_data_dir(p)
-                self._app_data_dir_var.set(str(new_app_data))
-                if new_app_data != current_app_data:
-                    win.destroy()
-                    self._relaunch_after_app_data_change(current_app_data)
-                    return
+            if not chosen:
+                win.destroy()
+                return
+
+            p = Path(chosen)
+            current_app_data = get_app_data_dir().resolve()
+            new_app_data = p.resolve()
+
+            if new_app_data == current_app_data:
+                # Path unchanged — close dialog, nothing else to do.
+                win.destroy()
+                return
+
+            # ── 3a. Safety check: block non-empty foreign folders ─────────────
+            # A non-empty folder that has never been used as UACRAgent app data
+            # risks file-name collisions (index.json, logs/, models/, etc.).
+            # This is a hard block, not just a warning, so the user cannot
+            # accidentally overwrite their own files.
+            if not is_safe_app_data_target(new_app_data):
+                self._show_info_dialog(
+                    self._t("app_data_nonempty_title"),
+                    self._t("app_data_nonempty_body").format(path=new_app_data),
+                )
+                return   # dialog stays open; filesystem unchanged ✓
+
+            # ── 3b. Confirmation dialog ───────────────────────────────────────
+            # Shown BEFORE any filesystem operation so cancelling is a clean
+            # no-op.  The folder is created only if the user clicks "Change".
+            if not self._show_confirm_dialog(
+                self._t("app_data_change_title"),
+                self._t("app_data_change_body").format(path=new_app_data),
+                confirm_text=self._t("app_data_change_confirm"),
+            ):
+                return   # cancelled — filesystem unchanged ✓
+
+            # ── 3c. Create the folder (only after confirmation) ───────────────
+            try:
+                new_app_data.mkdir(parents=True, exist_ok=True)
+            except Exception as exc:
+                self._show_info_dialog(self._t("mb_cannot_create_folder"), str(exc))
+                return
+
+            # ── 3d. Save the current session before the relaunch ─────────────
+            if not self._save_current_session():
+                self._show_info_dialog(
+                    self._t("mb_session_not_saved_title"),
+                    self._t("mb_session_not_saved_body"),
+                )
+
+            # ── 3e. Persist the new path and relaunch ─────────────────────────
+            set_app_data_dir(p)           # also writes uacragent_appdata.json
+            self._app_data_dir_var.set(str(new_app_data))
             win.destroy()
+            self._relaunch_after_app_data_change(current_app_data)
 
         def _cancel() -> None:
             # Revert all changes — appearance live-previews and the

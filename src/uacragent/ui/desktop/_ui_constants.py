@@ -150,6 +150,17 @@ _STRINGS: dict[str, dict[str, str]] = {
             "{path}"
         ),
         "app_data_change_confirm": "Change Folder",
+        "app_data_nonempty_title": "Cannot Use This Folder",
+        "app_data_nonempty_body": (
+            "The selected folder already contains files and does not appear "
+            "to have been used as an UACRAgent data folder before:\n\n"
+            "  {path}\n\n"
+            "Writing app files directly into this folder (index.json, logs/, "
+            "models/, sessions/) risks overwriting or mixing with your existing "
+            "files.\n\n"
+            "Please choose an empty folder, or a folder that was previously "
+            "set as the UACRAgent app data folder."
+        ),
         "app_data_relaunch_failed_title": "Relaunch Failed",
         "app_data_relaunch_failed_body": (
             "UACRAgent could not relaunch automatically.\n\n"
@@ -610,6 +621,14 @@ _STRINGS: dict[str, dict[str, str]] = {
             "{path}"
         ),
         "app_data_change_confirm": "更改目录",
+        "app_data_nonempty_title": "无法使用该文件夹",
+        "app_data_nonempty_body": (
+            "所选文件夹已包含文件，且之前未被用作 UACRAgent 数据目录：\n\n"
+            "  {path}\n\n"
+            "将应用文件（index.json、logs/、models/、sessions/）直接写入此文件夹，"
+            "可能会覆盖或混入您已有的文件。\n\n"
+            "请选择一个空文件夹，或之前已设为 UACRAgent 应用数据目录的文件夹。"
+        ),
         "app_data_relaunch_failed_title": "重新启动失败",
         "app_data_relaunch_failed_body": (
             "UACRAgent 无法自动重新启动。\n\n"

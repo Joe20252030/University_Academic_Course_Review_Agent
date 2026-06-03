@@ -150,7 +150,7 @@ class SessionMixin:
             if hasattr(self, "_agent"):
                 self._agent = None
 
-        delete_session(ws)
+        _delete_warning = delete_session(ws)
 
         # If the deleted session was the active one, return to a clean idle
         # state.  _workspace_committed MUST be reset here — without it,
@@ -162,6 +162,14 @@ class SessionMixin:
             self._workspace_committed = False
             self._show_idle()
         self._refresh_session_list()
+
+        # Surface the ownership warning AFTER the UI has been refreshed so the
+        # dialog does not appear over a stale session list.
+        if _delete_warning:
+            self._show_info_dialog(
+                self._t("mb_delete_session_title"),
+                _delete_warning,
+            )
 
     def _on_rename_session(self, idx: int = None, _event: object = None) -> None:
         if idx is None:

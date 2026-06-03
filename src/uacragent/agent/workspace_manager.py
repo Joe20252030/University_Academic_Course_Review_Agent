@@ -64,15 +64,32 @@ def wipe_session_uploads(session: "AgentSession") -> None:  # type: ignore[name-
     entered, so the cleanup must happen at a higher level.
 
     Safe to call on a freshly-created session that has never been indexed.
+
+    Ownership guard
+    ---------------
+    If the workspace's ``.uacragent/`` directory exists but does **not** contain
+    a valid ``owner.json`` marker, the wipe is skipped.  This prevents accidental
+    deletion of files inside a ``.uacragent/`` folder that was not created by
+    UACRAgent (e.g. a pre-existing folder in a user-chosen custom workspace).
+    The marker is written by ``ensure_workspace_dirs()`` and ``save_session()``,
+    so any legitimate UACRAgent session will have it after the first Apply.
     """
     if not session.workspace_id and not session.workspace_folder:
         return
     try:
-        from uacragent.infra.workspace import workspace_paths
+        from uacragent.infra.workspace import workspace_paths, has_ownership_marker
         ws = workspace_paths(
             workspace_id=session.workspace_id,
             workspace_folder=session.workspace_folder,
         )
+        if not has_ownership_marker(ws.agent_dir):
+            logger.warning(
+                "Skipping upload wipe for '%s': ownership marker (owner.json) "
+                "missing. The .uacragent/ folder may not have been created by "
+                "UACRAgent. No files will be deleted.",
+                ws.agent_dir,
+            )
+            return
         for folder in ws.doc_folders.values():
             if folder.exists():
                 _safe_rmtree(folder, ws.uploads)
@@ -89,16 +106,27 @@ def wipe_session_vectorstore(session: "AgentSession") -> None:  # type: ignore[n
     manifest to misreport a stale file set on the next indexing run.
 
     Safe to call when the chroma_db or manifest do not exist yet.
+
+    Ownership guard
+    ---------------
+    Same as :func:`wipe_session_uploads` — the wipe is skipped when the
+    ownership marker is absent.
     """
     if not session.workspace_id and not session.workspace_folder:
         return
     try:
-        from uacragent.infra.workspace import workspace_paths
+        from uacragent.infra.workspace import workspace_paths, has_ownership_marker
         from uacragent.infra.vectorstore import reset_manifest
         ws = workspace_paths(
             workspace_id=session.workspace_id,
             workspace_folder=session.workspace_folder,
         )
+        if not has_ownership_marker(ws.agent_dir):
+            logger.warning(
+                "Skipping vectorstore wipe for '%s': ownership marker missing.",
+                ws.agent_dir,
+            )
+            return
         # Wipe the Chroma directory
         chroma_dir = Path(ws.chroma)
         if chroma_dir.exists():

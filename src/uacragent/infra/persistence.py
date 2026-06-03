@@ -268,6 +268,11 @@ def configure_logging() -> None:
     if any(isinstance(h, _ResilientRotatingFileHandler) for h in root.handlers):
         return
 
+    # Write the app data ownership marker on every launch so existing
+    # installations (pre-marker) are claimed before any change-folder
+    # validation runs.  Idempotent: no-op if the marker already exists.
+    _write_app_data_marker(get_app_data_dir())
+
     # ── Log directory ─────────────────────────────────────────────────────────
     log_dir = get_app_data_dir() / "logs"
     try:
@@ -365,10 +370,108 @@ def get_app_data_dir() -> Path:
 
 
 def set_app_data_dir(path: Path) -> None:
-    """Persist the chosen app data directory to ``~/.uacragent/config.json``."""
+    """Persist the chosen app data directory to ``~/.uacragent/config.json``
+    and write an ownership marker so future folder-change validation can
+    recognise this folder as a legitimate UACRAgent app data directory.
+    """
     cfg = _load_config()
     cfg["app_data_dir"] = str(path.resolve())
     _save_config(cfg)
+    _write_app_data_marker(path)
+
+
+# ---------------------------------------------------------------------------
+# App data folder ownership marker
+# ---------------------------------------------------------------------------
+# Analogous to the workspace owner.json marker: when the user changes the
+# app data folder, we write uacragent_appdata.json into the new folder.
+# The change-folder validation checks for this marker (or for index.json as
+# a fallback for legacy folders) before allowing a non-empty folder to be
+# adopted as the new app data directory.
+
+_APP_DATA_MARKER_FILENAME = "uacragent_appdata.json"
+_APP_DATA_MARKER_APP_TAG  = "uacragent"
+
+
+def _write_app_data_marker(path: Path) -> None:
+    """Write ``uacragent_appdata.json`` into *path* to record it as an
+    UACRAgent app data directory.
+
+    Idempotent: silently returns if the marker already exists.
+    Non-fatal on any I/O error — the marker is safety infrastructure.
+    """
+    marker = path / _APP_DATA_MARKER_FILENAME
+    if marker.exists():
+        return
+    try:
+        from importlib.metadata import version as _iv  # noqa: PLC0415
+        _ver = _iv("uacragent")
+    except Exception:  # noqa: BLE001
+        _ver = "unknown"
+    payload = {
+        "app":        _APP_DATA_MARKER_APP_TAG,
+        "version":    _ver,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        marker.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Could not write app data marker in %s: %s", path, exc)
+
+
+def is_safe_app_data_target(path: Path) -> bool:
+    """Return True when *path* is safe to use as the app data directory.
+
+    A target path is safe when it meets any of these conditions:
+
+    1. It does not exist yet (will be created fresh).
+    2. It exists but is empty (no files or subdirectories).
+    3. It is non-empty but contains a valid ``uacragent_appdata.json`` marker,
+       confirming it was previously used as an UACRAgent app data folder.
+    4. It is non-empty but contains ``index.json`` with a ``"sessions"`` key
+       — the legacy indicator for folders used before the marker was introduced.
+
+    Any non-empty folder that does not satisfy condition 3 or 4 is considered
+    a foreign folder where writing generic names like ``index.json``, ``logs/``,
+    and ``models/`` would risk colliding with the user's own files.
+    """
+    if not path.exists():
+        return True  # will be created fresh
+
+    # Folder exists — check whether it is empty
+    try:
+        if not any(path.iterdir()):
+            return True  # empty: safe
+    except PermissionError:
+        return False  # cannot read → refuse
+
+    # Non-empty: accept only if we can prove this is our folder.
+
+    # Check 1: explicit marker file
+    marker = path / _APP_DATA_MARKER_FILENAME
+    if marker.is_file():
+        try:
+            data = json.loads(marker.read_text(encoding="utf-8"))
+            if data.get("app") == _APP_DATA_MARKER_APP_TAG:
+                return True
+        except Exception:  # noqa: BLE001
+            pass
+
+    # Check 2: index.json with session-registry format (legacy / pre-marker)
+    index_file = path / "index.json"
+    if index_file.is_file():
+        try:
+            data = json.loads(index_file.read_text(encoding="utf-8"))
+            if "sessions" in data:
+                return True
+        except Exception:  # noqa: BLE001
+            pass
+
+    return False  # non-empty foreign folder — not safe
 
 
 def get_app_appearance() -> dict:
@@ -742,6 +845,15 @@ def save_session(
             json.dumps(payload, indent=2, ensure_ascii=False),
         )
         _upsert_index(workspace, session.course_name or str(workspace.name))
+
+        # Write ownership marker after a successful save.  This is the
+        # migration path for sessions created before the marker feature (v0.4.0):
+        # once the user saves, the folder is explicitly ours.  It is also the
+        # adoption path for a first-time save into a workspace whose
+        # .uacragent/ folder predates the current session.
+        from uacragent.infra.workspace import write_ownership_marker  # noqa: PLC0415
+        write_ownership_marker(agent_dir, workspace_id=session.workspace_id)
+
         return True
     except Exception as exc:
         logger.warning("Could not save session to %s: %s", workspace, exc)
@@ -781,7 +893,7 @@ def load_session(workspace: Path) -> dict[str, Any] | None:
         return None
 
 
-def delete_session(workspace: Path) -> None:
+def delete_session(workspace: Path) -> str | None:
     """Delete all agent-created files inside *workspace* and remove from index.
 
     All agent artefacts live inside ``<workspace>/.uacragent/``, so deletion
@@ -799,11 +911,29 @@ def delete_session(workspace: Path) -> None:
 
     User-chosen workspace folders (``workspace_folder`` set to an external path)
     are never auto-deleted, even when they appear empty.
+
+    Ownership guard
+    ---------------
+    If ``agent_dir`` exists but does **not** contain a valid ``owner.json``
+    marker, the ``shutil.rmtree`` call is skipped entirely.  The session entry
+    is still removed from the app index so it no longer appears in the sidebar.
+    The ``.uacragent/`` folder is left on disk unchanged.
+
+    Returns
+    -------
+    None
+        Full deletion completed (or there was nothing to delete).
+    str
+        A human-readable warning explaining that the ``.uacragent/`` bundle was
+        preserved because its ownership could not be confirmed.  The caller
+        should surface this message to the user.
     """
     import shutil
-    from uacragent.infra.workspace import AGENT_SUBDIR
+    from uacragent.infra.workspace import AGENT_SUBDIR, has_ownership_marker
 
     agent_dir = workspace / AGENT_SUBDIR
+    _bundle_preserved_warning: str | None = None
+
     try:
         if agent_dir.is_symlink():
             # Refuse to follow a symlink — rmtree would wipe the target
@@ -813,7 +943,25 @@ def delete_session(workspace: Path) -> None:
                 "Manual cleanup may be required.", agent_dir,
             )
         elif agent_dir.is_dir():
-            shutil.rmtree(agent_dir)
+            # Ownership check: only delete what we created.
+            if has_ownership_marker(agent_dir):
+                shutil.rmtree(agent_dir)
+            else:
+                logger.warning(
+                    "Refusing to delete '%s': ownership marker (owner.json) is "
+                    "absent. The folder may not have been created by UACRAgent. "
+                    "Session entry will be removed from the index but the "
+                    ".uacragent/ folder will be left on disk.",
+                    agent_dir,
+                )
+                _bundle_preserved_warning = (
+                    f"The session was removed from the app, but the folder\n"
+                    f"  {agent_dir}\n"
+                    "was NOT deleted because it does not have an UACRAgent "
+                    "ownership marker.\n\n"
+                    "This usually means the folder was not created by UACRAgent. "
+                    "If you want to remove it, delete it manually."
+                )
     except Exception as exc:
         logger.warning("Could not remove agent dir %s: %s", agent_dir, exc)
 
@@ -867,6 +1015,7 @@ def delete_session(workspace: Path) -> None:
         logger.warning("Could not remove workspace folder %s: %s", workspace, exc)
 
     _remove_from_index(workspace)
+    return _bundle_preserved_warning
 
 
 def dict_to_session(data: dict[str, Any]) -> "AgentSession":  # type: ignore[name-defined]
