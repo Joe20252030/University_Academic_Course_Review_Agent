@@ -905,7 +905,27 @@ def save_session(
             )
             return False
 
+    # Track whether we are the ones creating agent_dir so the rollback paths
+    # below can remove it if a subsequent step fails.  Leaving a freshly-created
+    # empty agent_dir without owner.json would deadlock future saves: the
+    # pre-check above would see it as a foreign unowned directory and refuse.
+    _agent_dir_was_new = not agent_dir.exists()
     agent_dir.mkdir(parents=True, exist_ok=True)
+
+    def _rollback_new_agent_dir() -> None:
+        """Remove agent_dir if this call created it and it is now empty.
+
+        ``os.rmdir`` is used deliberately: it only removes genuinely empty
+        directories, so a partially-written workspace (e.g. a concurrent write
+        that landed between our mkdir and our failure) is never silently wiped.
+        """
+        if not _agent_dir_was_new:
+            return
+        try:
+            import os as _os
+            _os.rmdir(agent_dir)
+        except Exception:  # noqa: BLE001
+            pass  # non-empty or already gone — leave as-is
 
     payload: dict[str, Any] = {
         "version": _VERSION,
@@ -956,11 +976,12 @@ def save_session(
         from uacragent.infra.workspace import write_ownership_marker  # noqa: PLC0415
         marker_ok = write_ownership_marker(agent_dir, workspace_id=session.workspace_id)
         if not marker_ok:
-            # Rollback: remove session.json and the index entry so the
-            # filesystem is left in the same state as before this call.
-            # Unlinking a just-written file succeeds even on a disk-full
-            # system (free operations never require free space), so this
-            # rollback is reliable in the most common failure scenario.
+            # Rollback: remove session.json, the index entry, and (if we
+            # created it this call) agent_dir itself so no unmanaged empty
+            # directory is left on disk.  Without the directory rollback the
+            # pre-check at the top of this function would permanently refuse
+            # future saves (sees an existing dir with no owner marker and no
+            # session.json → treats it as a foreign folder → returns False).
             try:
                 session_file.unlink(missing_ok=True)
             except Exception:  # noqa: BLE001
@@ -969,9 +990,11 @@ def save_session(
                 _remove_from_index(workspace)
             except Exception:  # noqa: BLE001
                 pass
+            _rollback_new_agent_dir()
             logger.warning(
                 "Could not write ownership marker to '%s' — rolled back "
-                "session.json to prevent an unmanaged workspace. "
+                "session.json and removed the empty directory to prevent an "
+                "unmanaged workspace. "
                 "Check that the folder is writable and the disk is not full.",
                 agent_dir,
             )
@@ -979,6 +1002,10 @@ def save_session(
 
         return True
     except Exception as exc:
+        # session.json write (or a subsequent step) failed.  Roll back the
+        # freshly-created agent_dir so the same deadlock does not occur: an
+        # empty agent_dir with no owner marker permanently blocks saves.
+        _rollback_new_agent_dir()
         logger.warning("Could not save session to %s: %s", workspace, exc)
         return False
 

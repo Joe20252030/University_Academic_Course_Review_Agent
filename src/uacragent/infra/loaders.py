@@ -460,12 +460,31 @@ class DocumentLoader:
             except Exception:  # noqa: BLE001
                 pass
 
-            # -- Image OCR (if available) ------------------------------
+            # -- Image OCR (if available) / image-count note (if not) -----
             if _ocr_available:
                 ocr_texts = _ocr_slide_images(slide)
                 if ocr_texts:
                     parts.append("[Image text (OCR)]")
                     parts.extend(ocr_texts)
+            else:
+                # OCR not available — count embedded picture shapes so the
+                # indexed text at least records that visual content exists.
+                # This lets the LLM answer questions like "how many images are
+                # on slide 3?" and avoids silently empty slides in image-heavy
+                # presentations.
+                try:
+                    img_count = sum(
+                        1 for shape in slide.shapes
+                        if shape.shape_type == _MSO_PICTURE_TYPE
+                    )
+                    if img_count > 0:
+                        parts.append(
+                            f"[{img_count} image"
+                            f"{'s' if img_count != 1 else ''} on this slide"
+                            f" — text inside images not extracted]"
+                        )
+                except Exception:  # noqa: BLE001
+                    pass
 
             content = "\n".join(parts)
             if content.strip():

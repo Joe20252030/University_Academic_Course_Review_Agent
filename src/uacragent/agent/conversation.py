@@ -70,6 +70,14 @@ _MIME_MAP: dict[str, str] = {
 _IMAGE_MIMES = {
     "image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp",
 }
+
+# PPTX MIME types — used both in _extract_file_text and _build_human_message
+# to identify files that need the combined text+image extraction path.
+_PPTX_MIMES: frozenset[str] = frozenset({
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.ms-powerpoint",
+})
+
 _TEXT_MIMES = {
     "text/plain", "text/markdown", "text/x-python", "text/javascript",
     "text/typescript", "text/csv", "application/json", "text/xml",
@@ -195,6 +203,59 @@ def _extract_pptx_text(path: str) -> str:
     return "\n\n".join(slide_texts) if slide_texts else f"[Empty presentation: {Path(path).name}]"
 
 
+def _extract_pptx_images(path: str) -> list[tuple[bytes, str]]:
+    """Extract embedded image blobs from a .pptx file for vision-API delivery.
+
+    Iterates every slide in slide order and collects the raw bytes and MIME
+    type of each PICTURE-type shape whose content type is a recognised image
+    format (``_IMAGE_MIMES``).
+
+    Returns
+    -------
+    list of ``(blob_bytes, mime_type)`` tuples, capped at
+    ``_MAX_PPTX_IMAGES``.  Individual images larger than
+    ``_MAX_PPTX_IMAGE_BYTES`` are silently skipped.  Returns an empty list
+    when python-pptx is not installed, the file cannot be opened, or no
+    eligible image shapes are found.
+    """
+    try:
+        from pptx import Presentation  # noqa: PLC0415
+    except ImportError:
+        return []
+
+    try:
+        prs = Presentation(path)
+    except Exception:  # noqa: BLE001
+        return []
+
+    results: list[tuple[bytes, str]] = []
+    for slide in prs.slides:
+        if len(results) >= _MAX_PPTX_IMAGES:
+            break
+        for shape in slide.shapes:
+            if len(results) >= _MAX_PPTX_IMAGES:
+                break
+            try:
+                # MSO_SHAPE_TYPE.PICTURE == 13
+                if shape.shape_type != 13:
+                    continue
+                blob: bytes = shape.image.blob
+                content_type: str = shape.image.content_type or ""
+                if not blob or content_type not in _IMAGE_MIMES:
+                    continue
+                if len(blob) > _MAX_PPTX_IMAGE_BYTES:
+                    _logger.debug(
+                        "Skipping large embedded image (%.1f MB) in '%s'.",
+                        len(blob) / 1_048_576, Path(path).name,
+                    )
+                    continue
+                results.append((blob, content_type))
+            except Exception:  # noqa: BLE001
+                continue
+
+    return results
+
+
 def _extract_file_text(path: str, mime: str) -> tuple[str, str | None]:
     """Extract text from a file given its path and MIME type.
 
@@ -218,10 +279,7 @@ def _extract_file_text(path: str, mime: str) -> tuple[str, str | None]:
             return "\n\n".join(d.page_content for d in docs), None
         elif mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
             return _extract_docx_text(path), None
-        elif mime in (
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            "application/vnd.ms-powerpoint",
-        ):
+        elif mime in _PPTX_MIMES:
             text = _extract_pptx_text(path)
             # _extract_pptx_text returns a bracketed notice when python-pptx is
             # missing or the file is a legacy .ppt — surface this as a UI warning.
@@ -270,6 +328,13 @@ def _provider_supports_vision(provider_id: str, model: str = "") -> bool:
 _MAX_ATTACHMENTS: int = 5           # cap on number of files per message
 _MAX_ATTACHMENT_BYTES: int = 10 * 1024 * 1024  # 10 MB per file
 _MAX_EXTRACTED_TEXT_CHARS: int = 20_000         # total extracted text budget
+
+# Per-PPTX image extraction limits.
+# Caps the number of embedded images sent to the LLM as vision parts so a
+# presentation with many decorative images cannot exhaust the message context
+# window.  Images larger than _MAX_PPTX_IMAGE_BYTES are skipped individually.
+_MAX_PPTX_IMAGES: int = 5
+_MAX_PPTX_IMAGE_BYTES: int = 5 * 1024 * 1024   # 5 MB per embedded image
 
 
 def _build_human_message(
@@ -394,9 +459,57 @@ def _build_human_message(
                     f"{remaining:,} characters to stay within the message budget."
                 )
             total_extracted_chars += len(extracted)
-            extra_text_blocks.append(
-                f"\n\n--- Attached file: {name} ---\n{extracted}\n---"
+
+            # ── PPTX: extract embedded images as additional vision parts ──────
+            # Text frames go into the text block above; photos, diagrams, and
+            # charts embedded in the slides are sent as image parts so the LLM
+            # can actually see them rather than receiving silence where images are.
+            #
+            # Vision guard: only attempt extraction when the active provider
+            # actually supports image/vision inputs.  Non-vision providers
+            # (e.g. DeepSeek) cannot handle image_url content parts and would
+            # return an error or silently corrupt the message.  This mirrors the
+            # guard applied to direct image attachments in ConversationAgent.chat()
+            # at the call site above _build_human_message().
+            pptx_imgs: list[tuple[bytes, str]] = []
+            if mime in _PPTX_MIMES and not extraction_warning:
+                _candidate_imgs = _extract_pptx_images(path)
+                if _candidate_imgs:
+                    if _provider_supports_vision(provider_id):
+                        pptx_imgs = _candidate_imgs
+                    else:
+                        _logger.warning(
+                            "Provider '%s' does not support vision; "
+                            "skipping %d embedded image(s) from '%s'.",
+                            provider_id, len(_candidate_imgs), name,
+                        )
+                        ui_warnings.append(
+                            f"'{name}' contains {len(_candidate_imgs)} embedded "
+                            f"image(s) that were not sent — the current provider "
+                            f"({provider_id}) does not support images."
+                        )
+
+            _img_note = (
+                f" (+ {len(pptx_imgs)} embedded image"
+                f"{'s' if len(pptx_imgs) != 1 else ''} also attached below)"
+                if pptx_imgs else ""
             )
+            extra_text_blocks.append(
+                f"\n\n--- Attached file: {name}{_img_note} ---\n{extracted}\n---"
+            )
+
+            for _img_bytes, _img_mime in pptx_imgs:
+                _b64 = base64.b64encode(_img_bytes).decode()
+                parts.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{_img_mime};base64,{_b64}"},
+                })
+
+            if pptx_imgs and len(pptx_imgs) == _MAX_PPTX_IMAGES:
+                ui_warnings.append(
+                    f"'{name}': only the first {_MAX_PPTX_IMAGES} embedded "
+                    f"images were included — the presentation may contain more."
+                )
 
     # Compose message text with any extracted text blocks
     full_text = message_text

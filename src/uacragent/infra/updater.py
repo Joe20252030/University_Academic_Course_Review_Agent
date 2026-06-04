@@ -99,17 +99,23 @@ def _parse_version(ver: str) -> tuple[int, ...]:
 
 
 def _running_version() -> str:
-    """Return the currently-installed package version string."""
+    """Return the currently-running application version string.
+
+    Delegates to ``uacragent.__version__`` which is the single authoritative
+    source: it reads from ``importlib.metadata`` when the package is installed
+    and falls back to the hardcoded version literal in ``__init__.py`` when
+    running directly from source without ``pip install``.
+
+    Calling ``importlib.metadata.version()`` here directly would return the
+    version from the last ``pip install``, which can be stale if ``pyproject.toml``
+    was bumped without re-installing — causing the updater to compare against
+    the wrong baseline version.
+    """
     try:
-        from importlib.metadata import version as _iv
-        return _iv("uacragent")
-    except Exception:
-        # Fallback when the package is run from source without being installed.
-        try:
-            import uacragent as _pkg
-            return getattr(_pkg, "__version__", "0.0.0")
-        except Exception:
-            return "0.0.0"
+        from uacragent import __version__  # noqa: PLC0415
+        return __version__
+    except Exception:  # noqa: BLE001
+        return "0.0.0"
 
 
 # ---------------------------------------------------------------------------
