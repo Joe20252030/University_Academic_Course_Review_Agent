@@ -4,17 +4,16 @@
 [![GitHub](https://img.shields.io/badge/github-Joe20252030-lightgrey)](https://github.com/Joe20252030/University_Academic_Course_Review_Agent)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-> **Latest release: v0.3.2** — drag-and-drop fixed in standalone builds,
-> dialog close-button fixes, attachment cleanup on session switch and quit,
-> paste temp files moved to the app data folder, and a set of file-system
-> safety hardenings (TOCTOU guards, symlink checks, atomic write improvements).
+> **Latest release: v0.4.0** — auto-updater, PPTX embedded-image vision
+> extraction for chat attachments, extraction-failure warnings in chat,
+> App Settings save-reminder banner, and a set of file-system and safety fixes.
 > See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 > Visit the **[project website](https://joe20252030.github.io/University_Academic_Course_Review_Agent/)** for an overview.
 
 Study from course documents with a grounded academic assistant, and generate
 review materials when you need them through a persistent desktop chat workflow.
 
-- Ingest course materials (PDF, DOCX, CSV, and common text/code formats such as TXT, Markdown, JSON, HTML, XML, and source files)
+- Ingest course materials (PDF, DOCX, PPTX, CSV, and common text/code formats such as TXT, Markdown, JSON, HTML, XML, and source files)
 - Classify documents by type for optimized processing
 - Chunk documents using type-specific multi-stage splitting strategies
 - Embed into a local Chroma vector store
@@ -25,20 +24,20 @@ review materials when you need them through a persistent desktop chat workflow.
 - Save canonical generated output as Markdown, with optional DOCX/PDF export in the desktop GUI
 - Persist desktop sessions, settings, and chat history across app restarts; attached file metadata is preserved in history
 
-## What's New in v0.3.2
+## What's New in v0.4.0
 
 | Area | Change |
 |---|---|
-| **Drag-and-drop fixed in built apps** | Files dragged onto the chat input were silently ignored in PyInstaller-frozen builds on both macOS and Windows — DnD now works correctly in all standalone distributions |
-| **`tkinterdnd2` pinned to 0.4.3** | Newer tkinterdnd2 releases ship a Tcl-9-compiled dylib (`libtcl9tkdnd*.dylib`) that cannot be loaded by Python 3.13's bundled Tcl 8.6; 0.4.3 is the last Tcl-8.6-compatible release |
-| **macOS: post-bundle dylib re-signing** | The tkdnd dylib carries a `CS_LINKER_SIGNED` flag that macOS rejects inside a codesigned app bundle; the spec now re-signs it with a plain ad-hoc signature after bundling |
-| **`TCLLIBPATH` brace-quoting** | Paths are now brace-quoted before insertion into `TCLLIBPATH`, fixing silent DnD failure for Windows users whose username or install path contains spaces |
-| **App Settings `×` button now cancels correctly** | Closing App Settings via the OS window-close button previously applied live-preview theme/font changes permanently; it now routes through `_cancel`, reverting any unsaved changes |
-| **Session Settings `×` button no longer raises `TclError`** | Closing Session Settings via `×` called raw `destroy()`, racing with widget teardown; it now uses `_safe_destroy_toplevel` |
-| **Attachments cleared on session switch and quit** | Pending (unsent) attachments are now discarded when switching to a different session or closing the app; re-clicking the active session to reload preserves the queue |
-| **Paste temp files moved to app data folder** | Clipboard-pasted images are now written to `~/.uacragent/paste_tmp/` instead of the OS temp directory, keeping the app's footprint fully self-contained; stale files from crashes are swept on next launch |
-| **Safe deletion gate for temp files** | Only attachment entries explicitly marked as app-owned (`is_temp_file: true`) are ever deleted — user files are never touched regardless of their filename |
-| **File-system safety hardening** | TOCTOU double-check before `rmtree` in session deletion; unique temp names in atomic writes; symlink guard on output file delete; empty temp file cleanup on paste-save failure; thread-start failure cleanup; `reset_manifest` errors now logged |
+| **Auto-updater** | The app checks for new GitHub releases silently 4 s after launch. A non-blocking dialog offers Update Now (download + open/launch installer), Remind Me Later, and Skip This Version (persisted). macOS opens the `.dmg` in Finder; Windows launches the installer detached and exits the app. Any network failure is handled silently. |
+| **PPTX vision extraction in chat** | Embedded images (photos, diagrams, charts) inside `.pptx` chat attachments are now extracted as vision parts and sent to the LLM so it can actually see slide images. Limited to 5 images per file, images over 5 MB skipped. Only active for vision-capable providers (Gemini, OpenAI); non-vision providers receive a visible warning instead. |
+| **Image-count notes in indexed slides** | When indexing `.pptx` into ChromaDB without Tesseract OCR, slides containing images now include a note such as `[2 images on this slide — text inside images not extracted]` so the LLM knows visual content exists. |
+| **Extraction-failure warnings in chat** | File extraction failures in chat attachments (python-pptx missing, legacy `.ppt` format, corrupt files, unsupported MIME types) now surface as visible `⚠️` system messages in the chat area. Previously these were silently forwarded to the LLM with no user notification. |
+| **App Settings save-reminder banner** | A fixed notice at the top of the App Settings dialog now reads *"Appearance changes preview instantly. Click Save to confirm all changes, or Cancel to revert."* — matching the existing Session Settings banner style. Available in English and Simplified Chinese. |
+| **`save_session()` orphan-directory fix** | A failed ownership-marker write during `save_session()` rolled back `session.json` but left an empty `.uacragent/` directory behind. The pre-check then permanently refused all future saves for that session. Fixed: the freshly-created directory is now also removed in both rollback paths. |
+| **PPTX vision guard bypass fixed** | Embedded images extracted from `.pptx` attachments were added as `image_url` vision parts unconditionally, bypassing the non-vision provider guard. DeepSeek and other text-only providers now receive text only, with a warning. |
+| **Updater version resolution fixed** | `_running_version()` now reads from `uacragent.__version__` (which has the correct `pyproject.toml`-fallback chain) instead of `importlib.metadata` directly, preventing stale pip metadata from causing wrong version comparisons. |
+| **API workspace cleanup symlink guard** | `_cleanup_expired_api_workspaces` was missing a symlink check before the final `shutil.rmtree(ws)`. Now matches the guard already in `delete_session()`. |
+| **Output panel `stat()` TOCTOU fix** | `fpath.stat().st_size` in the Generated Outputs panel could raise `FileNotFoundError` if a file was deleted while the dialog was open. Now guarded with `try/except OSError`. |
 
 Full details in [CHANGELOG.md](CHANGELOG.md).
 
@@ -279,6 +278,12 @@ Notes:
   listed in `requirements.txt`.
 - Frozen app builds download the ONNX local embedding model into
   `<app_data_dir>/models/chroma/onnx_models/` on first use.
+- PPTX file support requires `python-pptx` (included in `requirements.txt`).
+  To also extract text from images embedded in slides, install Tesseract OCR
+  (`brew install tesseract` on macOS, `sudo apt install tesseract-ocr` on
+  Linux, or the UB-Mannheim installer on Windows) and `pip install pytesseract`.
+  Without Tesseract, slide text frames and speaker notes are still extracted;
+  only text inside embedded images is unavailable.
 
 ## Install
 
@@ -990,12 +995,13 @@ src/uacragent/
     types.py             Enums (DocumentType, ExamFormat, ExamType, TaskType, ExportFormat)
   infra/
     settings.py          Pydantic-based configuration (.env)
-    loaders.py           Document loading with multi-stage type-specific splitting, including CSV table ingestion
+    loaders.py           Document loading with multi-stage type-specific splitting, including CSV and PPTX ingestion
     vectorstore.py       Chroma vector store, manifest tracking, and weighted retriever
     llm.py               Provider-aware LLM client wrapper (Gemini / OpenAI / DeepSeek)
     auth.py              Provider-specific API key validation
     persistence.py       Desktop session persistence, app-data config, and local model cache management
-    workspace.py         Workspace directory management with classified folders
+    workspace.py         Workspace directory management, classified folders, and shared filesystem safety helpers
+    updater.py           Auto-updater: GitHub release check, asset download, installer launch (macOS/Windows)
   export/
     markdown.py          Markdown export
     docx.py              DOCX export (python-docx)
@@ -1018,7 +1024,7 @@ tests/
   test_export.py              Markdown / DOCX / PDF export tests
   test_loaders.py             Document loading and splitting tests
   test_loaders_csv.py         CSV ingestion and load_and_split_classified tests
-  test_loaders_extended.py    Cross-type dedup, workspace copy edge cases, attachment limits
+  test_loaders_extended.py    Cross-type dedup, workspace copy edge cases, attachment limits, extraction warnings
   test_pipeline_utils.py      Pipeline utility function tests
   test_pipeline_advanced.py   Effort config, prefs expansion, cancel, localisation
   test_vectorstore_dedup.py   Chunk ID hashing and Chroma deduplication tests
@@ -1032,6 +1038,7 @@ tests/
   test_rate_tiers.py          RateTierConfig, get_rate_tier, Settings._apply_rate_tier
   test_settings_env.py        Env-var aliases, warn_unrecognised_env_vars, privacy defaults
   test_bug_fixes.py           Regression tests for all v0.3.1 bug fixes
+  test_updater.py             Auto-updater: version parsing, check/download/apply, skip persistence, platform behaviour
 app.py                   Lightweight importable helper for direct service calls
 .env.sample              Example environment configuration
 UACRAgent_mac.spec       PyInstaller spec for macOS standalone builds

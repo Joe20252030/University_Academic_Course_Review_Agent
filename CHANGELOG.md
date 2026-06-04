@@ -9,6 +9,145 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.0] — 2026-06-04
+
+### Added
+
+- **Auto-updater** — the desktop app now checks for new releases silently in a
+  background thread 4 seconds after launch. When a release newer than the
+  running version is found on GitHub, a non-blocking dialog offers three
+  choices:
+
+  - **Update Now** — downloads the platform-specific installer asset with a
+    live progress percentage, then:
+    - macOS: opens the `.dmg` in Finder so the user can drag `UACRAgent.app`
+      to `/Applications`. The current session stays open.
+    - Windows: launches the `.exe` installer as a detached process
+      (`DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP`) and exits the running
+      app so the installer can replace files.
+  - **Remind Me Later** — dismisses the dialog; the check runs again on the
+    next launch.
+  - **Skip This Version** — persists the skipped tag to
+    `~/.uacragent/config.json`; that release never prompts again unless
+    explicitly cleared.
+
+  Asset name convention (must match GitHub release uploads):
+  `UACRAgent-v{version}-macOS-AppleSilicon.dmg` /
+  `UACRAgent-v{version}-windows-x64-setup.exe`.
+  Any network or API error is handled silently — the update check never
+  blocks launch or crashes the app.
+
+- **PPTX embedded-image vision extraction (chat attach path)** — when a
+  `.pptx` file is attached via the `+` button or paste, embedded image shapes
+  (photos, diagrams, charts) are now extracted as base64-encoded vision parts
+  and sent to the LLM alongside the extracted text. The LLM can now actually
+  *see* slide images rather than receiving silence where images were. Limits:
+  up to 5 images per file, images over 5 MB skipped individually. Vision parts
+  are only added when the active provider supports vision inputs (non-vision
+  providers such as DeepSeek receive text only, with a visible warning).
+
+- **Image-count notes in indexed PPTX slides** — when indexing `.pptx` files
+  into the session's Chroma store, slides that contain embedded pictures now
+  include a note such as `[2 images on this slide — text inside images not
+  extracted]` when OCR (Tesseract) is unavailable. The LLM can then answer
+  questions about visual content at least by noting its presence.
+
+- **App Settings save-reminder banner** — the App Settings dialog now shows a
+  fixed notice at the top (matching the Session Settings banner style):
+  *"Appearance changes preview instantly. Click Save to confirm all changes,
+  or Cancel to revert."* Available in English and Simplified Chinese.
+
+- **Comprehensive updater test suite** — 71 tests across 9 sections covering
+  `_parse_version`, all `check_for_update` branches (newer/same/older/skipped/
+  no asset/network error/non-dict JSON), `download_update` (success, progress,
+  no Content-Length, failure cleanup), `apply_update` (macOS keeps running,
+  Windows exits, unsupported platform raises), skip-version persistence
+  round-trip, macOS/Windows window-behaviour invariants, and
+  `_pending_update_path` cleanup in `_on_close`. Total: **497 tests, all
+  passing**.
+
+### Fixed
+
+- **`check_for_update()` crash on non-dict GitHub API response** — if the
+  GitHub Releases API returned a JSON array, `null`, or any non-dict value
+  (e.g. a network proxy's error page), calling `.get()` on the result raised
+  an uncaught `AttributeError`. Fixed with an `isinstance(data, dict)` guard
+  immediately after JSON parsing; returns `None` on unexpected payloads.
+
+- **Silent failure when `.pptx` chat attachment had extraction errors** —
+  `_extract_file_text()` previously returned a bare string for all outcomes.
+  Error notices (python-pptx not installed, legacy `.ppt` format, corrupt
+  file, unsupported MIME type) were forwarded to the LLM silently, with no
+  indication in the chat UI that anything went wrong. Fixed: the function now
+  returns `(llm_text, ui_warning)`. A non-`None` `ui_warning` surfaces as a
+  visible `⚠️` system message in the chat area for every extraction failure.
+
+- **PPTX embedded images bypassed provider vision guard** — the vision guard
+  in `ConversationAgent.chat()` filters out direct image attachments for
+  non-vision providers, but PPTX image blobs were extracted and appended as
+  `image_url` parts inside `_build_human_message()`, completely bypassing that
+  guard. A DeepSeek (or any non-vision) provider received a multimodal content
+  list it cannot handle. Fixed: `_provider_supports_vision()` is checked before
+  adding PPTX image parts; non-vision providers receive a `ui_warning` instead.
+
+- **Orphaned empty `.uacragent/` directory after `save_session()` failure** —
+  `agent_dir.mkdir()` ran before the ownership-marker write. On any subsequent
+  failure (marker write returns `False`, or `_atomic_write_text` raises),
+  `session.json` was rolled back but `agent_dir` was left as an empty directory
+  with no `owner.json`. The pre-check at the top of `save_session()` then
+  permanently refused all future saves for that session (empty dir, no marker
+  → treated as a foreign folder → returns `False`). Fixed: a
+  `_agent_dir_was_new` flag tracks whether this call created the directory;
+  both failure paths now call `_rollback_new_agent_dir()` which uses
+  `os.rmdir()` (safe: only removes empty directories) to restore the filesystem
+  to its prior state.
+
+- **API workspace cleanup missing symlink guard** — `_cleanup_expired_api_workspaces`
+  in `api/main.py` iterated over workspace directories with `ws.is_dir()` (which
+  returns `True` for symlinks), then later called `shutil.rmtree(ws)` with no
+  `is_symlink()` check. A symlink workspace could have directed `rmtree` to an
+  arbitrary location. Fixed: a `ws.is_symlink()` check and warning are inserted
+  before the `rmtree` call, matching the guard already present in
+  `delete_session()`.
+
+- **Output panel `stat()` TOCTOU race** — in `_build_outputs_panel`, the
+  `fpath.stat().st_size` call used to produce the file-size label was not
+  guarded. If a file was deleted externally between `iterdir()` and `stat()`,
+  a `FileNotFoundError` crashed the panel refresh. Fixed: wrapped in
+  `try/except OSError`; falls back to `"—"` for the size label.
+
+- **`_running_version()` read stale pip-installed metadata** — the updater
+  called `importlib.metadata.version("uacragent")` directly, which reads the
+  `.dist-info` from the *last* `pip install`, not the current source. If
+  `pyproject.toml` was bumped without re-running `pip install -e .`, the
+  updater compared against the wrong baseline. Fixed: `_running_version()` now
+  delegates to `uacragent.__version__`, which already has the correct
+  `importlib.metadata` + `pyproject.toml`-fallback resolution chain.
+
+- **`__init__.py` hardcoded version fallback** — the bare-source fallback
+  `__version__ = "0.3.2"` required manual editing on every release bump,
+  creating a second place to update alongside `pyproject.toml`. Fixed: the
+  fallback now reads `pyproject.toml` dynamically via regex, so only
+  `pyproject.toml` needs to change per release.
+
+### Changed
+
+- **`_safe_rmtree` consolidated into `workspace.py`** — `workspace_manager.py`
+  and `vectorstore.py` both contained identical `_safe_rmtree` implementations.
+  The canonical version now lives in `workspace.py`; both callsites import from
+  there.
+
+- **`_SAFE_ID_RE` no longer re-declared in `dict_to_session()`** — the
+  path-traversal guard regex was compiled inline with a local `import re as _re`
+  inside `persistence.py:dict_to_session()`. It now imports the already-compiled
+  constant from `workspace.py`.
+
+- **`_extract_file_text()` return type** — changed from `str` to
+  `tuple[str, str | None]`. Second element is a user-facing warning string on
+  extraction failure, or `None` on success. Callers updated accordingly.
+
+---
+
 ## [0.3.2] — 2026-06-02
 
 ### Fixed
