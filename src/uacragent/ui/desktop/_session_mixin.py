@@ -272,6 +272,12 @@ class SessionMixin:
                     "will fall back to previously set provider.",
                     emb_provider,
                 )
+                self._append_chat(
+                    "system",
+                    f"⚠️ The saved embedding provider {emb_provider!r} is not "
+                    "recognised. The previously active provider will be used. "
+                    "Open Session Settings to choose a valid provider and click Apply.",
+                )
         else:
             # If somehow busy (e.g. rapid session switching), defer the write.
             # The background thread will use whatever was last committed.
@@ -292,6 +298,12 @@ class SessionMixin:
             _logging.getLogger(__name__).warning(
                 "Ignoring unknown rate tier %r from session file; falling back to 'free'.",
                 rate_tier_id,
+            )
+            self._append_chat(
+                "system",
+                f"⚠️ The saved request frequency tier {rate_tier_id!r} is not "
+                "recognised — reverted to Free tier. "
+                "Open Session Settings to restore your tier and click Apply.",
             )
             rate_tier_id = "free"
         os.environ["RATE_TIER"] = rate_tier_id

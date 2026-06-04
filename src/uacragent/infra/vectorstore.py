@@ -22,39 +22,12 @@ from pydantic import Field as _PydanticField
 from uacragent.domain.types import DocumentType, TaskType
 from uacragent.infra.persistence import get_chroma_onnx_model_dir, _atomic_write_text
 from uacragent.infra.settings import Settings
-from uacragent.infra.workspace import WorkspacePaths
+from uacragent.infra.workspace import WorkspacePaths, _safe_rmtree
 
 
 _DEFAULT_LOCAL_MODEL = "all-MiniLM-L6-v2"
 
 _vs_logger = logging.getLogger(__name__)
-
-
-def _safe_rmtree(path: Path, expected_parent: Path) -> None:
-    """Delete *path* only when it is a real directory under *expected_parent*.
-
-    Refuses deletion if:
-    * ``path`` resolves to a location outside *expected_parent* (path escape).
-    * ``path`` is a symlink — rmtree would follow it and wipe the link target.
-
-    Both cases are logged as warnings.
-    """
-    resolved = path.resolve()
-    parent_resolved = expected_parent.resolve()
-    try:
-        resolved.relative_to(parent_resolved)
-    except ValueError:
-        _vs_logger.warning(
-            "rmtree refused: %s is not under expected parent %s",
-            path, expected_parent,
-        )
-        return
-    if path.is_symlink():
-        _vs_logger.warning("rmtree refused: %s is a symlink", path)
-        return
-    if not path.is_dir():
-        return
-    shutil.rmtree(path)
 
 # Module-level cache for local HuggingFace embedding model instances.
 # Loading a sentence-transformers model from disk into RAM is expensive
@@ -714,8 +687,18 @@ def _save_manifest(
     workspace_paths: WorkspacePaths,
     classified_files: dict[DocumentType, list[str]],
     settings: Any = None,
-) -> None:
-    """Persist the current file set and embedding config for the next run."""
+) -> bool:
+    """Persist the current file set and embedding config for the next run.
+
+    Returns
+    -------
+    True
+        Manifest written successfully.
+    False
+        Write failed.  The caller should surface a visible warning — next
+        session open will trigger a full re-index instead of the fast path
+        (potentially burning additional API quota).
+    """
     mp = _manifest_path(workspace_paths)
     files = [
         {"doc_type": dt.value, "path": p}
@@ -726,21 +709,15 @@ def _save_manifest(
     if settings is not None:
         data["embedding_config"] = _embedding_fingerprint(settings)
     try:
-        # Use _atomic_write_text (unique NamedTemporaryFile per call) rather than
-        # a fixed .tmp sibling name.  The fixed name causes silent data corruption
-        # when two concurrent operations write the manifest for the same workspace:
-        # both processes would share indexed_files.tmp and overwrite each other's
-        # in-progress write.  A unique temp name per call eliminates the collision.
         _atomic_write_text(mp, json.dumps(data, indent=2, ensure_ascii=False))
+        return True
     except Exception as exc:  # noqa: BLE001
-        # Non-fatal but important: a failed manifest write means the next session
-        # open cannot detect which files are already indexed, so it will trigger a
-        # full re-embedding run (burning API quota) instead of the fast path.
         _vs_logger.warning(
             "Failed to write indexing manifest to %s — next session open will "
             "rebuild the vector store from scratch: %s",
             mp, exc,
         )
+        return False
 
 
 def _files_were_removed(
@@ -789,7 +766,7 @@ def get_or_create_vectorstore(
     workspace_paths: WorkspacePaths,
     classified_files: dict[DocumentType, list[str]] | None = None,
     progress_cb: Callable[[str], None] | None = None,
-) -> VectorStore:
+) -> tuple[VectorStore, str | None]:
     """Build or update the Chroma vector store for the current session.
 
     Removal-aware rebuild
@@ -806,6 +783,13 @@ def get_or_create_vectorstore(
     After a successful update the current file set is written to a manifest
     (``indexed_files.json`` in the agent dir) so the next run can detect
     removals.
+
+    Returns
+    -------
+    (vectorstore, warning)
+        *warning* is ``None`` on full success, or a human-readable string when
+        the manifest could not be saved (non-fatal but means the next session
+        open will rebuild from scratch rather than using the fast path).
     """
     embeddings = _build_embeddings(settings, progress_cb=progress_cb)
     chroma_dir = Path(workspace_paths.chroma)
@@ -872,10 +856,16 @@ def get_or_create_vectorstore(
             db.add_documents(new_chunks, ids=new_ids)
 
     # ── Persist manifest so the next run can detect removals ──────────
+    _manifest_warning: str | None = None
     if classified_files is not None:
-        _save_manifest(workspace_paths, classified_files, settings)
+        if not _save_manifest(workspace_paths, classified_files, settings):
+            _manifest_warning = (
+                "⚠️ Could not save the indexing state to disk. "
+                "The next time this session is opened it will re-index all "
+                "documents from scratch, which may use additional API quota."
+            )
 
-    return db
+    return db, _manifest_warning
 
 
 def build_retriever(vectorstore: VectorStore, settings: Settings) -> BaseRetriever:
@@ -1021,18 +1011,16 @@ def reset_manifest(workspace_paths: WorkspacePaths) -> None:
     indexing run starts from a clean slate rather than comparing against
     stale paths from the previous run.  Safe to call when the manifest
     file does not exist yet.
+
+    Uses :func:`~uacragent.infra.persistence._atomic_write_text` (unique
+    temp name per call) rather than a fixed ``.tmp`` sibling so that
+    concurrent resets against the same workspace do not collide on the same
+    temp file.
     """
     mp = _manifest_path(workspace_paths)
     try:
-        import os as _os
-        tmp = mp.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"files": []}, indent=2, ensure_ascii=False), encoding="utf-8")
-        _os.replace(tmp, mp)
+        _atomic_write_text(mp, json.dumps({"files": []}, indent=2, ensure_ascii=False))
     except Exception as _exc:  # noqa: BLE001
-        try:
-            tmp.unlink(missing_ok=True)  # type: ignore[possibly-undefined]
-        except Exception:  # noqa: BLE001
-            pass
         # Non-fatal: the next indexing run will rebuild the manifest.
         # Log so disk-full or permission issues are visible in the log file.
         _vs_logger.warning("reset_manifest failed for %s: %s", mp, _exc)

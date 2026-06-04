@@ -170,12 +170,18 @@ def check_for_update() -> UpdateInfo | None:
         )
         with urllib.request.urlopen(req, timeout=_API_TIMEOUT) as resp:
             import json as _json
-            data: dict = _json.loads(resp.read().decode("utf-8"))
+            data = _json.loads(resp.read().decode("utf-8"))
     except urllib.error.URLError as exc:
         logger.warning("Update check network error: %s", exc)
         return None
     except Exception as exc:  # noqa: BLE001
         logger.warning("Update check failed: %s", exc)
+        return None
+
+    # Guard against non-dict payloads (e.g. a GitHub API returning an array
+    # during a schema change, or a network proxy returning an error page).
+    if not isinstance(data, dict):
+        logger.warning("Update check: unexpected response type %s", type(data).__name__)
         return None
 
     # ------------------------------------------------------------------

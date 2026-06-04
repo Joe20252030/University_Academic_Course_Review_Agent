@@ -55,6 +55,13 @@ _CONFIG_FILE = _UAR_DIR / "config.json"
 _SESSION_FILENAME = "session.json"   # lives inside <workspace>/.uacragent/
 _VERSION = 1
 
+# OS-generated metadata files that are invisible to users and safe to remove
+# together with an otherwise-empty directory.  Used by delete_session() and
+# exported so api/main.py can apply the same rule to api_run/ workspaces.
+OS_METADATA_FILENAMES: frozenset[str] = frozenset({
+    ".DS_Store", ".localized", "Thumbs.db", "desktop.ini", ".Spotlight-V100",
+})
+
 
 # ---------------------------------------------------------------------------
 # App-level data directory (global, user-configurable)
@@ -295,8 +302,10 @@ def configure_logging() -> None:
     ``<app_data_dir>/logs/uacragent.log``   — current log file
     ``<app_data_dir>/logs/uacragent.log.1`` — previous rotation
     ``<app_data_dir>/logs/uacragent.log.2`` — two rotations back
+    ``<app_data_dir>/logs/uacragent.log.3`` — three rotations back
 
-    Each file is capped at 2 MB; three files are kept, giving ~6 MB maximum.
+    Each file is capped at 2 MB; four files at most (1 active + 3 backups),
+    giving ~8 MB maximum disk usage.
     The current log file is created eagerly at startup so users have a stable
     path to inspect even before the first warning/error is emitted. If the user
     deletes the log file while the app is running, the next log message
@@ -356,7 +365,7 @@ def configure_logging() -> None:
     level_name = os.environ.get("UACRAGENT_LOG_LEVEL", "WARNING").upper()
     level = getattr(logging, level_name, logging.WARNING)
 
-    # ── File handler (resilient rotating, 2 MB × 3 files) ────────────────────
+    # ── File handler (resilient rotating, 2 MB × 4 files: 1 active + 3 backups) ──
     try:
         file_handler = _ResilientRotatingFileHandler(
             log_file,
@@ -521,12 +530,16 @@ def is_safe_app_data_target(path: Path) -> bool:
         except Exception:  # noqa: BLE001
             pass
 
-    # Check 2: index.json with session-registry format (legacy / pre-marker)
+    # Check 2: index.json in session-registry format (legacy / pre-marker).
+    # The app has always written index.json as a bare JSON array of session
+    # records — NOT as an object with a "sessions" key.  The correct check
+    # is isinstance(data, list); testing `"sessions" in data` on a list would
+    # look for the string "sessions" as an element, which never matches.
     index_file = path / "index.json"
     if index_file.is_file():
         try:
             data = json.loads(index_file.read_text(encoding="utf-8"))
-            if "sessions" in data:
+            if isinstance(data, list):   # bare array → our format
                 return True
         except Exception:  # noqa: BLE001
             pass
@@ -860,10 +873,38 @@ def save_session(
         (e.g. disk full, permission denied).  The caller is responsible for
         surfacing a visible error to the user when ``False`` is returned.
     """
-    from uacragent.infra.workspace import AGENT_SUBDIR
+    from uacragent.infra.workspace import (  # noqa: PLC0415
+        AGENT_SUBDIR, has_ownership_marker,
+    )
 
     workspace = _resolve_workspace(session)
     agent_dir = workspace / AGENT_SUBDIR
+
+    # Ownership pre-check — mirrors the guard in ensure_workspace_dirs().
+    #
+    # If agent_dir already exists but carries neither a valid owner.json nor a
+    # session.json (the migration marker for pre-0.4.0 sessions), saving here
+    # would unconditionally write owner.json and adopt a folder that does not
+    # belong to us.  delete_session() would then happily wipe it, destroying
+    # any pre-existing content inside the foreign .uacragent/ directory.
+    #
+    # Refuse early and return False so the caller surfaces a save-failure
+    # message instead of silently adopting a foreign folder.
+    if agent_dir.exists():
+        _is_ours = (
+            has_ownership_marker(agent_dir)
+            or (agent_dir / _SESSION_FILENAME).is_file()
+        )
+        if not _is_ours:
+            logger.warning(
+                "save_session() refused: '%s' exists without an UACRAgent "
+                "ownership marker and is not a recognised migration candidate. "
+                "The folder may belong to another application. "
+                "No files were written.",
+                agent_dir,
+            )
+            return False
+
     agent_dir.mkdir(parents=True, exist_ok=True)
 
     payload: dict[str, Any] = {
@@ -906,13 +947,35 @@ def save_session(
         )
         _upsert_index(workspace, session.course_name or str(workspace.name))
 
-        # Write ownership marker after a successful save.  This is the
-        # migration path for sessions created before the marker feature (v0.4.0):
-        # once the user saves, the folder is explicitly ours.  It is also the
-        # adoption path for a first-time save into a workspace whose
-        # .uacragent/ folder predates the current session.
+        # Write ownership marker so future cleanup can manage this workspace.
+        # The return value is checked: if the write fails we must roll back
+        # session.json and the index entry so no unmanaged app-created file
+        # is left on disk.  Leaving session.json without owner.json would
+        # cause delete_session() to permanently refuse to clean up, violating
+        # the "every file we create stays managed" invariant.
         from uacragent.infra.workspace import write_ownership_marker  # noqa: PLC0415
-        write_ownership_marker(agent_dir, workspace_id=session.workspace_id)
+        marker_ok = write_ownership_marker(agent_dir, workspace_id=session.workspace_id)
+        if not marker_ok:
+            # Rollback: remove session.json and the index entry so the
+            # filesystem is left in the same state as before this call.
+            # Unlinking a just-written file succeeds even on a disk-full
+            # system (free operations never require free space), so this
+            # rollback is reliable in the most common failure scenario.
+            try:
+                session_file.unlink(missing_ok=True)
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                _remove_from_index(workspace)
+            except Exception:  # noqa: BLE001
+                pass
+            logger.warning(
+                "Could not write ownership marker to '%s' — rolled back "
+                "session.json to prevent an unmanaged workspace. "
+                "Check that the folder is writable and the disk is not full.",
+                agent_dir,
+            )
+            return False
 
         return True
     except Exception as exc:
@@ -1034,9 +1097,6 @@ def delete_session(workspace: Path) -> str | None:
     # "Effectively empty" = only OS-generated metadata files remain
     # (.DS_Store, Thumbs.db, etc.), which are invisible to the user and safe
     # to remove together with the parent folder.
-    _OS_METADATA: frozenset[str] = frozenset({
-        ".DS_Store", ".localized", "Thumbs.db", "desktop.ini", ".Spotlight-V100",
-    })
     try:
         # Only auto-delete when workspace is under the dedicated sessions/
         # subdirectory — the exact location where _resolve_workspace() places
@@ -1057,7 +1117,7 @@ def delete_session(workspace: Path) -> str | None:
                     "Manual cleanup may be required.", workspace,
                 )
             else:
-                user_items = [p for p in workspace.iterdir() if p.name not in _OS_METADATA]
+                user_items = [p for p in workspace.iterdir() if p.name not in OS_METADATA_FILENAMES]
                 if not user_items:
                     # Re-check symlink status immediately before rmtree to
                     # close the TOCTOU window between the earlier check above
@@ -1086,7 +1146,7 @@ def dict_to_session(data: dict[str, Any]) -> "AgentSession":  # type: ignore[nam
     workspace_folder = Path(wf_str) if wf_str else None
 
     import uuid as _uuid
-    import re as _re
+    from uacragent.infra.workspace import _SAFE_ID_RE as _WS_SAFE_ID_RE  # noqa: PLC0415
     # Guard against empty workspace_id — an empty string would collapse in
     # _resolve_workspace to the shared sessions/default path, corrupting
     # unrelated sessions.
@@ -1095,8 +1155,7 @@ def dict_to_session(data: dict[str, Any]) -> "AgentSession":  # type: ignore[nam
     # "../../etc" is non-empty so the empty-string guard above won't catch it,
     # but it would let _resolve_workspace() build an arbitrary absolute path.
     # Regenerate a safe random id when the stored id is malformed.
-    _SAFE_ID_RE = _re.compile(r"^[A-Za-z0-9_-]{1,128}$")
-    if not _SAFE_ID_RE.match(workspace_id):
+    if not _WS_SAFE_ID_RE.match(workspace_id):
         logger.warning(
             "Unsafe workspace_id %r in session data; replacing with a fresh id.",
             workspace_id,

@@ -195,54 +195,63 @@ def _extract_pptx_text(path: str) -> str:
     return "\n\n".join(slide_texts) if slide_texts else f"[Empty presentation: {Path(path).name}]"
 
 
-def _extract_file_text(path: str, mime: str) -> str:
+def _extract_file_text(path: str, mime: str) -> tuple[str, str | None]:
     """Extract text from a file given its path and MIME type.
 
-    Uses PyPDFLoader for PDFs, a two-library DOCX extractor for Word documents
-    (python-docx primary, Docx2txtLoader secondary), and plain utf-8 text
-    reading for known text-based formats (``_TEXT_MIMES``).
-    Returns extracted text, or an error/notice string on failure.
+    Returns
+    -------
+    (llm_text, ui_warning)
+        *llm_text* is the content (or a bracketed notice) to include in the
+        message sent to the LLM.  *ui_warning* is a human-readable string to
+        show the user in the chat UI, or ``None`` when extraction succeeded.
 
     Unknown / binary MIME types (e.g. ``application/octet-stream``, Excel
     spreadsheets) are explicitly rejected rather than decoded as UTF-8, which
-    would produce kilobytes of ``\\uFFFD`` replacement characters that waste
-    token budget and confuse the LLM.
+    would produce kilobytes of replacement characters that waste token budget
+    and confuse the LLM.
     """
+    fname = Path(path).name
     try:
         if mime == "application/pdf":
             from langchain_community.document_loaders import PyPDFLoader
             docs = PyPDFLoader(path).load()
-            return "\n\n".join(d.page_content for d in docs)
+            return "\n\n".join(d.page_content for d in docs), None
         elif mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-            return _extract_docx_text(path)
+            return _extract_docx_text(path), None
         elif mime in (
             "application/vnd.openxmlformats-officedocument.presentationml.presentation",
             "application/vnd.ms-powerpoint",
         ):
-            return _extract_pptx_text(path)
+            text = _extract_pptx_text(path)
+            # _extract_pptx_text returns a bracketed notice when python-pptx is
+            # missing or the file is a legacy .ppt — surface this as a UI warning.
+            if text.startswith("[PPTX EXTRACTION UNAVAILABLE") or text.startswith("[LEGACY FORMAT"):
+                return text, (
+                    f"'{fname}' could not be read — "
+                    + ("python-pptx is not installed (run: pip install python-pptx)."
+                       if "not installed" in text
+                       else "legacy .ppt format is not supported; please save as .pptx.")
+                )
+            return text, None
         elif mime in _TEXT_MIMES:
-            return Path(path).read_text(encoding="utf-8", errors="replace")
+            return Path(path).read_text(encoding="utf-8", errors="replace"), None
         else:
-            # Unsupported binary or unknown type — do not attempt to decode.
-            return (
-                f"[UNSUPPORTED FILE TYPE: '{Path(path).name}' has MIME type "
+            notice = (
+                f"[UNSUPPORTED FILE TYPE: '{fname}' has MIME type "
                 f"'{mime}' which cannot be extracted as text.  Please inform "
                 f"the user that this file type is not supported and ask them to "
                 f"convert it to PDF, DOCX, or plain text before attaching.]"
             )
+            return notice, f"'{fname}' is not a supported file type for text extraction."
     except Exception as exc:  # noqa: BLE001
-        # Return a clearly-marked error block so the LLM treats it as a signal
-        # rather than as file content, and can tell the user what went wrong.
-        # Only expose the exception *type* — the full message may contain
-        # internal file paths, library version strings, or other details that
-        # should not reach the LLM or the user.
         _logger.debug("_extract_file_text failed for '%s': %s", path, exc)
-        return (
-            f"[FILE EXTRACTION ERROR: Could not read '{Path(path).name}'. "
+        notice = (
+            f"[FILE EXTRACTION ERROR: Could not read '{fname}'. "
             f"Reason: {type(exc).__name__}. "
             f"Please inform the user that this file could not be processed "
             f"and suggest they check the file is not corrupted or try a different format.]"
         )
+        return notice, f"'{fname}' could not be read ({type(exc).__name__}) — it may be corrupt or unsupported."
 
 
 def _provider_supports_vision(provider_id: str, model: str = "") -> bool:
@@ -369,7 +378,9 @@ def _build_human_message(
                     f"text budget was already reached by earlier attachments."
                 )
                 continue
-            extracted = _extract_file_text(path, mime)
+            extracted, extraction_warning = _extract_file_text(path, mime)
+            if extraction_warning:
+                ui_warnings.append(extraction_warning)
             # Truncate this file's extracted text to stay within the budget
             remaining = _MAX_EXTRACTED_TEXT_CHARS - total_extracted_chars
             if len(extracted) > remaining:
@@ -692,8 +703,12 @@ class ConversationAgent:
                     )
 
             # ── Full indexing path ──────────────────────────────────────────────
-            _warn = _fast_path_warning
-            session.retriever = pipeline.prepare_session(session, progress_cb=progress_cb)
+            session.retriever, _manifest_warn = pipeline.prepare_session(
+                session, progress_cb=progress_cb
+            )
+            # Combine fast-path failure warning (if any) with manifest warning.
+            _warn_parts = [w for w in (_fast_path_warning, _manifest_warn) if w]
+            _warn = "\n\n".join(_warn_parts) or None
             n_types = len(session.active_files())
             n_files = sum(len(v) for v in session.active_files().values())
             return (

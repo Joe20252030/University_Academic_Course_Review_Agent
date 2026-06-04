@@ -633,8 +633,8 @@ class AgentPipeline:
 
         _check_cancelled()
         _progress(f"Building vector index ({len(chunks)} chunks)…")
-        vectorstore = get_or_create_vectorstore(chunks, self.settings, ws,
-                                                classified_files=classified_files)
+        vectorstore, _ = get_or_create_vectorstore(chunks, self.settings, ws,
+                                                   classified_files=classified_files)
 
         # ── Apply reasoning mode scales on top of effort config ──────────────
         # Both axes (effort level and reasoning mode) are independent sliders:
@@ -780,20 +780,25 @@ class AgentPipeline:
             return None
 
         # Open the existing store — empty chunk list means nothing is added or
-        # removed.  Omitting classified_files prevents manifest rewrite.
-        vectorstore = get_or_create_vectorstore([], self.settings, ws)
+        # removed.  Omitting classified_files prevents manifest rewrite so no
+        # manifest warning can occur on the fast path.
+        vectorstore, _ = get_or_create_vectorstore([], self.settings, ws)
         return build_retriever(vectorstore, self.settings)
 
     def prepare_session(
         self,
         session: "AgentSession",  # type: ignore[name-defined]
         progress_cb: Callable[[str], None] | None = None,
-    ) -> "BaseRetriever":  # type: ignore[name-defined]
+    ) -> "tuple[BaseRetriever, str | None]":  # type: ignore[name-defined]
         """Index session documents and return a ready-to-use retriever.
 
-        Called by :class:`ConversationAgent` when the user initialises or
-        reloads the session.  The retriever is stored on *session* by the
-        caller.
+        Returns
+        -------
+        (retriever, manifest_warning)
+            *manifest_warning* is ``None`` on full success, or a human-readable
+            string when the indexing manifest could not be saved — meaning the
+            next session open will re-index from scratch instead of using the
+            fast path.  The caller should surface this to the user.
         """
         def _progress(msg: str) -> None:
             if progress_cb:
@@ -824,9 +829,9 @@ class AgentPipeline:
             )
 
         _progress(f"Building vector index ({len(chunks)} chunks)…")
-        vectorstore = get_or_create_vectorstore(
+        vectorstore, manifest_warning = get_or_create_vectorstore(
             chunks, self.settings, ws,
             classified_files=session.classified_files,
             progress_cb=_progress,
         )
-        return build_retriever(vectorstore, self.settings)
+        return build_retriever(vectorstore, self.settings), manifest_warning

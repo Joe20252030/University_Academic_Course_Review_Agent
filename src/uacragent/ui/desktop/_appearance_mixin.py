@@ -717,6 +717,21 @@ class AppearanceMixin:
         _cbg   = c.get("text_bg", "#ffffff")    # card fill
         _brd   = c.get("input_border", "#cdd4e8")
 
+        # ── Fixed banner (always visible, above the content card) ────────────
+        # Matches the Session Settings banner pattern: a muted one-liner that
+        # reminds the user changes only take effect on Save.
+        _banner = tk.Frame(win, background=_wbg, padx=12, pady=8)
+        _banner.pack(side="top", fill="x")
+        tk.Label(
+            _banner,
+            text=self._t("app_settings_banner"),
+            background=_wbg,
+            foreground=_sfg,
+            font=("TkDefaultFont", _nsz),
+            anchor="w",
+        ).pack(side="left")
+        tk.Frame(win, bg=_brd, height=1).pack(side="top", fill="x")
+
         # Outer padding frame (window_bg) → inner card (text_bg)
         outer = tk.Frame(win, bg=_wbg, padx=12, pady=12)
         outer.pack(fill="both", expand=True)

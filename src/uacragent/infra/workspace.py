@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import shutil
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +22,38 @@ _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 # user-chosen (or auto-generated) workspace folder.  This keeps agent
 # artefacts clearly separated from any pre-existing user files.
 AGENT_SUBDIR = ".uacragent"
+
+# ---------------------------------------------------------------------------
+# Filesystem safety helpers
+# ---------------------------------------------------------------------------
+
+def _safe_rmtree(path: Path, expected_parent: Path) -> None:
+    """Delete *path* only when it is a real directory under *expected_parent*.
+
+    Refuses deletion when:
+    * ``path`` resolves outside *expected_parent* (path-escape guard).
+    * ``path`` is a symlink — rmtree would follow it and wipe the link target,
+      which could be an arbitrary location on disk.
+
+    Both refusals are logged as warnings.
+    """
+    resolved = path.resolve()
+    parent_resolved = expected_parent.resolve()
+    try:
+        resolved.relative_to(parent_resolved)
+    except ValueError:
+        logger.warning(
+            "rmtree refused: %s is not under expected parent %s",
+            path, expected_parent,
+        )
+        return
+    if path.is_symlink():
+        logger.warning("rmtree refused: %s is a symlink", path)
+        return
+    if not path.is_dir():
+        return
+    shutil.rmtree(path)
+
 
 # ---------------------------------------------------------------------------
 # Ownership marker
@@ -46,16 +79,23 @@ _OWNER_APP_TAG        = "uacragent"
 def write_ownership_marker(
     agent_dir: Path,
     workspace_id: str | None = None,
-) -> None:
+) -> bool:
     """Write ``owner.json`` into *agent_dir* to record UACRAgent ownership.
 
-    Idempotent: silently returns if the marker already exists.
-    Non-fatal: any I/O error is logged at DEBUG level and swallowed — the
-    marker is safety infrastructure, not required for normal operation.
+    Idempotent: returns ``True`` immediately if the marker already exists.
+
+    Returns
+    -------
+    True
+        Marker was written successfully (or already existed).
+    False
+        Write failed.  The caller decides whether to treat this as fatal:
+        fresh-creation paths should raise; migration/belt-and-suspenders
+        paths may log and continue.
     """
     marker_path = agent_dir / OWNER_MARKER_FILENAME
     if marker_path.exists():
-        return
+        return True
     try:
         from importlib.metadata import version as _iv
         _ver = _iv("uacragent")
@@ -73,8 +113,10 @@ def write_ownership_marker(
             json.dumps(payload, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
+        return True
     except Exception as exc:  # noqa: BLE001
         logger.debug("Could not write ownership marker in %s: %s", agent_dir, exc)
+        return False
 
 
 def has_ownership_marker(agent_dir: Path) -> bool:
@@ -109,28 +151,57 @@ def ensure_workspace_dirs(paths: WorkspacePaths) -> None:
     """Create all workspace directories if they don't exist, then claim
     ownership of ``agent_dir`` when appropriate.
 
-    Raises :class:`~uacragent.domain.errors.ConfigurationError` when any
-    directory cannot be created (e.g. read-only volume, disk quota exceeded).
-    The caller can catch this and surface a user-readable message rather than
-    letting a bare ``OSError`` propagate into the chat panel.
+    Raises :class:`~uacragent.domain.errors.ConfigurationError` when:
+
+    * Any directory cannot be created (e.g. read-only volume, disk quota).
+    * ``agent_dir`` already exists, is not owned by UACRAgent, and has no
+      ``session.json`` migration marker — creating children inside an
+      unrecognised folder would silently modify data that is not ours.
+    * ``agent_dir`` was freshly created but the ownership marker could not
+      be written — this would leave app data in a folder we cannot later
+      manage or clean up.
 
     Ownership marker logic
     ----------------------
-    The marker is written in two cases:
+    1. ``agent_dir`` did **not** exist before this call — we created it, so
+       it is unambiguously ours.  Marker write is **required** (fatal on
+       failure).
 
-    1. ``agent_dir`` did **not** exist before this call — we just created it,
-       so it is unambiguously ours.
-    2. ``agent_dir`` already existed **and** contains ``session.json`` — this
-       is a pre-0.4.0 UACRAgent session that predates the marker feature;
-       migrating it is safe because ``session.json`` proves we created it.
+    2. ``agent_dir`` existed **and** has ``owner.json`` — already claimed,
+       nothing to do.
 
-    A pre-existing ``agent_dir`` that has no ``session.json`` is NOT claimed
-    here.  It may belong to another tool.  The marker will be written later
-    by ``save_session()`` when UACRAgent first saves into it, which is the
-    moment the user has explicitly committed their session to this folder.
+    3. ``agent_dir`` existed **and** has ``session.json`` but no ``owner.json``
+       — pre-0.4.0 migration case.  Marker write is best-effort (non-fatal).
+
+    4. ``agent_dir`` existed, no ``owner.json``, no ``session.json`` — foreign
+       folder.  Raise ``ConfigurationError`` immediately without creating any
+       children inside it.
     """
     agent_dir_existed = paths.agent_dir.exists()
+    _session_json     = paths.agent_dir / "session.json"
 
+    # ── Ownership pre-check (only relevant when agent_dir already exists) ──
+    if agent_dir_existed:
+        _already_owned = has_ownership_marker(paths.agent_dir)
+        _migratable    = _session_json.is_file()
+
+        if not _already_owned and not _migratable:
+            # The directory exists and is neither owned by us nor a legacy
+            # UACRAgent session we can migrate.  Refuse to create any child
+            # directories inside it — this protects the user's pre-existing
+            # content from unexpected modification.
+            raise ConfigurationError(
+                f"The directory '{paths.agent_dir}' already exists but does "
+                "not have an UACRAgent ownership marker (owner.json) and does "
+                "not contain a session.json that would identify it as a "
+                "pre-existing UACRAgent session.\n\n"
+                "Creating workspace files inside an unrecognised folder could "
+                "modify data that does not belong to this application.\n\n"
+                "Please choose a different workspace folder, or manually remove "
+                f"'{paths.agent_dir}' if it is safe to do so."
+            )
+
+    # ── Create all required directories ───────────────────────────────────
     dirs = [
         paths.agent_dir,
         paths.uploads,
@@ -148,10 +219,21 @@ def ensure_workspace_dirs(paths: WorkspacePaths) -> None:
                 "have sufficient disk space."
             ) from exc
 
-    # Case 1: agent_dir was freshly created by us.
-    # Case 2: migration — agent_dir pre-dates the marker but has session.json.
-    _session_json = paths.agent_dir / "session.json"
-    if not agent_dir_existed or _session_json.is_file():
+    # ── Write ownership marker ────────────────────────────────────────────
+    if not agent_dir_existed:
+        # Case 1: freshly created — marker is required.
+        # If it cannot be written, the folder is app-created but unclaimable;
+        # future cleanup would permanently refuse to manage it.  Fail now so
+        # the user sees a clear error rather than accumulating ghost workspaces.
+        if not write_ownership_marker(paths.agent_dir):
+            raise ConfigurationError(
+                f"Could not write the UACRAgent ownership marker to "
+                f"'{paths.agent_dir}'.\n"
+                "The workspace directory was created but cannot be claimed. "
+                "Check that the folder is writable and that the disk is not full."
+            )
+    elif _session_json.is_file() and not has_ownership_marker(paths.agent_dir):
+        # Case 3: migration — best-effort, non-fatal.
         write_ownership_marker(paths.agent_dir)
 
 

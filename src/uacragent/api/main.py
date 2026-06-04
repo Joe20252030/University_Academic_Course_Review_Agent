@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 
 from uacragent.api.routes import router
 from uacragent.domain.errors import LLMError, UACRAgentError
+from uacragent.infra.persistence import OS_METADATA_FILENAMES
 
 _logger = logging.getLogger(__name__)
 
@@ -34,14 +35,24 @@ def _is_localhost(addr: str) -> bool:
 def _cleanup_expired_api_workspaces(ttl_hours: float) -> int:
     """Delete ``api_run/`` workspaces whose last-modified time exceeds *ttl_hours*.
 
-    Uses :func:`~uacragent.infra.persistence.delete_session` for each expired
-    workspace so the ownership-marker check and index-removal logic run as
-    normal.  The workspace directory itself is then removed directly (it is
-    always app-managed under ``api_run/``, never a user-chosen folder).
+    Only workspaces that carry a valid ``owner.json`` marker are considered for
+    cleanup.  This guarantees that any directory placed manually inside
+    ``api_run/`` — or one whose ``.uacragent/`` bundle was not created by this
+    app — is never silently wiped by the background cleanup task.
+
+    For each eligible expired workspace the function proceeds in two steps:
+
+    1. :func:`~uacragent.infra.persistence.delete_session` removes the
+       ``.uacragent/`` bundle via the standard ownership-checked path.
+    2. Only when step 1 confirms full deletion (return value is ``None``) is
+       the workspace directory itself removed.  If ``delete_session()`` returns
+       a warning string (bundle was preserved), the workspace directory is left
+       intact as well, matching the intent of the refusal.
 
     Returns the number of workspaces successfully removed.
     """
     from uacragent.infra.persistence import get_api_run_dir, delete_session  # noqa: PLC0415
+    from uacragent.infra.workspace import AGENT_SUBDIR, has_ownership_marker  # noqa: PLC0415
 
     api_dir = get_api_run_dir()
     if not api_dir.exists():
@@ -53,16 +64,67 @@ def _cleanup_expired_api_workspaces(ttl_hours: float) -> int:
     for ws in api_dir.iterdir():
         if not ws.is_dir():
             continue
+
+        # Only auto-clean workspaces we can confirm were created by UACRAgent.
+        # Workspaces without a valid ownership marker are skipped entirely so
+        # manually-placed or externally-owned directories are never touched.
+        agent_dir = ws / AGENT_SUBDIR
+        if not has_ownership_marker(agent_dir):
+            continue
+
+        # Use agent_dir mtime rather than the workspace root mtime.
+        # The workspace root's mtime only updates when entries are added to /
+        # removed from that specific directory.  Since all writes go into
+        # ws/.uacragent/ (a subdirectory), ws/ mtime does not change after
+        # initial creation.  agent_dir mtime is updated by every save_session()
+        # call and reflects actual last-use time.
         try:
-            mtime = ws.stat().st_mtime
+            mtime = agent_dir.stat().st_mtime
         except OSError:
             continue
         if mtime >= cutoff:
             continue
+
         try:
-            delete_session(ws)      # removes .uacragent/ with ownership check
-            if ws.exists():         # remove workspace folder itself
-                shutil.rmtree(ws, ignore_errors=True)
+            bundle_warning = delete_session(ws)
+            if bundle_warning:
+                # delete_session() refused to remove the .uacragent/ bundle.
+                # Do NOT remove the workspace folder either — the refusal means
+                # something unexpected is inside it.
+                _logger.warning(
+                    "API workspace cleanup skipping '%s': %s", ws, bundle_warning
+                )
+                continue
+
+            # Bundle deleted — remove the workspace folder only when it is
+            # effectively empty.  Mirrors GUI delete_session() behaviour:
+            # unexpected files at the workspace root are preserved, not wiped.
+            if ws.exists():
+                if ws.is_symlink():
+                    _logger.warning(
+                        "Refusing to remove api_run workspace '%s': path is "
+                        "a symlink. Manual cleanup may be required.", ws,
+                    )
+                    continue
+                remaining = [
+                    p for p in ws.iterdir()
+                    if p.name not in OS_METADATA_FILENAMES
+                ]
+                if remaining:
+                    _logger.warning(
+                        "API workspace '%s' has %d unexpected item(s) after "
+                        "bundle removal; leaving folder intact.",
+                        ws, len(remaining),
+                    )
+                    continue   # don't count as fully deleted
+                try:
+                    shutil.rmtree(ws)
+                except Exception as _rm_exc:  # noqa: BLE001
+                    _logger.warning(
+                        "Could not remove api_run workspace folder '%s': %s",
+                        ws, _rm_exc,
+                    )
+                    continue   # don't count as deleted if rmtree failed
             deleted += 1
         except Exception as exc:    # noqa: BLE001
             _logger.warning("Could not remove expired api_run workspace %s: %s", ws, exc)

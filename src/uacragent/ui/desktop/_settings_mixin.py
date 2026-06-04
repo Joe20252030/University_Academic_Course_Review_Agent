@@ -1435,10 +1435,14 @@ class SettingsMixin:
                 row_f.columnconfigure(0, weight=1)
                 list_frame.rowconfigure(row_idx, weight=0)
 
-                # File icon + name
-                size_kb = fpath.stat().st_size / 1024
-                size_str = f"{size_kb:.1f} KB" if size_kb < 1024 else \
-                           f"{size_kb/1024:.1f} MB"
+                # File icon + name — guard against TOCTOU: the file may have
+                # been deleted between iterdir() and this stat() call.
+                try:
+                    size_kb = fpath.stat().st_size / 1024
+                    size_str = f"{size_kb:.1f} KB" if size_kb < 1024 else \
+                               f"{size_kb/1024:.1f} MB"
+                except OSError:
+                    size_str = "—"
                 name_lbl = tk.Label(
                     row_f,
                     text=f"📄 {fpath.name}  ({size_str})",
@@ -2405,6 +2409,27 @@ class SettingsMixin:
         # thread with large PDF files (chunked SHA-256 comparison + shutil.copy2
         # can take several seconds for a 50 MB+ file on a slow disk).
         _exam_src = self._session.exam_info_path
+        if _exam_src and self._session.workspace_folder:
+            # Ownership gate: only copy into a workspace we already own or one
+            # whose .uacragent/ does not yet exist (it will be created by us
+            # during indexing).  If .uacragent/ exists but has no ownership
+            # marker and no session.json, writing into it now would modify a
+            # foreign folder before ensure_workspace_dirs() has had a chance
+            # to raise ConfigurationError during _start_indexing() below.
+            # In that case we skip the copy — the indexing will surface the
+            # error and the user can choose a different workspace.
+            _agent_dir_for_exam = (
+                self._session.workspace_folder / ".uacragent"
+            )
+            if _agent_dir_for_exam.exists():
+                from uacragent.infra.workspace import has_ownership_marker  # noqa: PLC0415
+                _exam_ws_safe = (
+                    has_ownership_marker(_agent_dir_for_exam)
+                    or (_agent_dir_for_exam / "session.json").is_file()
+                )
+                if not _exam_ws_safe:
+                    _exam_src = ""   # skip copy — workspace ownership unconfirmed
+
         if _exam_src and self._session.workspace_folder:
             _src_path = Path(_exam_src)
             _ws_folder = self._session.workspace_folder

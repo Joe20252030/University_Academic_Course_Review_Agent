@@ -112,7 +112,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         "cancel":             "✕ Cancel",
         "placeholder":        "Select a session from the left panel\nor click  + New  to create a new one.",
         # App Settings dialog
-        "app_settings_title": "App Settings",
+        "app_settings_title":  "App Settings",
+        "app_settings_banner": (
+            "Appearance changes preview instantly.  "
+            "Click  Save  to confirm all changes, or  Cancel  to revert."
+        ),
         "appearance_section": "Appearance",
         "color_mode_label":   "Color mode:",
         "light_mode":         "Light",
@@ -583,7 +587,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         "cancel":             "✕ 取消",
         "placeholder":        "从左侧列表选择会话\n或点击  + 新建  创建新会话。",
         # App Settings dialog
-        "app_settings_title": "应用设置",
+        "app_settings_title":  "应用设置",
+        "app_settings_banner": (
+            "外观更改即时预览。"
+            "点击  保存  确认所有更改，或点击  取消  还原。"
+        ),
         "appearance_section": "外观",
         "color_mode_label":   "颜色模式:",
         "light_mode":         "浅色",

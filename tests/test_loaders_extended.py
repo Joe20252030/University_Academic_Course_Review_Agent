@@ -165,16 +165,18 @@ class TestCopyToWorkspaceEdgeCases:
 
 class TestExtractFileText:
     def test_unsupported_mime_returns_error_block(self, tmp_path):
-        """application/octet-stream must return a clearly-marked error block."""
+        """application/octet-stream must return a clearly-marked error block and a ui_warning."""
         from uacragent.agent.conversation import _extract_file_text
 
         f = tmp_path / "data.xlsx"
         f.write_bytes(b"\x00\x01\x02binary")
 
-        result = _extract_file_text(str(f), "application/octet-stream")
+        llm_text, ui_warning = _extract_file_text(str(f), "application/octet-stream")
 
-        assert "UNSUPPORTED FILE TYPE" in result
-        assert "data.xlsx" in result
+        assert "UNSUPPORTED FILE TYPE" in llm_text
+        assert "data.xlsx" in llm_text
+        assert ui_warning is not None
+        assert "data.xlsx" in ui_warning
 
     def test_text_plain_reads_content(self, tmp_path):
         from uacragent.agent.conversation import _extract_file_text
@@ -182,14 +184,17 @@ class TestExtractFileText:
         f = tmp_path / "notes.txt"
         f.write_text("hello from notes", encoding="utf-8")
 
-        result = _extract_file_text(str(f), "text/plain")
-        assert "hello from notes" in result
+        llm_text, ui_warning = _extract_file_text(str(f), "text/plain")
+        assert "hello from notes" in llm_text
+        assert ui_warning is None  # success — no warning
 
     def test_missing_file_returns_error_block(self, tmp_path):
         from uacragent.agent.conversation import _extract_file_text
 
-        result = _extract_file_text(str(tmp_path / "gone.txt"), "text/plain")
-        assert "FILE EXTRACTION ERROR" in result
+        llm_text, ui_warning = _extract_file_text(str(tmp_path / "gone.txt"), "text/plain")
+        assert "FILE EXTRACTION ERROR" in llm_text
+        assert ui_warning is not None
+        assert "gone.txt" in ui_warning
 
 
 # ---------------------------------------------------------------------------

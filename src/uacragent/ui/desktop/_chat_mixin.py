@@ -171,6 +171,27 @@ class ChatMixin:
         if not ws_folder:
             return attachments
 
+        # Ownership gate: only create chat_images/ inside .uacragent/ when we
+        # can confirm the workspace is ours.  _workspace_committed can be True
+        # even after a failed Apply (e.g. foreign .uacragent/ that blocked
+        # save_session and ensure_workspace_dirs).  Checking the marker here
+        # prevents creating directories inside a foreign .uacragent/ folder
+        # just because the user subsequently pastes an image.
+        _agent_dir = Path(ws_folder) / ".uacragent"
+        if _agent_dir.exists():
+            from uacragent.infra.workspace import (  # noqa: PLC0415
+                has_ownership_marker as _hom,
+            )
+            _is_owned = (
+                _hom(_agent_dir)
+                or (_agent_dir / "session.json").is_file()
+            )
+            if not _is_owned:
+                # Workspace is not ours — skip stabilization entirely.
+                # Paste images stay in paste_tmp/ and will be deleted after the
+                # LLM call as usual; chips in history will show as unavailable.
+                return attachments
+
         result: list[dict] = []
         for att in attachments:
             if not att.get("is_temp_file"):
@@ -295,7 +316,8 @@ class ChatMixin:
 
         if cb is not None:
             if hasattr(cb, "save"):
-                import tempfile, os as _os
+                import tempfile
+                import os as _os
                 # mkstemp guarantees a unique path — avoids the same-second
                 # collision that timestamp-only names can produce when the user
                 # pastes multiple images rapidly.  Files land in the app-managed

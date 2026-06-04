@@ -14,44 +14,11 @@ wipe_session_vectorstore(session)
 from __future__ import annotations
 
 import logging
-import shutil
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-
-def _safe_rmtree(path: Path, expected_parent: Path) -> None:
-    """Delete *path* only when it is a real directory under *expected_parent*.
-
-    Guards against two classes of attack / misconfiguration:
-
-    * **Symlink traversal** — if ``path`` is a symlink (even to a real
-      directory), we refuse to call ``shutil.rmtree`` because rmtree would
-      follow the link and wipe the target, which could be an arbitrary
-      location on disk (e.g. ``~/Documents``).
-    * **Path escape** — if ``path.resolve()`` is not beneath
-      ``expected_parent.resolve()``, the deletion is refused.  This prevents
-      a misbehaving caller from accidentally wiping something outside the
-      workspace.
-
-    Both refusals are logged as warnings so they surface in the log file.
-    """
-    resolved = path.resolve()
-    parent_resolved = expected_parent.resolve()
-    try:
-        resolved.relative_to(parent_resolved)
-    except ValueError:
-        logger.warning(
-            "rmtree refused: %s is not under expected parent %s",
-            path, expected_parent,
-        )
-        return
-    if path.is_symlink():
-        logger.warning("rmtree refused: %s is a symlink", path)
-        return
-    if not path.is_dir():
-        return
-    shutil.rmtree(path)
+from uacragent.infra.workspace import _safe_rmtree  # noqa: E402
 
 
 def wipe_session_uploads(session: "AgentSession") -> None:  # type: ignore[name-defined]
