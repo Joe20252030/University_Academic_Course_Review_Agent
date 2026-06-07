@@ -1861,6 +1861,23 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
 
                 def _on_download_done(dl_path) -> None:
                     import sys as _sys_upd
+                    # Guard: if the user closed the dialog via × while the
+                    # download was in progress, do NOT proceed with installation.
+                    # On Windows apply_update() calls sys.exit(0), which would
+                    # silently terminate the app with no visible notification;
+                    # on macOS Finder would unexpectedly open the DMG.
+                    # In both cases the downloaded file is cleaned up here.
+                    try:
+                        dialog_alive = dlg.winfo_exists()
+                    except Exception:
+                        dialog_alive = False
+                    if not dialog_alive:
+                        try:
+                            Path(dl_path).unlink(missing_ok=True)
+                        except Exception:  # noqa: BLE001
+                            pass
+                        return
+
                     # Track the path so _on_close() can remove it if the app
                     # is closed before the installer has finished running.
                     self._pending_update_path = dl_path
@@ -1877,6 +1894,22 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
                         must be caught here — they cannot propagate to the
                         outer try/except in _on_download_done().
                         """
+                        # Re-check: the user may have closed the dialog during
+                        # the 500 ms (macOS) / 1000 ms (Windows) settle delay.
+                        # Without this guard, on Windows apply_update() calls
+                        # sys.exit(0) silently with no visible notification.
+                        try:
+                            still_alive = dlg.winfo_exists()
+                        except Exception:  # noqa: BLE001
+                            still_alive = False
+                        if not still_alive:
+                            self._pending_update_path = None
+                            try:
+                                Path(path).unlink(missing_ok=True)
+                            except Exception:  # noqa: BLE001
+                                pass
+                            return
+
                         try:
                             apply_update(path)
                             # macOS: DMG opened in Finder; app keeps running.
@@ -1910,10 +1943,16 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
                         self.after(1000, _apply_now)
 
                 def _on_download_failed(error: str) -> None:
-                    _status_var.set(
-                        self._t("update_download_failed").format(error=error)
-                    )
-                    _later_btn.set_state(True)
+                    try:
+                        _status_var.set(
+                            self._t("update_download_failed").format(error=error)
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
+                    try:
+                        _later_btn.set_state(True)
+                    except Exception:  # noqa: BLE001
+                        pass
 
                 _threading.Thread(
                     target=_download_worker, daemon=True, name="update-dl"

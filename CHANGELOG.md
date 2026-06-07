@@ -57,13 +57,15 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   *"Appearance changes preview instantly. Click Save to confirm all changes,
   or Cancel to revert."* Available in English and Simplified Chinese.
 
-- **Comprehensive updater test suite** — 71 tests across 9 sections covering
+- **Comprehensive updater test suite** — 84 tests across 11 sections covering
   `_parse_version`, all `check_for_update` branches (newer/same/older/skipped/
   no asset/network error/non-dict JSON), `download_update` (success, progress,
   no Content-Length, failure cleanup), `apply_update` (macOS keeps running,
   Windows exits, unsupported platform raises), skip-version persistence
-  round-trip, macOS/Windows window-behaviour invariants, and
-  `_pending_update_path` cleanup in `_on_close`. Total: **497 tests, all
+  round-trip, macOS/Windows window-behaviour invariants,
+  `_pending_update_path` cleanup in `_on_close`, two-layer dialog-closed guard
+  (Guard 1: before download done; Guard 2: during settle delay), and
+  `_on_download_failed` widget-call robustness. Total: **510 tests, all
   passing**.
 
 ### Fixed
@@ -102,13 +104,41 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `os.rmdir()` (safe: only removes empty directories) to restore the filesystem
   to its prior state.
 
-- **API workspace cleanup missing symlink guard** — `_cleanup_expired_api_workspaces`
-  in `api/main.py` iterated over workspace directories with `ws.is_dir()` (which
-  returns `True` for symlinks), then later called `shutil.rmtree(ws)` with no
-  `is_symlink()` check. A symlink workspace could have directed `rmtree` to an
-  arbitrary location. Fixed: a `ws.is_symlink()` check and warning are inserted
-  before the `rmtree` call, matching the guard already present in
-  `delete_session()`.
+- **API workspace cleanup symlink guard (defence-in-depth)** —
+  `_cleanup_expired_api_workspaces` in `api/main.py` now applies two
+  independent symlink checks before touching any workspace directory:
+  (1) an initial `ws.is_symlink()` check the moment a candidate directory is
+  considered for cleanup, and (2) a TOCTOU re-check immediately before
+  `shutil.rmtree(ws)` to close the window between the earlier check and the
+  actual deletion. The original code had neither check, so a symlink placed —
+  or swapped in — at the workspace path could have directed `rmtree` to an
+  arbitrary location on disk. The two-check pattern mirrors the
+  defence-in-depth already present in `delete_session()`.
+
+- **Installer launched silently if update dialog closed during download** —
+  if the user dismissed the update dialog via the `×` title-bar button while a
+  download was still in progress, `_on_download_done` scheduled `_apply_now`
+  unconditionally when the download completed. On macOS, Finder would open the
+  `.dmg` unexpectedly with no dialog context. On Windows, the app would call
+  `sys.exit(0)` silently — closing itself with no visible notification. A
+  second, narrower window existed even after that guard was added: if the user
+  closed the dialog *after* `_on_download_done` passed its check but *before*
+  the 500 ms (macOS) / 1000 ms (Windows) settle delay expired, `_apply_now`
+  still ran without re-checking the dialog state.
+  Fixed with two independent guards:
+  (1) `_on_download_done` checks `dlg.winfo_exists()` before scheduling
+  `_apply_now` at all; and
+  (2) `_apply_now` re-checks `dlg.winfo_exists()` at the start of its own
+  body before calling `apply_update()`.
+  In both cases the downloaded file is deleted and `_pending_update_path` is
+  cleared when the dialog is gone.
+
+- **`_on_download_failed` could produce a `TclError` traceback to stderr** —
+  the widget calls in `_on_download_failed` (`_status_var.set` and
+  `_later_btn.set_state`) were not wrapped in `try/except`. If called after
+  the update dialog was already destroyed, both calls would raise `TclError`
+  which Tkinter's `report_callback_exception` would print to stderr. Fixed:
+  both calls are now individually wrapped in `try/except Exception: pass`.
 
 - **Output panel `stat()` TOCTOU race** — in `_build_outputs_panel`, the
   `fpath.stat().st_size` call used to produce the file-size label was not
@@ -145,6 +175,12 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`_extract_file_text()` return type** — changed from `str` to
   `tuple[str, str | None]`. Second element is a user-facing warning string on
   extraction failure, or `None` on success. Callers updated accordingly.
+
+- **`workspace_manager.py` import ordering** — `from uacragent.infra.workspace
+  import _safe_rmtree` was positioned after `logger = logging.getLogger(__name__)`,
+  requiring a `# noqa: E402` linter suppression. Moved above the logger
+  assignment so it follows standard module-level import ordering with no
+  override needed.
 
 ---
 

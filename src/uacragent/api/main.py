@@ -117,6 +117,15 @@ def _cleanup_expired_api_workspaces(ttl_hours: float) -> int:
                         ws, len(remaining),
                     )
                     continue   # don't count as fully deleted
+                # Re-check symlink status immediately before rmtree to close the
+                # TOCTOU window between the earlier is_symlink() check and the
+                # actual deletion — mirrors delete_session()'s defence-in-depth.
+                if ws.is_symlink():
+                    _logger.warning(
+                        "api_run workspace '%s' became a symlink before rmtree; "
+                        "refusing to proceed. Manual cleanup may be required.", ws,
+                    )
+                    continue
                 try:
                     shutil.rmtree(ws)
                 except Exception as _rm_exc:  # noqa: BLE001

@@ -341,12 +341,20 @@ def _build_human_message(
     message_text: str,
     attachments: list[dict],
     provider_id: str,
+    model: str = "",
 ) -> "tuple[HumanMessage, list[str]]":
     """Build a HumanMessage with optional multimodal content parts.
 
     For image attachments: base64-encoded inline ``image_url`` content parts.
     For PDFs / Word docs / text files: extracted text appended to the message.
     When there are no attachments, returns a plain HumanMessage(content=...).
+
+    *model* is forwarded to :func:`_provider_supports_vision` so model-level
+    restrictions (e.g. ``gpt-4o-search-preview`` which belongs to a
+    vision-capable provider but does not itself accept image inputs) are
+    respected when deciding whether to attach PPTX embedded images as vision
+    parts.  It mirrors the same ``model`` argument passed to the direct-image
+    attachment guard in ``ConversationAgent.chat()``.
 
     Safety limits (applied with a log warning + UI-facing warning string):
     - Maximum ``_MAX_ATTACHMENTS`` (5) files per message.
@@ -475,18 +483,21 @@ def _build_human_message(
             if mime in _PPTX_MIMES and not extraction_warning:
                 _candidate_imgs = _extract_pptx_images(path)
                 if _candidate_imgs:
-                    if _provider_supports_vision(provider_id):
+                    if _provider_supports_vision(provider_id, model=model):
                         pptx_imgs = _candidate_imgs
                     else:
+                        # Build a precise reason: provider-level vs model-level.
+                        _model_label = f" / {model}" if model else ""
                         _logger.warning(
-                            "Provider '%s' does not support vision; "
+                            "Provider '%s'%s does not support vision; "
                             "skipping %d embedded image(s) from '%s'.",
-                            provider_id, len(_candidate_imgs), name,
+                            provider_id, _model_label,
+                            len(_candidate_imgs), name,
                         )
                         ui_warnings.append(
                             f"'{name}' contains {len(_candidate_imgs)} embedded "
-                            f"image(s) that were not sent — the current provider "
-                            f"({provider_id}) does not support images."
+                            f"image(s) that were not sent — "
+                            f"{provider_id}{_model_label} does not support images."
                         )
 
             _img_note = (
@@ -925,7 +936,8 @@ class ConversationAgent:
         # This prevents a concurrent cancel from mutating the list mid-iteration.
         messages.extend(session.chat_history.snapshot())
         human_msg, att_warnings = _build_human_message(
-            message, effective_attachments, provider_id
+            message, effective_attachments, provider_id,
+            model=session.llm_model or "",
         )
         messages.append(human_msg)
         all_warnings: list[str] = vision_warnings + att_warnings

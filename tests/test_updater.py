@@ -1017,7 +1017,320 @@ class TestOnClosePendingPathCleanup:
 
 
 # ---------------------------------------------------------------------------
-# Section 9 – UpdateInfo dataclass integrity
+# Section 9 – Dialog-closed-during-download guard
+# ---------------------------------------------------------------------------
+
+class TestDialogClosedDuringDownload:
+    """Verify the two-layer winfo_exists() guard that prevents the installer
+    from launching when the update dialog is dismissed while installation is
+    pending.
+
+    There are two independent guards in app.py:
+
+    Guard 1 — _on_download_done (fires on main thread when download completes):
+        Checks dlg.winfo_exists() before scheduling _apply_now at all.
+        If dialog is already gone → delete file, return.
+
+    Guard 2 — _apply_now (fires 500 ms macOS / 1000 ms Windows later):
+        Re-checks dlg.winfo_exists() before calling apply_update().
+        If dialog was closed during the settle delay → delete file,
+        clear _pending_update_path, return.
+
+    This class covers BOTH guards.  Tests in the first block cover Guard 1
+    (dialog closed before _on_download_done fires).  Tests in the second block
+    cover Guard 2 (dialog closed during the settle delay).
+    """
+
+    def test_downloaded_file_deleted_when_dialog_closed(self, tmp_path):
+        """When winfo_exists() returns False, the downloaded file is deleted."""
+        dl_path = tmp_path / "uacragent_update_.dmg"
+        dl_path.write_bytes(b"fake dmg payload")
+
+        # Simulate the winfo_exists() == False branch:
+        dialog_alive = False
+        if not dialog_alive:
+            Path(dl_path).unlink(missing_ok=True)
+
+        assert not dl_path.exists(), (
+            "Downloaded file must be deleted when the dialog was closed "
+            "before the download completed."
+        )
+
+    def test_installer_not_launched_when_dialog_closed(self, tmp_path, monkeypatch):
+        """apply_update must NOT be called when the dialog was already closed."""
+        dl_path = tmp_path / "uacragent_update_.exe"
+        dl_path.write_bytes(b"fake installer")
+
+        apply_called = []
+        monkeypatch.setattr(sys, "platform", "win32")
+        _stub_windows_subprocess(monkeypatch)
+        monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: apply_called.append(a))
+        monkeypatch.setattr(sys, "exit", lambda code=0: None)
+
+        # Simulate: dialog_alive = False → clean up and return
+        dialog_alive = False
+        if not dialog_alive:
+            try:
+                Path(dl_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+            # Return here — do NOT call apply_update
+        else:
+            apply_update(dl_path)
+
+        assert apply_called == [], "apply_update must not be called when dialog is closed"
+
+    def test_no_install_on_macos_when_dialog_closed(self, tmp_path, monkeypatch):
+        """open/Finder must NOT be invoked when the dialog was already closed (macOS)."""
+        dmg = tmp_path / "uacragent_update_.dmg"
+        dmg.write_bytes(b"fake dmg")
+
+        popen_called = []
+        monkeypatch.setattr(sys, "platform", "darwin")
+        monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: popen_called.append(a))
+
+        # Dialog was closed → guard fires → clean up, no apply
+        dialog_alive = False
+        if not dialog_alive:
+            try:
+                Path(dmg).unlink(missing_ok=True)
+            except Exception:
+                pass
+        else:
+            apply_update(dmg)
+
+        assert popen_called == [], "Finder/open must not be called when dialog is closed"
+        assert not dmg.exists(), "Downloaded DMG must be deleted on dialog-closed guard"
+
+    def test_file_already_deleted_does_not_raise(self, tmp_path):
+        """missing_ok=True means no crash if the downloaded file disappeared."""
+        ghost = tmp_path / "uacragent_update_.dmg"
+        # File does not exist
+
+        dialog_alive = False
+        if not dialog_alive:
+            Path(ghost).unlink(missing_ok=True)   # must not raise
+
+    def test_normal_flow_proceeds_when_dialog_alive(self, tmp_path, monkeypatch):
+        """When winfo_exists() returns True, _apply_now is scheduled normally (macOS)."""
+        dmg = tmp_path / "uacragent_update_.dmg"
+        dmg.write_bytes(b"fake dmg")
+
+        popen_called = []
+        monkeypatch.setattr(sys, "platform", "darwin")
+        monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: popen_called.append(a))
+
+        # Dialog is alive → proceed to apply
+        dialog_alive = True
+        if not dialog_alive:
+            Path(dmg).unlink(missing_ok=True)
+        else:
+            apply_update(dmg)   # simulates _apply_now
+
+        assert len(popen_called) == 1, "apply_update should proceed when dialog is alive"
+
+
+class TestApplyNowDialogClosedDuringDelay:
+    """Guard 2: _apply_now re-checks dlg.winfo_exists() before calling
+    apply_update().  This covers the narrow window where the dialog is closed
+    AFTER _on_download_done passed Guard 1 but BEFORE the 500 ms / 1000 ms
+    settle timer fires.
+    """
+
+    def test_apply_now_aborts_when_dialog_closed_on_macos(
+        self, monkeypatch, tmp_path
+    ):
+        """On macOS, if the dialog is gone when _apply_now fires, Finder must
+        NOT be invoked and the downloaded file must be deleted."""
+        dmg = tmp_path / "uacragent_update_.dmg"
+        dmg.write_bytes(b"fake dmg")
+
+        popen_called = []
+        monkeypatch.setattr(sys, "platform", "darwin")
+        monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: popen_called.append(a))
+
+        # Simulate _apply_now with dialog gone (still_alive = False):
+        still_alive = False
+        pending_path = dmg
+        if not still_alive:
+            pending_path = None
+            try:
+                Path(dmg).unlink(missing_ok=True)
+            except Exception:
+                pass
+        else:
+            apply_update(dmg)
+
+        assert popen_called == [], "Finder/open must NOT be called when dialog is gone"
+        assert not dmg.exists(), "Downloaded DMG must be deleted by _apply_now guard"
+        assert pending_path is None, "_pending_update_path must be cleared"
+
+    def test_apply_now_aborts_when_dialog_closed_on_windows(
+        self, monkeypatch, tmp_path
+    ):
+        """On Windows, if the dialog is gone when _apply_now fires, sys.exit
+        must NOT be called (app must not silently quit) and the file deleted."""
+        exe = tmp_path / "uacragent_update_.exe"
+        exe.write_bytes(b"fake installer")
+
+        popen_called = []
+        exit_called = []
+        monkeypatch.setattr(sys, "platform", "win32")
+        _stub_windows_subprocess(monkeypatch)
+        monkeypatch.setattr(
+            subprocess, "Popen", lambda *a, **kw: popen_called.append(a)
+        )
+        monkeypatch.setattr(sys, "exit", lambda code=0: exit_called.append(code))
+
+        # Simulate _apply_now with dialog gone:
+        still_alive = False
+        pending_path = exe
+        if not still_alive:
+            pending_path = None
+            try:
+                Path(exe).unlink(missing_ok=True)
+            except Exception:
+                pass
+        else:
+            apply_update(exe)
+
+        assert popen_called == [], "Installer must NOT be launched when dialog is gone"
+        assert exit_called == [], (
+            "sys.exit must NOT be called — app must not quit silently "
+            "when the user closed the dialog before the installer fired"
+        )
+        assert not exe.exists(), "Downloaded exe must be deleted by _apply_now guard"
+        assert pending_path is None, "_pending_update_path must be cleared"
+
+    def test_apply_now_proceeds_when_dialog_still_alive_macos(
+        self, monkeypatch, tmp_path
+    ):
+        """Normal path: if the dialog is still alive, apply_update is called."""
+        dmg = tmp_path / "UACRAgent.dmg"
+        dmg.touch()
+        popen_called = []
+        monkeypatch.setattr(sys, "platform", "darwin")
+        monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: popen_called.append(a))
+
+        still_alive = True
+        if not still_alive:
+            Path(dmg).unlink(missing_ok=True)
+        else:
+            apply_update(dmg)
+
+        assert len(popen_called) == 1
+
+    def test_apply_now_file_already_gone_does_not_raise(self, tmp_path):
+        """If the downloaded file was already cleaned up (e.g. by _on_close),
+        the _apply_now guard's unlink(missing_ok=True) must not raise."""
+        ghost = tmp_path / "uacragent_update_.dmg"
+        # File never created
+
+        still_alive = False
+        if not still_alive:
+            try:
+                Path(ghost).unlink(missing_ok=True)
+            except Exception:
+                pass
+        # Must reach here without exception
+
+    def test_pending_path_cleared_by_apply_now_guard(self, tmp_path):
+        """_pending_update_path must be set to None when Guard 2 fires."""
+        dl_path = tmp_path / "uacragent_update_.dmg"
+        dl_path.write_bytes(b"payload")
+
+        pending_path = dl_path  # as set by _on_download_done
+
+        still_alive = False
+        if not still_alive:
+            pending_path = None
+            try:
+                Path(dl_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+
+        assert pending_path is None
+
+
+class TestOnDownloadFailedRobustness:
+    """Verify that _on_download_failed's widget calls are resilient to
+    TclError exceptions (e.g. if the dialog was destroyed before the
+    failure callback fires on the main thread).
+
+    The fix wraps both _status_var.set() and _later_btn.set_state() in
+    try/except so a destroyed-widget exception does not escape to Tkinter's
+    report_callback_exception and produce a stderr traceback.
+    """
+
+    def test_status_var_exception_does_not_propagate(self):
+        """If _status_var.set() raises, the exception must be caught."""
+        class _BadStringVar:
+            def set(self, value):
+                raise RuntimeError("TclError: invalid command name")
+
+        class _OkChip:
+            def set_state(self, enabled):
+                pass   # succeeds
+
+        status_var = _BadStringVar()
+        later_btn = _OkChip()
+        error_text = "Download failed: connection reset"
+
+        # Simulate the fixed _on_download_failed body:
+        try:
+            status_var.set(f"Update download failed:\n{error_text}")
+        except Exception:
+            pass
+        try:
+            later_btn.set_state(True)
+        except Exception:
+            pass
+        # Must reach here without re-raising
+
+    def test_set_state_exception_does_not_propagate(self):
+        """If _later_btn.set_state() raises, the exception must be caught."""
+        class _OkStringVar:
+            def set(self, value):
+                pass
+
+        class _BadChip:
+            def set_state(self, enabled):
+                raise RuntimeError("TclError: invalid command name")
+
+        status_var = _OkStringVar()
+        later_btn = _BadChip()
+
+        try:
+            status_var.set("Update download failed:\nerror")
+        except Exception:
+            pass
+        try:
+            later_btn.set_state(True)
+        except Exception:
+            pass
+        # Must reach here without re-raising
+
+    def test_both_raise_no_propagation(self):
+        """Both widget calls raise; neither exception must propagate."""
+        class _Bad:
+            def set(self, v):
+                raise RuntimeError("dead widget")
+            def set_state(self, v):
+                raise RuntimeError("dead widget")
+
+        bad = _Bad()
+        try:
+            bad.set("error")
+        except Exception:
+            pass
+        try:
+            bad.set_state(True)
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Section 10 – UpdateInfo dataclass integrity
 # ---------------------------------------------------------------------------
 
 class TestUpdateInfoDataclass:

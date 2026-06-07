@@ -16,9 +16,9 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+from uacragent.infra.workspace import _safe_rmtree
 
-from uacragent.infra.workspace import _safe_rmtree  # noqa: E402
+logger = logging.getLogger(__name__)
 
 
 def wipe_session_uploads(session: "AgentSession") -> None:  # type: ignore[name-defined]
