@@ -376,16 +376,18 @@ uvicorn uacragent.api.main:app --reload</code></pre>
           <div class="section-heading">
             <p class="eyebrow" data-en="API Keys" data-zh="API 密钥">API Keys</p>
             <h2 data-en="Get your API key in minutes." data-zh="几分钟内获取 API 密钥。">Get your API key in minutes.</h2>
-            <p data-en="UACRAgent needs an API key from at least one AI provider to power its chat and document generation. The key is entered once in App Settings and is only stored in memory while the app is running — it is never written to disk. Follow the steps for the provider you want to use." data-zh="UACRAgent 需要至少一个 AI 提供商的 API 密钥来支持对话和文档生成功能。密钥只需在 App Settings 中填写一次，运行期间仅保存在内存中，不会写入磁盘。请按照你所选提供商的步骤进行操作。">
+            <p data-en="UACRAgent needs an API key from at least one AI provider to power its chat and document generation. The key must be entered in App Settings each time you launch the app — it is only stored in memory while the app is running and is never written to disk. To skip this step on future launches, you can save the key in a .env file (see the optional guide below). Follow the steps for the provider you want to use." data-zh="UACRAgent 需要至少一个 AI 提供商的 API 密钥来支持对话和文档生成功能。每次启动应用时都需要在 App Settings 中填写密钥——它仅在运行期间保存在内存中，不会写入磁盘。如果不想每次都手动输入，可以将密钥保存到 .env 文件中（请参阅下方的可选指南）。请按照你所选提供商的步骤进行操作。">
               UACRAgent needs an API key from at least one AI provider to power its chat
-              and document generation. The key is entered once in App Settings and is only
-              stored in memory while the app is running — it is never written to disk.
+              and document generation. The key must be entered in <strong>App Settings</strong> each time
+              you launch the app — it is only stored in memory while the app is running and
+              is never written to disk. To skip this step on future launches, you can save
+              the key in a <code>.env</code> file (see the optional guide below).
               Follow the steps for the provider you want to use.
             </p>
           </div>
 
-          <p class="api-keys-tip" data-en="💡 Not sure which provider to pick? Start with Google Gemini — it has a generous free tier, requires no credit card to try, and works well for all of UACRAgent's study features." data-zh="💡 不确定选哪个提供商？建议从 Google Gemini 开始——它提供慷慨的免费额度，无需绑定信用卡即可试用，并且完全支持 UACRAgent 的所有学习功能。">
-            💡 Not sure which provider to pick? Start with <strong>Google Gemini</strong> — it has a generous free tier, requires no credit card to try, and works well for all of UACRAgent's study features.
+          <p class="api-keys-tip" data-en="💡 Not sure which provider to pick? Start with Google Gemini — it has a generous free tier, requires no credit card to try, and works well for all of UACRAgent's study features. Note that the free tier has rate limits which are suitable for light, demo-scale use; for regular daily use or larger class loads, a paid plan is recommended." data-zh="💡 不确定选哪个提供商？建议从 Google Gemini 开始——它提供慷慨的免费额度，无需绑定信用卡即可试用，并且完全支持 UACRAgent 的所有学习功能。请注意，免费套餐有速率限制，仅适合轻量级的演示规模使用；如需日常频繁使用或处理较大班级的数据，建议选择付费套餐。">
+            💡 Not sure which provider to pick? Start with <strong>Google Gemini</strong> — it has a generous free tier, requires no credit card to try, and works well for all of UACRAgent's study features. Note that the free tier's rate limits are suitable for light, demo-scale tasks; for regular daily use or larger class loads, a paid plan is recommended.
           </p>
 
           <div class="provider-grid">
@@ -644,9 +646,9 @@ DEEPSEEK_API_KEY=sk-...your-key-here</code></pre>
             </div><!-- /.env-platform-grid -->
           </div><!-- /.env-guide -->
 
-          <p class="api-keys-tip" style="margin-top: 20px; margin-bottom: 0;" data-en="🔒 Security reminder: treat your API key like a password. Never share it, never paste it into a chat, and never commit it to a public repository. If a key is accidentally exposed, delete it from the provider dashboard immediately and create a new one." data-zh="🔒 安全提醒：请像对待密码一样保护你的 API 密钥。切勿分享、不要粘贴到聊天中，也不要提交到公开仓库。如果密钥意外泄露，请立即在提供商控制台删除该密钥并重新创建。">
+          <p class="api-keys-tip" style="margin-top: 20px; margin-bottom: 0;" data-en="🔒 Security reminder: treat your API key like a password. NEVER share it, NEVER paste it into a chat, and NEVER commit it to a public repository. If a key is accidentally exposed, delete it from the provider dashboard immediately and create a new one." data-zh="🔒 安全提醒：请像对待密码一样保护你的 API 密钥。绝对不要分享、绝对不要粘贴到聊天中，也绝对不要提交到公开仓库。如果密钥意外泄露，请立即在提供商控制台删除该密钥并重新创建。">
             🔒 <strong>Security reminder:</strong> treat your API key like a password.
-            Never share it, never paste it into a chat, and never commit it to a public repository.
+            <strong>NEVER</strong> share it, <strong>NEVER</strong> paste it into a chat, and <strong>NEVER</strong> commit it to a public repository.
             If a key is accidentally exposed, delete it from the provider dashboard immediately
             and create a new one.
           </p>
