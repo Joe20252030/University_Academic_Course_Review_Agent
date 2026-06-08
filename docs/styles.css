@@ -606,6 +606,70 @@ code {
   box-shadow: 0 4px 18px rgba(7, 18, 44, 0.18);
 }
 
+/* ── .env guide ─────────────────────────────────────────────────────────── */
+
+.env-guide {
+  margin-top: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.env-guide-heading h3 {
+  margin: 0 0 8px;
+  font-size: 1.15rem;
+}
+
+.env-guide-heading p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.65;
+  max-width: 72ch;
+}
+
+.env-format-block {
+  padding: 20px 22px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, #ffffff, #f8faff);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.env-format-label {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--navy-700);
+}
+
+.env-format-note {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.env-platform-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 5px;
+  border: 1px solid rgba(27, 49, 103, 0.22);
+  background: var(--sky-050);
+  color: var(--navy-800);
+  font-size: 0.83em;
+  font-family: inherit;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
 /* ── Lightbox ────────────────────────────────────────────────────────────── */
 
 .lightbox-overlay {
@@ -715,7 +779,8 @@ code {
   .workflow-steps,
   .privacy-layout,
   .install-grid,
-  .provider-grid {
+  .provider-grid,
+  .env-platform-grid {
     grid-template-columns: 1fr;
   }
 

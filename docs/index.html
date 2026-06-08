@@ -511,6 +511,104 @@ uvicorn uacragent.api.main:app --reload</code></pre>
 
           </div><!-- /.provider-grid -->
 
+          <!-- ── .env file guide ──────────────────────────────────────────── -->
+          <div class="env-guide">
+            <div class="env-guide-heading">
+              <h3 data-en="Save your key so you don't have to re-enter it each launch" data-zh="保存密钥，避免每次启动都重新输入">Save your key so you don't have to re-enter it each launch</h3>
+              <p data-en="UACRAgent reads a .env file from your app data folder on startup and pre-fills the API key automatically. This means you enter the key once, save the file, and the app is ready every time you open it — no copy-pasting needed." data-zh="UACRAgent 在启动时会从你的应用数据目录读取 .env 文件，并自动填充 API 密钥。也就是说，只需输入一次密钥并保存文件，之后每次打开应用都会自动就绪，无需再次复制粘贴。">
+                UACRAgent reads a <code>.env</code> file from your app data folder on startup
+                and pre-fills the API key automatically. This means you enter the key once,
+                save the file, and the app is ready every time you open it — no copy-pasting needed.
+              </p>
+            </div>
+
+            <div class="env-format-block">
+              <p class="env-format-label" data-en="File location" data-zh="文件位置">File location</p>
+              <pre><code>~/.uacragent/.env</code></pre>
+              <p class="env-format-label" data-en="File contents — add only the line(s) for the provider you use" data-zh="文件内容——只需添加你所用提供商对应的行">File contents — add only the line(s) for the provider you use</p>
+              <pre><code># Google Gemini
+GOOGLE_API_KEY=AIzaSy...your-key-here
+
+# OpenAI
+OPENAI_API_KEY=sk-...your-key-here
+
+# DeepSeek
+DEEPSEEK_API_KEY=sk-...your-key-here</code></pre>
+              <p class="env-format-note" data-en="Lines starting with # are comments and are ignored. You only need the line for the provider you actually use." data-zh="以 # 开头的行是注释，会被忽略。只需添加你实际使用的提供商对应的那一行即可。">Lines starting with <code>#</code> are comments and are ignored. You only need the line for the provider you actually use.</p>
+            </div>
+
+            <div class="install-grid env-platform-grid">
+
+              <article class="install-card">
+                <h3 data-en="macOS — step by step" data-zh="macOS——分步指南">macOS — step by step</h3>
+                <ol class="install-steps">
+                  <li data-en="Launch UACRAgent once so it creates the ~/.uacragent/ folder automatically. You can quit it straight away." data-zh="先启动一次 UACRAgent，让它自动创建 ~/.uacragent/ 文件夹，之后可立即退出。">
+                    Launch UACRAgent once so it creates the <code>~/.uacragent/</code> folder automatically. You can quit it straight away.
+                  </li>
+                  <li data-en="Open Terminal. You can find it by pressing Cmd + Space and typing Terminal, then pressing Enter." data-zh="打开"终端"（Terminal）。可按 Cmd + Space，输入 Terminal，然后按 Enter 打开。">
+                    Open <strong>Terminal</strong>. Press <kbd>Cmd</kbd> + <kbd>Space</kbd>, type <em>Terminal</em>, press <kbd>Enter</kbd>.
+                  </li>
+                  <li data-en="Type the following command and press Enter to open the .env file in the nano editor (it creates the file if it does not exist yet):" data-zh="输入以下命令并按 Enter，在 nano 编辑器中打开 .env 文件（如果文件不存在会自动创建）：">
+                    Type the following command and press <kbd>Enter</kbd> — this opens the <code>.env</code> file in the <strong>nano</strong> editor (creates it if it does not exist):
+                    <pre><code>nano ~/.uacragent/.env</code></pre>
+                  </li>
+                  <li data-en="Type your key on a new line, for example:" data-zh="在新行输入你的密钥，例如：">
+                    Type your key on a new line, for example:
+                    <pre><code>GOOGLE_API_KEY=AIzaSy...your-actual-key</code></pre>
+                  </li>
+                  <li data-en="Save the file: press Ctrl + O, then press Enter to confirm the filename." data-zh="保存文件：按 Ctrl + O，然后按 Enter 确认文件名。">
+                    Save: press <kbd>Ctrl</kbd> + <kbd>O</kbd>, then <kbd>Enter</kbd> to confirm.
+                  </li>
+                  <li data-en="Exit nano: press Ctrl + X." data-zh="退出 nano：按 Ctrl + X。">
+                    Exit nano: press <kbd>Ctrl</kbd> + <kbd>X</kbd>.
+                  </li>
+                  <li data-en="Launch UACRAgent. The key is loaded automatically — no need to type it in App Settings." data-zh="启动 UACRAgent，密钥将自动加载，无需在 App Settings 中手动输入。">
+                    Launch UACRAgent. The key is loaded automatically — no need to type it in App Settings.
+                  </li>
+                </ol>
+                <div class="api-key-where">
+                  <strong data-en="Tip: verify the file was saved correctly" data-zh="提示：验证文件是否保存正确">Tip: verify the file was saved correctly</strong>
+                  <span data-en="In Terminal, run: cat ~/.uacragent/.env — you should see your key line printed back." data-zh="在终端中运行：cat ~/.uacragent/.env——你应该能看到刚才输入的密钥行被打印出来。">In Terminal, run: <code>cat ~/.uacragent/.env</code> — you should see your key line printed back.</span>
+                </div>
+              </article>
+
+              <article class="install-card">
+                <h3 data-en="Windows — step by step" data-zh="Windows——分步指南">Windows — step by step</h3>
+                <ol class="install-steps">
+                  <li data-en="Launch UACRAgent once so it creates the .uacragent folder automatically. You can close it straight away." data-zh="先启动一次 UACRAgent，让它自动创建 .uacragent 文件夹，之后可立即关闭。">
+                    Launch UACRAgent once so it creates the <code>.uacragent</code> folder automatically. You can close it straight away.
+                  </li>
+                  <li data-en="Open Notepad. Press the Windows key, type Notepad, and press Enter." data-zh="打开记事本。按 Windows 键，输入"记事本"，然后按 Enter。">
+                    Open <strong>Notepad</strong>. Press the <kbd>Windows</kbd> key, type <em>Notepad</em>, press <kbd>Enter</kbd>.
+                  </li>
+                  <li data-en="Type your key in Notepad, for example:" data-zh="在记事本中输入你的密钥，例如：">
+                    Type your key in Notepad, for example:
+                    <pre><code>GOOGLE_API_KEY=AIzaSy...your-actual-key</code></pre>
+                  </li>
+                  <li data-en="Click File → Save As. In the Save As dialog, navigate to: C:\Users\YourName\.uacragent\" data-zh="点击"文件 → 另存为"。在"另存为"对话框中，导航到：C:\Users\你的用户名\.uacragent\">
+                    Click <strong>File → Save As</strong>. Navigate to:
+                    <pre><code>C:\Users\YourName\.uacragent\</code></pre>
+                  </li>
+                  <li data-en="In the File name box, type exactly: .env (with the dot at the start and no .txt at the end). Change Save as type to All Files (*.*) — this stops Notepad from adding .txt to the name." data-zh='在"文件名"框中，输入：.env（以英文句点开头，结尾不加 .txt）。将"保存类型"更改为"所有文件（*.*）"——这样可以防止记事本自动添加 .txt 后缀。'>
+                    In the <strong>File name</strong> box type exactly: <code>.env</code><br>
+                    Change <strong>Save as type</strong> to <strong>All Files (*.*)</strong> — this stops Notepad from adding <code>.txt</code>.
+                  </li>
+                  <li data-en="Click Save. If Windows asks Are you sure? because the filename starts with a dot, click Yes." data-zh='点击"保存"。如果 Windows 因文件名以英文句点开头而弹出确认提示，点击"是"。'>
+                    Click <strong>Save</strong>. If Windows warns about a filename starting with a dot, click <strong>Yes</strong>.
+                  </li>
+                  <li data-en="Launch UACRAgent. The key is loaded automatically — no need to type it in App Settings." data-zh="启动 UACRAgent，密钥将自动加载，无需在 App Settings 中手动输入。">
+                    Launch UACRAgent. The key is loaded automatically — no need to type it in App Settings.
+                  </li>
+                </ol>
+                <div class="api-key-where">
+                  <strong data-en="Tip: can't find the .uacragent folder?" data-zh="提示：找不到 .uacragent 文件夹？">Tip: can't find the <code>.uacragent</code> folder?</strong>
+                  <span data-en="In File Explorer, click the address bar, type %USERPROFILE%\.uacragent and press Enter to jump directly to the folder." data-zh='在文件资源管理器中，点击地址栏，输入 %USERPROFILE%\.uacragent，然后按 Enter 直接跳转到该文件夹。'>In File Explorer, click the address bar, type <code>%USERPROFILE%\.uacragent</code> and press <kbd>Enter</kbd> to jump directly to the folder.</span>
+                </div>
+              </article>
+
+            </div><!-- /.env-platform-grid -->
+          </div><!-- /.env-guide -->
+
           <p class="api-keys-tip" style="margin-top: 20px; margin-bottom: 0;" data-en="🔒 Security reminder: treat your API key like a password. Never share it, never paste it into a chat, and never commit it to a public repository. If a key is accidentally exposed, delete it from the provider dashboard immediately and create a new one." data-zh="🔒 安全提醒：请像对待密码一样保护你的 API 密钥。切勿分享、不要粘贴到聊天中，也不要提交到公开仓库。如果密钥意外泄露，请立即在提供商控制台删除该密钥并重新创建。">
             🔒 <strong>Security reminder:</strong> treat your API key like a password.
             Never share it, never paste it into a chat, and never commit it to a public repository.
