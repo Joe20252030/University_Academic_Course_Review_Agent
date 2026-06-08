@@ -45,8 +45,14 @@ def _make_release_json(
     body: str = "## Release notes",
     html_url: str = "https://github.com/example/releases/tag/v1.2.3",
     assets: list[dict] | None = None,
+    prerelease: bool = False,
+    draft: bool = False,
 ) -> bytes:
-    """Build a minimal GitHub /releases/latest JSON payload."""
+    """Build a minimal GitHub /releases list JSON payload (list of one release).
+
+    The updater now uses the /releases endpoint which returns a JSON array;
+    this helper wraps the single release dict in a list to match that shape.
+    """
     version = tag.lstrip("v")
     if assets is None:
         assets = [
@@ -59,13 +65,15 @@ def _make_release_json(
                 "browser_download_url": f"https://example.com/dl/{tag}.exe",
             },
         ]
-    data = {
+    release = {
         "tag_name": tag,
         "html_url": html_url,
         "body": body,
         "assets": assets,
+        "prerelease": prerelease,
+        "draft": draft,
     }
-    return json.dumps(data).encode()
+    return json.dumps([release]).encode()
 
 
 class _FakeHTTPResponse:
@@ -164,7 +172,7 @@ class TestCheckForUpdate:
         """Patch urlopen to return a fake response with *body*."""
         resp = _FakeHTTPResponse(body, headers)
         monkeypatch.setattr(
-            "urllib.request.urlopen", lambda req, timeout=None: resp
+            "urllib.request.urlopen", lambda req, timeout=None, context=None: resp
         )
 
     # ── happy path ──────────────────────────────────────────────────────────
@@ -297,11 +305,118 @@ class TestCheckForUpdate:
         assert check_for_update() is None
 
     def test_missing_tag_returns_none(self, monkeypatch):
-        self._urlopen(json.dumps({"assets": []}).encode(), monkeypatch)
+        # A list containing a release dict with no tag_name field.
+        self._urlopen(json.dumps([{"assets": []}]).encode(), monkeypatch)
         monkeypatch.setattr(upd_mod, "_running_version", lambda: "1.0.0")
         monkeypatch.setattr(sys, "platform", "darwin")
 
         assert check_for_update() is None
+
+    # ── pre-release / draft handling ──────────────────────────────────────
+
+    def test_prerelease_is_included(self, monkeypatch):
+        """pre-release=True must NOT exclude a release from the check."""
+        self._urlopen(_make_release_json("v2.0.0", prerelease=True), monkeypatch)
+        monkeypatch.setattr(upd_mod, "_running_version", lambda: "1.0.0")
+        monkeypatch.setattr(sys, "platform", "darwin")
+
+        info = check_for_update()
+        assert info is not None
+        assert info.tag == "v2.0.0"
+
+    def test_draft_is_excluded(self, monkeypatch):
+        """draft=True must exclude a release (drafts are not ready for users)."""
+        self._urlopen(_make_release_json("v2.0.0", draft=True), monkeypatch)
+        monkeypatch.setattr(upd_mod, "_running_version", lambda: "1.0.0")
+        monkeypatch.setattr(sys, "platform", "darwin")
+
+        assert check_for_update() is None
+
+    def test_highest_version_selected_from_multiple_releases(self, monkeypatch):
+        """When the API returns several newer releases, the highest version wins."""
+        releases = [
+            {
+                "tag_name": "v1.3.0",
+                "html_url": "https://example.com/r/v1.3.0",
+                "body": "",
+                "assets": [
+                    {"name": "UACRAgent-v1.3.0-macOS-AppleSilicon.dmg",
+                     "browser_download_url": "https://example.com/dl/v1.3.0.dmg"},
+                ],
+                "prerelease": False,
+                "draft": False,
+            },
+            {
+                "tag_name": "v1.5.0",
+                "html_url": "https://example.com/r/v1.5.0",
+                "body": "",
+                "assets": [
+                    {"name": "UACRAgent-v1.5.0-macOS-AppleSilicon.dmg",
+                     "browser_download_url": "https://example.com/dl/v1.5.0.dmg"},
+                ],
+                "prerelease": True,
+                "draft": False,
+            },
+            {
+                "tag_name": "v1.4.0",
+                "html_url": "https://example.com/r/v1.4.0",
+                "body": "",
+                "assets": [
+                    {"name": "UACRAgent-v1.4.0-macOS-AppleSilicon.dmg",
+                     "browser_download_url": "https://example.com/dl/v1.4.0.dmg"},
+                ],
+                "prerelease": True,
+                "draft": False,
+            },
+        ]
+        resp = _FakeHTTPResponse(json.dumps(releases).encode())
+        monkeypatch.setattr(
+            "urllib.request.urlopen", lambda req, timeout=None, context=None: resp
+        )
+        monkeypatch.setattr(upd_mod, "_running_version", lambda: "1.0.0")
+        monkeypatch.setattr(sys, "platform", "darwin")
+
+        info = check_for_update()
+        assert info is not None
+        assert info.tag == "v1.5.0"   # highest version, even though listed second
+
+    def test_skipped_version_falls_through_to_next(self, monkeypatch):
+        """Skipping the top release still offers the next highest available."""
+        releases = [
+            {
+                "tag_name": "v2.0.0",
+                "html_url": "",
+                "body": "",
+                "assets": [
+                    {"name": "UACRAgent-v2.0.0-macOS-AppleSilicon.dmg",
+                     "browser_download_url": "https://example.com/dl/v2.0.0.dmg"},
+                ],
+                "prerelease": True,
+                "draft": False,
+            },
+            {
+                "tag_name": "v1.5.0",
+                "html_url": "",
+                "body": "",
+                "assets": [
+                    {"name": "UACRAgent-v1.5.0-macOS-AppleSilicon.dmg",
+                     "browser_download_url": "https://example.com/dl/v1.5.0.dmg"},
+                ],
+                "prerelease": True,
+                "draft": False,
+            },
+        ]
+        resp = _FakeHTTPResponse(json.dumps(releases).encode())
+        monkeypatch.setattr(
+            "urllib.request.urlopen", lambda req, timeout=None, context=None: resp
+        )
+        monkeypatch.setattr(upd_mod, "_running_version", lambda: "1.0.0")
+        monkeypatch.setattr(upd_mod, "get_skipped_update_version", lambda: "v2.0.0")
+        monkeypatch.setattr(sys, "platform", "darwin")
+
+        info = check_for_update()
+        assert info is not None
+        assert info.tag == "v1.5.0"   # v2.0.0 skipped; v1.5.0 offered instead
 
     # ── network / parse errors ────────────────────────────────────────────
 
@@ -332,8 +447,17 @@ class TestCheckForUpdate:
 
         assert check_for_update() is None
 
-    def test_non_dict_json_returns_none(self, monkeypatch):
-        self._urlopen(b"[1, 2, 3]", monkeypatch)
+    def test_non_list_json_returns_none(self, monkeypatch):
+        """A non-list API response (e.g. a proxy error dict) must return None."""
+        self._urlopen(json.dumps({"error": "proxy error"}).encode(), monkeypatch)
+        monkeypatch.setattr(sys, "platform", "darwin")
+
+        assert check_for_update() is None
+
+    def test_list_of_non_dicts_returns_none(self, monkeypatch):
+        """A list whose items are not dicts yields no valid release → None."""
+        self._urlopen(json.dumps([1, 2, 3]).encode(), monkeypatch)
+        monkeypatch.setattr(upd_mod, "_running_version", lambda: "1.0.0")
         monkeypatch.setattr(sys, "platform", "darwin")
 
         assert check_for_update() is None
@@ -359,7 +483,7 @@ class TestDownloadUpdate:
 
     def _patch_urlopen(self, monkeypatch, data: bytes, content_length: int | None = None):
         resp = _FakeStreamResponse(data, content_length)
-        monkeypatch.setattr("urllib.request.urlopen", lambda req: resp)
+        monkeypatch.setattr("urllib.request.urlopen", lambda req, context=None: resp)
 
     def test_returns_path_and_file_exists(self, monkeypatch):
         payload = b"\x00\x01\x02" * 100
@@ -737,7 +861,7 @@ class TestSkipVersionPersistence:
 
         # Simulate GitHub returning the new release
         resp = _FakeHTTPResponse(_make_release_json(tag))
-        monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout=None: resp)
+        monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout=None, context=None: resp)
         monkeypatch.setattr(upd_mod, "_running_version", lambda: "1.0.0")
         monkeypatch.setattr(sys, "platform", "darwin")
         from uacragent.infra.updater import set_skipped_update_version
@@ -750,7 +874,7 @@ class TestSkipVersionPersistence:
         tag = "v5.0.0"
 
         resp = _FakeHTTPResponse(_make_release_json(tag))
-        monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout=None: resp)
+        monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout=None, context=None: resp)
         monkeypatch.setattr(upd_mod, "_running_version", lambda: "1.0.0")
         monkeypatch.setattr(sys, "platform", "darwin")
         from uacragent.infra.updater import (

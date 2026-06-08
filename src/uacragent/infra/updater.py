@@ -65,7 +65,10 @@ def _make_ssl_context() -> "ssl.SSLContext":
 # ---------------------------------------------------------------------------
 
 _GITHUB_REPO   = "Joe20252030/University_Academic_Course_Review_Agent"
-_API_URL       = f"https://api.github.com/repos/{_GITHUB_REPO}/releases/latest"
+# Use the list endpoint so pre-releases are included.
+# /releases/latest silently excludes pre-releases; /releases returns all of
+# them (GitHub filters out only draft releases from this endpoint).
+_API_URL       = f"https://api.github.com/repos/{_GITHUB_REPO}/releases?per_page=20"
 _API_TIMEOUT   = 10   # seconds for the GitHub API call
 _DL_CHUNK_SIZE = 64 * 1024  # 64 KB read chunks during download
 
@@ -163,32 +166,43 @@ def check_for_update() -> UpdateInfo | None:
     """Query the GitHub Releases API and return an UpdateInfo if a newer
     release is available for this platform, or None otherwise.
 
+    Uses the ``/releases`` list endpoint so that **pre-releases are included**
+    in the check.  (The ``/releases/latest`` endpoint silently excludes
+    pre-releases and returns 404 when all releases are pre-releases.)
+    Draft releases are always excluded — the GitHub API omits them from the
+    unauthenticated ``/releases`` response entirely.
+
+    Among all releases that are strictly newer than the running version and
+    carry a platform-specific installer asset, the one with the highest
+    version number is returned.
+
     This function is safe to call from a background thread.  It never raises
-    -- all errors are logged at WARNING level and return None so the caller
+    — all errors are logged at WARNING level and return None so the caller
     can treat any failure as "no update available."
 
     Reasons a None is returned:
     - No internet / DNS / TLS error
     - GitHub rate-limited (403/429)
     - Running on an unsupported platform (Linux)
-    - Latest release has no matching asset for this platform
-    - Current version >= latest release version
-    - User previously chose to skip the latest version
+    - No release newer than the current version has a matching asset
+    - User previously chose to skip the best available release
     """
     platform = sys.platform
     if platform not in _ASSET_PATTERN:
         logger.debug("Auto-update not supported on platform '%s'.", platform)
         return None
 
+    current_version = _running_version()
+
     # ------------------------------------------------------------------
-    # 1. Fetch latest release metadata
+    # 1. Fetch recent releases (list endpoint — includes pre-releases)
     # ------------------------------------------------------------------
     try:
         req = urllib.request.Request(
             _API_URL,
             headers={
                 "Accept":     "application/vnd.github+json",
-                "User-Agent": f"UACRAgent/{_running_version()}",
+                "User-Agent": f"UACRAgent/{current_version}",
                 "X-GitHub-Api-Version": "2022-11-28",
             },
         )
@@ -202,63 +216,74 @@ def check_for_update() -> UpdateInfo | None:
         logger.warning("Update check failed: %s", exc)
         return None
 
-    # Guard against non-dict payloads (e.g. a GitHub API returning an array
-    # during a schema change, or a network proxy returning an error page).
-    if not isinstance(data, dict):
-        logger.warning("Update check: unexpected response type %s", type(data).__name__)
-        return None
-
-    # ------------------------------------------------------------------
-    # 2. Extract and compare versions
-    # ------------------------------------------------------------------
-    tag = data.get("tag_name", "").strip()
-    if not tag:
-        return None
-
-    remote_version = tag.lstrip("v")
-    current_version = _running_version()
-
-    # Tuple comparison is element-wise (major, minor, patch), so this
-    # triggers for ANY version strictly greater than the current one --
-    # e.g. 0.3.2 → 0.3.3, 0.4.0, 1.0.0 all pass equally.
-    if _parse_version(remote_version) <= _parse_version(current_version):
-        logger.debug(
-            "No update: current=%s, latest=%s", current_version, remote_version
-        )
-        return None
-
-    # ------------------------------------------------------------------
-    # 3. Check skip list
-    # ------------------------------------------------------------------
-    if get_skipped_update_version() == tag:
-        logger.debug("Update %s was previously skipped by user.", tag)
-        return None
-
-    # ------------------------------------------------------------------
-    # 4. Find the platform-specific asset
-    # ------------------------------------------------------------------
-    asset_name = _ASSET_PATTERN[platform].format(version=remote_version)
-    download_url = ""
-    for asset in data.get("assets", []):
-        if asset.get("name") == asset_name:
-            download_url = asset.get("browser_download_url", "")
-            break
-
-    if not download_url:
+    # Guard against non-list payloads (network proxy error page, etc.).
+    if not isinstance(data, list):
         logger.warning(
-            "Update %s found but no asset named '%s' in the release.",
-            tag, asset_name,
+            "Update check: unexpected response type %s", type(data).__name__
         )
         return None
 
-    return UpdateInfo(
-        tag=tag,
-        version=remote_version,
-        download_url=download_url,
-        asset_name=asset_name,
-        body=data.get("body", ""),
-        html_url=data.get("html_url", ""),
-    )
+    # ------------------------------------------------------------------
+    # 2. Scan releases for the best (highest-versioned) candidate.
+    #    Pre-releases included; drafts skipped defensively.
+    # ------------------------------------------------------------------
+    asset_pattern = _ASSET_PATTERN[platform]
+    best: UpdateInfo | None = None
+
+    for release in data:
+        if not isinstance(release, dict):
+            continue
+        # Draft releases must not be offered to end users.
+        if release.get("draft", False):
+            continue
+
+        tag = release.get("tag_name", "").strip()
+        if not tag:
+            continue
+
+        remote_version = tag.lstrip("v")
+
+        # Only consider releases strictly newer than what is running.
+        if _parse_version(remote_version) <= _parse_version(current_version):
+            continue
+
+        # Respect the user's explicit skip choice for this tag.
+        if get_skipped_update_version() == tag:
+            logger.debug("Update %s was previously skipped by user.", tag)
+            continue
+
+        # Look for the platform-specific installer asset by exact filename.
+        asset_name = asset_pattern.format(version=remote_version)
+        download_url = ""
+        for asset in release.get("assets", []):
+            if asset.get("name") == asset_name:
+                download_url = asset.get("browser_download_url", "")
+                break
+
+        if not download_url:
+            logger.warning(
+                "Update %s found but no asset named '%s' in the release.",
+                tag, asset_name,
+            )
+            continue
+
+        # Keep the highest-versioned candidate found so far.
+        if best is None or _parse_version(remote_version) > _parse_version(best.version):
+            best = UpdateInfo(
+                tag=tag,
+                version=remote_version,
+                download_url=download_url,
+                asset_name=asset_name,
+                body=release.get("body", ""),
+                html_url=release.get("html_url", ""),
+            )
+
+    if best is None:
+        logger.debug(
+            "No update: no release newer than %s with a platform asset found.",
+            current_version,
+        )
+    return best
 
 
 # ---------------------------------------------------------------------------

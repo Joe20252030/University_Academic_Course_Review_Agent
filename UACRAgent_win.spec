@@ -141,6 +141,13 @@ except Exception as _e:
 # pytesseract
 hiddenimports += ["pytesseract"]
 
+# certifi — CA bundle used by updater.py for HTTPS requests.
+# Windows frozen apps use SChannel (Windows cert store) and don't need this to
+# function, but bundling it explicitly ensures _make_ssl_context() can load
+# certifi.where() without falling back, and keeps the two specs symmetric.
+datas         += collect_data_files("certifi")
+hiddenimports += ["certifi"]
+
 # ---------------------------------------------------------------------------
 # Tesseract binary + language data (for image OCR in .pptx slides)
 # ---------------------------------------------------------------------------
