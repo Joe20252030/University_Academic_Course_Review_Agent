@@ -15,7 +15,7 @@ else:
         import tomli as _tomllib            # pip install tomli  (3.10 backport)
 with open(Path(SPECPATH) / "pyproject.toml", "rb") as _f:
     _APP_VERSION: str = _tomllib.load(_f)["project"]["version"]
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules, collect_all
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules, collect_all, copy_metadata
 
 block_cipher = None
 HERE = Path(SPECPATH)       # directory this .spec file lives in
@@ -101,6 +101,12 @@ hiddenimports += ["pytesseract"]
 # urllib raises CERTIFICATE_VERIFY_FAILED without this.
 datas         += collect_data_files("certifi")
 hiddenimports += ["certifi"]
+
+# uacragent dist-info — lets importlib.metadata.version("uacragent") resolve
+# the correct version string inside the frozen app.  Without this,
+# PackageNotFoundError is raised, the pyproject.toml fallback also fails
+# (the file is not inside _MEIPASS), and _running_version() returns "0.0.0".
+datas         += copy_metadata("uacragent")
 
 # ---------------------------------------------------------------------------
 # Tesseract binary + language data (for image OCR in .pptx slides)

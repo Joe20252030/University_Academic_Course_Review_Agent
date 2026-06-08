@@ -1751,18 +1751,15 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
 
             dlg = tk.Toplevel(self)
             self._update_dialog = dlg
+            # Hide while building so the window doesn't flash at the wrong
+            # position before being centered.
+            dlg.withdraw()
             dlg.title(self._t("update_available_title"))
             dlg.resizable(False, False)
             dlg.configure(bg=c["text_bg"])
-
-            # Center over main window
-            self.update_idletasks()
-            px, py = self.winfo_rootx(), self.winfo_rooty()
-            pw, ph = self.winfo_width(), self.winfo_height()
-            dw, dh = 420, 240
-            dlg.geometry(f"{dw}x{dh}+{px + (pw - dw)//2}+{py + (ph - dh)//2}")
-
-            # Keep on top of the main window but not system-modal
+            # Keep on top of the main window but not system-modal.
+            # Must be called before geometry so the window manager honours
+            # the parent relationship when placing the window.
             dlg.transient(self)
 
             # Close guard
@@ -2003,6 +2000,21 @@ class ConversationApp(AppearanceMixin, SettingsMixin, SessionMixin, ChatMixin, _
                 command=_do_skip,
             )
             _skip_btn.pack(side="left")
+
+            # All widgets are laid out — measure the actual dialog size and
+            # center it over the main window before showing it.
+            dlg.update_idletasks()
+            dw = dlg.winfo_reqwidth()
+            dh = dlg.winfo_reqheight()
+            self.update_idletasks()
+            px = self.winfo_rootx()
+            py = self.winfo_rooty()
+            pw = self.winfo_width()
+            ph = self.winfo_height()
+            x = px + (pw - dw) // 2
+            y = py + (ph - dh) // 2
+            dlg.geometry(f"{dw}x{dh}+{x}+{y}")
+            dlg.deiconify()
 
         except Exception:
             self._update_dialog = None
