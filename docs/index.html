@@ -31,6 +31,7 @@
           <a href="#privacy" data-en="Privacy" data-zh="隐私">Privacy</a>
           <a href="#getting-started" data-en="Get Started" data-zh="开始使用">Get Started</a>
           <a href="#api-keys" data-en="API Keys" data-zh="API 密钥">API Keys</a>
+          <a href="#credits" data-en="Credits" data-zh="致谢">Credits</a>
         </nav>
         <div class="header-actions">
           <a
@@ -653,6 +654,67 @@ DEEPSEEK_API_KEY=sk-...your-key-here</code></pre>
             and create a new one.
           </p>
 
+        </section>
+
+        <!-- ── Credits ──────────────────────────────────────────────────── -->
+        <section class="section" id="credits">
+          <div class="section-heading">
+            <h2 data-en="Credits" data-zh="致谢">Credits</h2>
+            <p data-en="UACRAgent is an independent open-source project. Thanks to everyone who helped make it better." data-zh="UACRAgent 是一个独立的开源项目。感谢所有帮助它变得更好的人。">
+              UACRAgent is an independent open-source project. Thanks to everyone who helped make it better.
+            </p>
+          </div>
+
+          <div class="credits-grid">
+
+            <!-- Test users -->
+            <div class="credits-card">
+              <h3 data-en="Volunteer Testers" data-zh="志愿测试用户">Volunteer Testers</h3>
+              <p data-en="Thanks to the volunteer test users who helped exercise the desktop assistant, retrieval flow, workspace handling, and study-support UX during development. Their feedback helped shape the agent into what it is today." data-zh="感谢在开发过程中参与测试的志愿用户，他们帮助测试了桌面助手、检索流程、工作区管理以及学习支持体验。他们的反馈推动了本项目的成长。">
+                Thanks to the volunteer test users who helped exercise the desktop assistant,
+                retrieval flow, workspace handling, and study-support UX during development.
+                Their feedback helped shape the agent into what it is today.
+              </p>
+              <p class="credits-placeholder" data-en="Test-user credits will be listed here once they are confirmed for public acknowledgement." data-zh="测试用户名单将在获得本人确认后在此公示。">
+                Test-user credits will be listed here once they are confirmed for public acknowledgement.
+              </p>
+            </div>
+
+            <!-- Open-source foundations -->
+            <div class="credits-card">
+              <h3 data-en="Built On Open Source" data-zh="基于开源构建">Built On Open Source</h3>
+              <p data-en="UACRAgent stands on the shoulders of many excellent open-source projects. Key components include:" data-zh="UACRAgent 建立在众多优秀开源项目的基础之上，主要组件包括：">
+                UACRAgent stands on the shoulders of many excellent open-source projects. Key components include:
+              </p>
+              <ul class="credits-list">
+                <li><a href="https://python.langchain.com" target="_blank" rel="noreferrer">LangChain</a> — <span data-en="LLM orchestration and retrieval pipeline" data-zh="大语言模型编排与检索管道">LLM orchestration and retrieval pipeline</span></li>
+                <li><a href="https://www.trychroma.com" target="_blank" rel="noreferrer">ChromaDB</a> — <span data-en="local vector store for document retrieval" data-zh="用于文档检索的本地向量数据库">local vector store for document retrieval</span></li>
+                <li><a href="https://www.sbert.net" target="_blank" rel="noreferrer">Sentence Transformers</a> — <span data-en="local embedding model" data-zh="本地嵌入模型">local embedding model</span></li>
+                <li><a href="https://docs.pydantic.dev" target="_blank" rel="noreferrer">Pydantic</a> — <span data-en="data validation and settings management" data-zh="数据验证与设置管理">data validation and settings management</span></li>
+                <li><a href="https://fastapi.tiangolo.com" target="_blank" rel="noreferrer">FastAPI</a> — <span data-en="REST API server" data-zh="REST API 服务器">REST API server</span></li>
+                <li><a href="https://python-docx.readthedocs.io" target="_blank" rel="noreferrer">python-docx</a> &amp; <a href="https://py-pdf.github.io/fpdf2/" target="_blank" rel="noreferrer">fpdf2</a> — <span data-en="Word and PDF document export" data-zh="Word 和 PDF 文档导出">Word and PDF document export</span></li>
+                <li><a href="https://github.com/mhammond/pywin32" target="_blank" rel="noreferrer">python-pptx</a> — <span data-en="PowerPoint file parsing" data-zh="PowerPoint 文件解析">PowerPoint file parsing</span></li>
+                <li><a href="https://pyinstaller.org" target="_blank" rel="noreferrer">PyInstaller</a> — <span data-en="standalone app packaging for macOS and Windows" data-zh="macOS 和 Windows 独立应用打包">standalone app packaging for macOS and Windows</span></li>
+              </ul>
+            </div>
+
+            <!-- AI providers -->
+            <div class="credits-card">
+              <h3 data-en="AI Providers" data-zh="AI 提供商">AI Providers</h3>
+              <p data-en="The following providers power UACRAgent's language and embedding models:" data-zh="以下提供商为 UACRAgent 的语言模型和嵌入模型提供支持：">
+                The following providers power UACRAgent's language and embedding models:
+              </p>
+              <ul class="credits-list">
+                <li><a href="https://ai.google.dev" target="_blank" rel="noreferrer">Google Gemini</a> — <span data-en="chat, planning, writing, and embeddings" data-zh="对话、规划、写作与嵌入">chat, planning, writing, and embeddings</span></li>
+                <li><a href="https://platform.openai.com" target="_blank" rel="noreferrer">OpenAI</a> — <span data-en="chat, planning, writing, and embeddings" data-zh="对话、规划、写作与嵌入">chat, planning, writing, and embeddings</span></li>
+                <li><a href="https://platform.deepseek.com" target="_blank" rel="noreferrer">DeepSeek</a> — <span data-en="chat, planning, and writing" data-zh="对话、规划与写作">chat, planning, and writing</span></li>
+              </ul>
+              <p class="credits-disclaimer" data-en="UACRAgent is not affiliated with, endorsed by, or officially connected to any of these providers." data-zh="UACRAgent 与上述任何提供商均无从属、背书或官方关联关系。">
+                UACRAgent is not affiliated with, endorsed by, or officially connected to any of these providers.
+              </p>
+            </div>
+
+          </div><!-- /.credits-grid -->
         </section>
 
       </main>

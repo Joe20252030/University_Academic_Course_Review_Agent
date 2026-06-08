@@ -794,6 +794,72 @@ kbd {
   text-decoration: underline;
 }
 
+/* ── Credits section ────────────────────────────────────────────────────────── */
+
+.credits-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.credits-card {
+  padding: 22px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, #ffffff, #f8faff);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.credits-card h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.credits-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.65;
+  font-size: 0.96rem;
+}
+
+.credits-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  line-height: 1.8;
+  font-size: 0.95rem;
+}
+
+.credits-list a {
+  color: var(--navy-700);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.credits-list a:hover {
+  text-decoration: underline;
+}
+
+.credits-placeholder {
+  font-style: italic;
+  color: var(--muted) !important;
+  font-size: 0.9rem !important;
+  padding: 10px 13px;
+  border-radius: 8px;
+  background: rgba(36, 64, 127, 0.04);
+  border: 1px dashed rgba(36, 64, 127, 0.15);
+}
+
+.credits-disclaimer {
+  font-size: 0.86rem !important;
+  color: rgba(93, 106, 136, 0.8) !important;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+  margin-top: 4px !important;
+}
+
 @media (max-width: 1080px) {
   .hero,
   .feature-grid,
@@ -802,7 +868,8 @@ kbd {
   .privacy-layout,
   .install-grid,
   .provider-grid,
-  .env-platform-grid {
+  .env-platform-grid,
+  .credits-grid {
     grid-template-columns: 1fr;
   }
 
