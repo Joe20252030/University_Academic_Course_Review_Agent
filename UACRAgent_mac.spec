@@ -96,6 +96,12 @@ except Exception as _e:
 # pytesseract
 hiddenimports += ["pytesseract"]
 
+# certifi — CA bundle used by updater.py for HTTPS in frozen macOS builds.
+# PyInstaller's frozen app cannot reach the system certificate store, so
+# urllib raises CERTIFICATE_VERIFY_FAILED without this.
+datas         += collect_data_files("certifi")
+hiddenimports += ["certifi"]
+
 # ---------------------------------------------------------------------------
 # Tesseract binary + language data (for image OCR in .pptx slides)
 # ---------------------------------------------------------------------------

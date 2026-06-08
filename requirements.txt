@@ -33,6 +33,9 @@ Pillow>=10.0         # desktop app icon loading via PIL.ImageTk
 fastapi>=0.100
 uvicorn[standard]>=0.23
 
+# ── Networking / TLS ─────────────────────────────────────────────────────────
+certifi>=2024.0      # CA bundle for urllib in PyInstaller-frozen macOS builds
+
 # ── Desktop UI extras ────────────────────────────────────────────────────────
 tkinterdnd2==0.4.3   # pinned: 0.4.3 uses Tcl-8.6-compatible dylibs; newer releases
                      # ship libtcl9tkdnd*.dylib (Tcl 9) which cannot be loaded by

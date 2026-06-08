@@ -42,6 +42,24 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+
+def _make_ssl_context() -> "ssl.SSLContext":
+    """Return an SSL context whose CA bundle works inside frozen macOS builds.
+
+    PyInstaller-frozen apps on macOS cannot access the system certificate store
+    through the standard ``ssl`` module, so ``urlopen`` raises
+    ``CERTIFICATE_VERIFY_FAILED`` for any HTTPS request.  ``certifi`` ships its
+    own CA bundle and is the standard fix.  Falls back to the default context
+    when running from source (where the system store is available normally).
+    """
+    import ssl
+    try:
+        import certifi  # noqa: PLC0415
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:  # noqa: BLE001  — certifi missing or any import error
+        return ssl.create_default_context()
+
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -174,7 +192,7 @@ def check_for_update() -> UpdateInfo | None:
                 "X-GitHub-Api-Version": "2022-11-28",
             },
         )
-        with urllib.request.urlopen(req, timeout=_API_TIMEOUT) as resp:
+        with urllib.request.urlopen(req, timeout=_API_TIMEOUT, context=_make_ssl_context()) as resp:
             import json as _json
             data = _json.loads(resp.read().decode("utf-8"))
     except urllib.error.URLError as exc:
@@ -283,7 +301,7 @@ def download_update(
             info.download_url,
             headers={"User-Agent": f"UACRAgent/{_running_version()}"},
         )
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req, context=_make_ssl_context()) as resp:
             total = int(resp.headers.get("Content-Length", 0))
             received = 0
             with open(tmp_path, "wb") as out_fh:
