@@ -514,11 +514,12 @@ uvicorn uacragent.api.main:app --reload</code></pre>
           <!-- ── .env file guide ──────────────────────────────────────────── -->
           <div class="env-guide">
             <div class="env-guide-heading">
-              <h3 data-en="Save your key so you don't have to re-enter it each launch" data-zh="保存密钥，避免每次启动都重新输入">Save your key so you don't have to re-enter it each launch</h3>
-              <p data-en="UACRAgent reads a configuration file called .env on startup and pre-fills your API key automatically. Set it up once and the app is ready every time you open it — no copy-pasting needed." data-zh="UACRAgent 在启动时会读取名为 .env 的配置文件，并自动填充 API 密钥。只需配置一次，之后每次打开应用都会自动就绪，无需再次复制粘贴。">
-                UACRAgent reads a configuration file called <code>.env</code> on startup and pre-fills
-                your API key automatically. Set it up once and the app is ready every time you open
-                it — no copy-pasting needed.
+              <h3><span data-en="Save your key so you don't have to re-enter it each launch" data-zh="保存密钥，避免每次启动都重新输入">Save your key so you don't have to re-enter it each launch</span> <span class="provider-tag free" data-en="Optional" data-zh="可选">Optional</span></h3>
+              <p data-en="This is optional — you can always enter your API key manually in App Settings → Provider tab each time you launch the app. If you prefer not to set this up, skip this section entirely." data-zh="此步骤为可选项——你随时可以在每次启动应用后，通过 App Settings → Provider 标签手动输入 API 密钥。如果不想配置此项，可以跳过本节。">
+                This is <strong>optional</strong> — you can always enter your API key manually in <strong>App Settings → Provider tab</strong> each time you launch the app. If you prefer not to set this up, skip this section entirely.
+              </p>
+              <p data-en="If you do set it up: UACRAgent reads a configuration file called .env on startup and pre-fills your API key automatically. Set it up once and the app is ready every time you open it — no copy-pasting needed." data-zh="如果你决定配置：UACRAgent 在启动时会读取名为 .env 的配置文件，并自动填充 API 密钥。只需配置一次，之后每次打开应用都会自动就绪，无需再次复制粘贴。">
+                If you do set it up: UACRAgent reads a configuration file called <code>.env</code> on startup and pre-fills your API key automatically. Set it up once and the app is ready every time you open it — no copy-pasting needed.
               </p>
             </div>
 
@@ -533,7 +534,14 @@ Windows:  C:\Users\YourName\.uacragent\.env</code></pre>
                 Both the <code>.uacragent</code> folder and the <code>.env</code> file start with a dot (<code>.</code>), which makes them <strong>hidden by default</strong> on macOS and Windows. That is intentional — it keeps app files tidy and out of sight. The steps below show how to reach and create them without any developer tools.
               </p>
               <p class="env-format-label" data-en="What to write inside the file" data-zh="文件内容">What to write inside the file</p>
-              <pre><code>GOOGLE_API_KEY=AIzaSy...your-key-here</code></pre>
+              <pre><code># Google Gemini
+GOOGLE_API_KEY=AIzaSy...your-key-here
+
+# OpenAI
+OPENAI_API_KEY=sk-...your-key-here
+
+# DeepSeek
+DEEPSEEK_API_KEY=sk-...your-key-here</code></pre>
               <p class="env-format-note" data-en="Replace the placeholder with your actual key. Only add the line for the provider you use — you do not need all three." data-zh="将占位符替换为你的实际密钥。只需添加你所用提供商对应的那一行，无需同时添加全部三行。">Replace the placeholder with your actual key. Only add the line for the provider you use — you do not need all three.</p>
             </div>
 
@@ -549,27 +557,35 @@ Windows:  C:\Users\YourName\.uacragent\.env</code></pre>
                   <li data-en="Open TextEdit. Click the magnifying glass icon in the top-right corner of your screen (Spotlight), type TextEdit, and click it in the results." data-zh="打开 TextEdit（文本编辑）。点击屏幕右上角的放大镜图标（聚焦搜索），输入 TextEdit，然后点击搜索结果中的应用。">
                     Open <strong>TextEdit</strong>. Click the magnifying glass 🔍 in the top-right corner of your screen, type <em>TextEdit</em>, and click it in the results.
                   </li>
-                  <li data-en="In TextEdit, click the Format menu in the menu bar at the top of the screen, then click Make Plain Text. This step is essential — without it the file will be saved in the wrong format and the app will not read it." data-zh="在 TextEdit 中，点击屏幕顶部菜单栏中的"格式"菜单，然后点击"转换为纯文本"。此步骤至关重要——跳过此步，文件将以错误格式保存，应用将无法读取。">
-                    In TextEdit, click the <strong>Format</strong> menu in the menu bar → click <strong>Make Plain Text</strong>.
-                    <div class="env-step-callout" data-en="This step is essential. Without it, TextEdit saves in rich-text (.rtf) format and UACRAgent will not read the file." data-zh="此步骤至关重要。跳过此步，TextEdit 会以富文本（.rtf）格式保存，UACRAgent 将无法读取该文件。">⚠️ This step is essential. Without it, TextEdit saves as rich-text (.rtf) and UACRAgent will not read the file.</div>
+                  <li>
+                    <span data-en="In TextEdit, click the Format menu in the menu bar → click Make Plain Text." data-zh="在 TextEdit 中，点击屏幕顶部菜单栏中的"格式"菜单 → 点击"转换为纯文本"。">In TextEdit, click the <strong>Format</strong> menu in the menu bar → click <strong>Make Plain Text</strong>.</span>
+                    <div class="env-step-callout">⚠️ <span data-en="This step is essential. Without it, TextEdit saves as rich-text (.rtf) and UACRAgent will not read the file." data-zh="此步骤至关重要。跳过此步，TextEdit 会以富文本（.rtf）格式保存，UACRAgent 将无法读取该文件。">This step is essential. Without it, TextEdit saves as rich-text (.rtf) and UACRAgent will not read the file.</span></div>
                   </li>
-                  <li data-en="Type your API key on the first line, for example:" data-zh="在第一行输入你的 API 密钥，例如：">
-                    Type your API key on the first line, for example:
-                    <pre><code>GOOGLE_API_KEY=AIzaSy...your-actual-key</code></pre>
+                  <li>
+                    <span data-en="Enter your API key in the format shown below. Only include the line for the provider you use:" data-zh="按照以下格式输入你的 API 密钥。只需填写你所用提供商对应的那一行：">Enter your API key in the format shown below. Only include the line for the provider you use:</span>
+                    <pre><code># Google Gemini
+GOOGLE_API_KEY=AIzaSy...your-key-here
+
+# OpenAI
+OPENAI_API_KEY=sk-...your-key-here
+
+# DeepSeek
+DEEPSEEK_API_KEY=sk-...your-key-here</code></pre>
                   </li>
-                  <li data-en="Click File in the menu bar → Save As (or press the Save button if prompted)." data-zh="点击菜单栏中的"文件"→"另存为"（如果出现提示，点击"保存"按钮）。">
+                  <li data-en="Click File in the menu bar → Save As." data-zh="点击菜单栏中的"文件"→"另存为"。">
                     Click <strong>File</strong> in the menu bar → <strong>Save As</strong>.
                   </li>
-                  <li data-en="A save dialog opens. At the bottom of the dialog, change the filename to .env (delete what is there and type .env — starting with a dot)." data-zh="存储对话框打开后，将底部的文件名改为 .env（删除现有内容，输入 .env，注意以英文句点开头）。">
-                    In the save dialog, change the filename at the bottom to <code>.env</code> (delete the current name and type <code>.env</code>, starting with a dot).
+                  <li>
+                    <span data-en="Save the file to your Desktop. In the save dialog, click Desktop in the left sidebar. Change the filename to .env (delete the current name and type .env, starting with a dot)." data-zh="将文件保存到桌面。在存储对话框中，点击左侧边栏中的"桌面"。将文件名改为 .env（删除现有内容，输入 .env，以英文句点开头）。">Save the file to your Desktop. In the save dialog, click <strong>Desktop</strong> in the left sidebar. Change the filename to <code>.env</code> (delete the current name and type <code>.env</code>, starting with a dot).</span>
+                    <div class="env-step-callout">⚠️ <span data-en='macOS will warn: "Are you sure you want to use a name beginning with a dot?" — click Use ".env". This is normal.' data-zh='macOS 会提示："确定要使用以句点开头的名称吗？"——点击"使用 .env"。这是正常现象。'>macOS will warn: <em>"Are you sure you want to use a name beginning with a dot?"</em> — click <strong>Use ".env"</strong>. This is normal.</span></div>
                   </li>
-                  <li data-en="Navigate to your .uacragent folder. Because it is hidden, you cannot click to it normally. Instead: in the save dialog, click the Go menu in the menu bar (the menu bar updates to show Finder menus while a dialog is open) → click Go to Folder → type /Users/YourName/.uacragent/ — replacing YourName with your Mac username — then click Go." data-zh="导航到你的 .uacragent 文件夹。由于该文件夹是隐藏的，无法通过普通点击访问。替代方法：在存储对话框打开时，点击屏幕顶部菜单栏中的"前往"菜单 → 点击"前往文件夹" → 输入 /Users/你的用户名/.uacragent/ → 点击"前往"。">
-                    Navigate to the hidden <code>.uacragent</code> folder. Because it is hidden, it does not appear in the normal folder list. Use this shortcut instead:
-                    <div class="env-step-callout env-step-callout--info" data-en="While the save dialog is open, click the Go menu in the menu bar at the very top of your screen → click Go to Folder → type /Users/YourName/.uacragent/ (replacing YourName with your actual Mac username) → click Go." data-zh="存储对话框打开时，点击屏幕顶部菜单栏中的"前往"菜单 → 点击"前往文件夹" → 输入 /Users/你的用户名/.uacragent/（将"你的用户名"替换为你的实际 Mac 用户名） → 点击"前往"。">While the save dialog is open: click <strong>Go</strong> in the menu bar at the top of your screen → <strong>Go to Folder</strong> → type <code>/Users/YourName/.uacragent/</code> (replace <em>YourName</em> with your actual Mac username) → click <strong>Go</strong>.</div>
-                    <p class="env-inline-note" data-en="Don't know your Mac username? Click the Apple  menu (top-left corner) → System Settings → click your name at the top. Your username is the shorter name shown below your full name." data-zh="不知道你的 Mac 用户名？点击屏幕左上角的苹果菜单 → 系统设置 → 点击顶部的名字。用户名是显示在全名下方的较短名称。">Don't know your Mac username? Click the <strong>Apple  menu</strong> (top-left corner) → <strong>System Settings</strong> → click your name at the top. Your username is the shorter name shown below your full name.</p>
+                  <li>
+                    <span data-en="Move the .env file into the .uacragent folder. Open a Finder window (click the smiley-face Finder icon in your Dock). In the Finder menu bar, click Go → Go to Folder, then type the path below and click Go:" data-zh="将 .env 文件移动到 .uacragent 文件夹中。打开一个 Finder 窗口（点击程序坞中笑脸图标的 Finder）。在 Finder 菜单栏中点击"前往" → "前往文件夹"，然后输入以下路径并点击"前往"：">Move the <code>.env</code> file into the <code>.uacragent</code> folder. Open a <strong>Finder</strong> window (click the smiley-face icon in your Dock). In the Finder menu bar, click <strong>Go</strong> → <strong>Go to Folder</strong>, then type the path below and click <strong>Go</strong>:</span>
+                    <pre><code>/Users/YourName/.uacragent</code></pre>
+                    <p class="env-inline-note"><span data-en="Replace YourName with your Mac username. Don't know it? Click the Apple menu (top-left) → System Settings → click your name at the top. Your username is the shorter name shown below your full name." data-zh="将 YourName 替换为你的 Mac 用户名。不知道用户名？点击苹果菜单（左上角）→ 系统设置 → 点击顶部的名字，用户名是显示在全名下方的较短名称。">Replace <em>YourName</em> with your Mac username. Don't know it? Click the <strong>Apple  menu</strong> (top-left) → <strong>System Settings</strong> → click your name. Your username is the shorter name shown below your full name.</span></p>
                   </li>
-                  <li data-en="Click Save. macOS will warn: Are you sure you want to use a name beginning with a dot? Click Use .env. This warning is normal." data-zh='点击"存储"。macOS 会提示：确定要使用以句点开头的名称吗？点击"使用 .env"。此提示属于正常现象。'>
-                    Click <strong>Save</strong>. macOS will warn: <em>"Are you sure you want to use a name beginning with a dot?"</em> — click <strong>Use ".env"</strong>. This warning is normal.
+                  <li data-en="The .uacragent folder is now open in Finder. Drag the .env file from your Desktop into this Finder window. The Desktop is visible in the background — drag the .env icon from there directly into the folder." data-zh="此时 .uacragent 文件夹已在 Finder 中打开。将 .env 文件从桌面拖入此 Finder 窗口即可。桌面在后方可见——直接将 .env 图标拖入文件夹窗口。">
+                    The <code>.uacragent</code> folder is now open in Finder. Drag the <code>.env</code> file from your Desktop into this Finder window. (The Desktop is visible in the background — drag the <code>.env</code> icon from there directly into the open folder.)
                   </li>
                   <li data-en="Launch UACRAgent. The key is loaded automatically — no need to type it in App Settings." data-zh="启动 UACRAgent，密钥将自动加载，无需在 App Settings 中手动输入。">
                     Launch UACRAgent. The key is loaded automatically — no need to type it in App Settings. ✅
@@ -587,27 +603,37 @@ Windows:  C:\Users\YourName\.uacragent\.env</code></pre>
                   <li data-en="Open Notepad. Click the Start button (the Windows logo in the taskbar), type Notepad, and click it in the results." data-zh="打开记事本。点击任务栏中的开始按钮（Windows 徽标），输入"记事本"，然后点击搜索结果中的应用。">
                     Open <strong>Notepad</strong>. Click the <strong>Start</strong> button (Windows logo in the taskbar), type <em>Notepad</em>, and click it in the results.
                   </li>
-                  <li data-en="Type your API key on the first line, for example:" data-zh="在第一行输入你的 API 密钥，例如：">
-                    Type your API key on the first line, for example:
-                    <pre><code>GOOGLE_API_KEY=AIzaSy...your-actual-key</code></pre>
+                  <li>
+                    <span data-en="Enter your API key in the format shown below. Only include the line for the provider you use:" data-zh="按照以下格式输入你的 API 密钥。只需填写你所用提供商对应的那一行：">Enter your API key in the format shown below. Only include the line for the provider you use:</span>
+                    <pre><code># Google Gemini
+GOOGLE_API_KEY=AIzaSy...your-key-here
+
+# OpenAI
+OPENAI_API_KEY=sk-...your-key-here
+
+# DeepSeek
+DEEPSEEK_API_KEY=sk-...your-key-here</code></pre>
                   </li>
-                  <li data-en="Click File in the menu bar → Save As." data-zh="点击菜单栏中的"文件"→"另存为"。">
+                  <li data-en="Click File → Save As." data-zh="点击"文件"→"另存为"。">
                     Click <strong>File</strong> → <strong>Save As</strong>.
                   </li>
-                  <li data-en="Navigate to the .uacragent folder. Because it is hidden, it will not appear in the normal folder list. Use the address bar shortcut instead: click the address bar at the top of the Save As dialog — the bar showing the current folder path — so it becomes editable. Type %USERPROFILE%\.uacragent and press Enter." data-zh="导航到 .uacragent 文件夹。由于该文件夹是隐藏的，不会显示在普通文件夹列表中。请改用地址栏快捷方式：点击"另存为"对话框顶部的地址栏（显示当前路径的栏），使其变为可编辑状态，输入 %USERPROFILE%\.uacragent，然后按 Enter。">
-                    Navigate to the hidden <code>.uacragent</code> folder using the address bar shortcut:
-                    <div class="env-step-callout env-step-callout--info" data-en="In the Save As dialog, click the address bar at the top (the bar showing the current folder path) so it becomes editable. Type %USERPROFILE%\.uacragent and press Enter. Windows will jump directly into the folder." data-zh="在"另存为"对话框中，点击顶部的地址栏（显示当前路径的栏），使其变为可编辑状态。输入 %USERPROFILE%\.uacragent，然后按 Enter。Windows 将直接跳转到该文件夹。">In the Save As dialog, click the <strong>address bar</strong> at the top so it becomes editable → type <code>%USERPROFILE%\.uacragent</code> → press <strong>Enter</strong>.</div>
-                    <p class="env-inline-note" data-en="%USERPROFILE% is Windows' built-in shortcut for your personal user folder — for example C:\Users\John if your Windows username is John. You do not need to know your exact username; this shortcut always resolves correctly." data-zh="%USERPROFILE% 是 Windows 的内置快捷方式，指向你的个人用户文件夹——例如，如果你的 Windows 用户名是 John，则对应 C:\Users\John。你无需记住自己的具体用户名，该快捷方式始终能正确解析。"><code>%USERPROFILE%</code> is Windows' built-in shortcut for your personal user folder — for example <code>C:\Users\John</code> if your Windows username is John. You do not need to know your exact username.</p>
+                  <li>
+                    <span data-en="Save the file to your Desktop. In the Save As dialog, click Desktop in the left panel." data-zh="将文件保存到桌面。在"另存为"对话框中，点击左侧面板中的"桌面"。">Save the file to your Desktop. In the Save As dialog, click <strong>Desktop</strong> in the left panel.</span>
                   </li>
-                  <li data-en="Change the Save as type dropdown to All Files (*.*). This is important — without this change Notepad will silently add .txt to the end of the filename and the app will not read the file." data-zh='将"保存类型"下拉菜单更改为"所有文件（*.*）"。此步骤非常重要——若跳过此步，记事本会悄悄在文件名末尾添加 .txt，导致应用无法读取该文件。'>
-                    Change the <strong>Save as type</strong> dropdown to <strong>All Files (*.*)</strong>.
-                    <div class="env-step-callout" data-en="This step is essential. Without it, Notepad silently adds .txt to the filename and UACRAgent will not read the file." data-zh="此步骤至关重要。跳过此步，记事本会在文件名末尾悄悄添加 .txt，UACRAgent 将无法读取该文件。">⚠️ This step is essential. Without it, Notepad silently adds <code>.txt</code> and UACRAgent will not read the file.</div>
+                  <li>
+                    <span data-en="Change the Save as type dropdown to All Files (*.*)." data-zh='将"保存类型"下拉菜单更改为"所有文件（*.*）"。'>Change the <strong>Save as type</strong> dropdown to <strong>All Files (*.*)</strong>.</span>
+                    <div class="env-step-callout">⚠️ <span data-en="This step is essential. Without it, Notepad silently adds .txt to the filename and UACRAgent will not read the file." data-zh="此步骤至关重要。跳过此步，记事本会在文件名末尾悄悄添加 .txt，UACRAgent 将无法读取该文件。">This step is essential. Without it, Notepad silently adds <code>.txt</code> and UACRAgent will not read the file.</span></div>
                   </li>
-                  <li data-en="In the File name box, delete the current name and type .env (starting with a dot, nothing after)." data-zh='在"文件名"框中，删除现有内容，输入 .env（以英文句点开头，后面不加任何内容）。'>
-                    In the <strong>File name</strong> box, delete the current name and type <code>.env</code> (starting with a dot, nothing after).
+                  <li data-en="In the File name box, delete the current name and type .env (starting with a dot, nothing after). Click Save." data-zh='在"文件名"框中，删除现有内容，输入 .env（以英文句点开头，后面不加任何内容），然后点击"保存"。'>
+                    In the <strong>File name</strong> box, delete the current name and type <code>.env</code> (starting with a dot, nothing after). Click <strong>Save</strong>.
                   </li>
-                  <li data-en="Click Save. If Windows warns about a filename beginning with a dot, click Yes." data-zh='点击"保存"。如果 Windows 提示文件名以句点开头，点击"是"。'>
-                    Click <strong>Save</strong>. If Windows warns about a filename beginning with a dot, click <strong>Yes</strong>.
+                  <li>
+                    <span data-en="Move the .env file into the .uacragent folder. Open File Explorer (click the folder icon in the taskbar). In the address bar at the top, click so it becomes editable, type the path below, and press Enter:" data-zh="将 .env 文件移动到 .uacragent 文件夹中。打开文件资源管理器（点击任务栏中的文件夹图标）。点击顶部地址栏使其变为可编辑状态，输入以下路径，然后按 Enter：">Move the <code>.env</code> file into the <code>.uacragent</code> folder. Open <strong>File Explorer</strong> (click the folder icon in your taskbar). Click the <strong>address bar</strong> at the top so it becomes editable, type the path below, and press <strong>Enter</strong>:</span>
+                    <pre><code>%USERPROFILE%\.uacragent</code></pre>
+                    <p class="env-inline-note"><span data-en="%USERPROFILE% is Windows' built-in shortcut for your personal user folder — for example C:\Users\John if your username is John." data-zh="%USERPROFILE% 是 Windows 的内置快捷方式，指向你的个人用户文件夹——例如用户名为 John 时对应 C:\Users\John。"><code>%USERPROFILE%</code> is Windows' built-in shortcut for your personal user folder — for example <code>C:\Users\John</code> if your username is John.</span></p>
+                  </li>
+                  <li data-en="The .uacragent folder is now open in File Explorer. Go back to your Desktop, right-click the .env file, and choose Copy. Then click inside the File Explorer window and right-click in an empty area → Paste to move the file into the folder." data-zh="此时 .uacragent 文件夹已在文件资源管理器中打开。回到桌面，右键点击 .env 文件，选择"复制"。然后点击文件资源管理器窗口，在空白区域右键 → 粘贴，将文件放入文件夹。">
+                    The <code>.uacragent</code> folder is now open in File Explorer. Go back to your Desktop, <strong>right-click</strong> the <code>.env</code> file → <strong>Copy</strong>. Then click inside the File Explorer window and right-click an empty area → <strong>Paste</strong>.
                   </li>
                   <li data-en="Launch UACRAgent. The key is loaded automatically — no need to type it in App Settings." data-zh="启动 UACRAgent，密钥将自动加载，无需在 App Settings 中手动输入。">
                     Launch UACRAgent. The key is loaded automatically — no need to type it in App Settings. ✅
