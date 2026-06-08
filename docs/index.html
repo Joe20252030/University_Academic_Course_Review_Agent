@@ -30,6 +30,7 @@
           <a href="#interfaces" data-en="Interfaces" data-zh="使用方式">Interfaces</a>
           <a href="#privacy" data-en="Privacy" data-zh="隐私">Privacy</a>
           <a href="#getting-started" data-en="Get Started" data-zh="开始使用">Get Started</a>
+          <a href="#api-keys" data-en="API Keys" data-zh="API 密钥">API Keys</a>
         </nav>
         <div class="header-actions">
           <a
@@ -371,6 +372,179 @@ uvicorn uacragent.api.main:app --reload</code></pre>
             >Downloads</a>
           </div>
         </section>
+        <section id="api-keys" class="section">
+          <div class="section-heading">
+            <p class="eyebrow" data-en="API Keys" data-zh="API 密钥">API Keys</p>
+            <h2 data-en="Get your API key in minutes." data-zh="几分钟内获取 API 密钥。">Get your API key in minutes.</h2>
+            <p data-en="UACRAgent needs an API key from at least one AI provider to power its chat and document generation. The key is entered once in App Settings and is only stored in memory while the app is running — it is never written to disk. Follow the steps for the provider you want to use." data-zh="UACRAgent 需要至少一个 AI 提供商的 API 密钥来支持对话和文档生成功能。密钥只需在 App Settings 中填写一次，运行期间仅保存在内存中，不会写入磁盘。请按照你所选提供商的步骤进行操作。">
+              UACRAgent needs an API key from at least one AI provider to power its chat
+              and document generation. The key is entered once in App Settings and is only
+              stored in memory while the app is running — it is never written to disk.
+              Follow the steps for the provider you want to use.
+            </p>
+          </div>
+
+          <p class="api-keys-tip" data-en="💡 Not sure which provider to pick? Start with Google Gemini — it has a generous free tier, requires no credit card to try, and works well for all of UACRAgent's study features." data-zh="💡 不确定选哪个提供商？建议从 Google Gemini 开始——它提供慷慨的免费额度，无需绑定信用卡即可试用，并且完全支持 UACRAgent 的所有学习功能。">
+            💡 Not sure which provider to pick? Start with <strong>Google Gemini</strong> — it has a generous free tier, requires no credit card to try, and works well for all of UACRAgent's study features.
+          </p>
+
+          <div class="provider-grid">
+
+            <!-- ── Google Gemini ─────────────────────────────────────────── -->
+            <article class="provider-card">
+              <div class="provider-header">
+                <h3 data-en="Google Gemini" data-zh="Google Gemini">Google Gemini</h3>
+                <span class="provider-tag free" data-en="Free tier available" data-zh="提供免费额度">Free tier available</span>
+              </div>
+              <p class="provider-desc" data-en="Accessed through Google AI Studio. No billing setup needed for the free tier. Sign in with any Google account." data-zh="通过 Google AI Studio 访问。免费额度无需设置付款方式，使用任意 Google 账户即可登录。">
+                Accessed through Google AI Studio. No billing setup needed for the free tier.
+                Sign in with any Google account.
+              </p>
+              <ol class="install-steps">
+                <li data-en="Open Google AI Studio in your browser: aistudio.google.com" data-zh="在浏览器中打开 Google AI Studio：aistudio.google.com">
+                  Open <strong>Google AI Studio</strong> in your browser:
+                  <a href="https://aistudio.google.com" target="_blank" rel="noreferrer">aistudio.google.com</a>
+                </li>
+                <li data-en="Sign in with your Google account. No separate account is needed." data-zh="使用你的 Google 账户登录，无需另外注册账户。">
+                  Sign in with your Google account. No separate account is needed.
+                </li>
+                <li data-en="Click Get API key in the left sidebar." data-zh="点击左侧侧边栏中的 Get API key。">
+                  Click <strong>Get API key</strong> in the left sidebar.
+                </li>
+                <!-- Screenshot needed: docs/assets/api-keys/google_01_get_api_key.png
+                     Show: AI Studio left sidebar with "Get API key" highlighted -->
+                <div class="img-placeholder" data-en="Screenshot: AI Studio sidebar — 'Get API key' button location" data-zh="截图：AI Studio 侧边栏 — "Get API key"按钮位置">
+                  Screenshot: AI Studio sidebar — "Get API key" button location
+                </div>
+                <li data-en="Click Create API key. If prompted to choose a Google Cloud project, select any existing project or let it create a new one automatically." data-zh="点击 Create API key。如果系统提示选择 Google Cloud 项目，可选择已有项目，或让系统自动新建一个。">
+                  Click <strong>Create API key</strong>. If prompted to choose a Google Cloud project,
+                  select any existing project or let it create one automatically.
+                </li>
+                <li data-en="Your key appears on screen — it starts with AIza. Click the copy icon to copy it." data-zh="密钥将显示在屏幕上，以 AIza 开头。点击复制图标即可复制。">
+                  Your key appears on screen — it starts with <code>AIza</code>.
+                  Click the copy icon to copy it.
+                </li>
+                <!-- Screenshot needed: docs/assets/api-keys/google_02_copy_key.png
+                     Show: The created key with the copy button visible -->
+                <div class="img-placeholder" data-en="Screenshot: created Gemini API key with copy button" data-zh="截图：已生成的 Gemini API 密钥及复制按钮">
+                  Screenshot: created Gemini API key with copy button
+                </div>
+              </ol>
+              <div class="api-key-where">
+                <strong data-en="Where to paste it in UACRAgent" data-zh="在 UACRAgent 中粘贴到哪里">Where to paste it in UACRAgent</strong>
+                <span data-en="App Settings → Provider tab → set Provider to Gemini → paste the key into the API Key field → Save." data-zh="App Settings → Provider 标签 → 将 Provider 设置为 Gemini → 将密钥粘贴到 API Key 字段 → 点击 Save。">App Settings → Provider tab → set Provider to <strong>Gemini</strong> → paste the key into the <strong>API Key</strong> field → Save.</span>
+              </div>
+              <a class="provider-link" href="https://aistudio.google.com" target="_blank" rel="noreferrer" data-en="Open Google AI Studio →" data-zh="打开 Google AI Studio →">Open Google AI Studio →</a>
+            </article>
+
+            <!-- ── OpenAI ────────────────────────────────────────────────── -->
+            <article class="provider-card">
+              <div class="provider-header">
+                <h3 data-en="OpenAI (ChatGPT)" data-zh="OpenAI（ChatGPT）">OpenAI (ChatGPT)</h3>
+                <span class="provider-tag paid" data-en="Pay as you go" data-zh="按用量付费">Pay as you go</span>
+              </div>
+              <p class="provider-desc" data-en="Accessed through the OpenAI Platform. Requires adding billing credit before use. The same account used for ChatGPT can be used here." data-zh="通过 OpenAI 平台访问。使用前需要充值。可直接使用你的 ChatGPT 账户登录。">
+                Accessed through the OpenAI Platform. Requires adding billing credit before
+                use. The same account used for ChatGPT can be used here.
+              </p>
+              <ol class="install-steps">
+                <li data-en="Go to the OpenAI Platform and sign in (or create a free account): platform.openai.com" data-zh="前往 OpenAI 平台并登录（或注册新账户）：platform.openai.com">
+                  Go to the OpenAI Platform and sign in:
+                  <a href="https://platform.openai.com" target="_blank" rel="noreferrer">platform.openai.com</a>
+                </li>
+                <li data-en="In the left sidebar, click API keys. (If you do not see the sidebar, click the menu icon at the top left first.)" data-zh="在左侧侧边栏中点击 API keys。（如果看不到侧边栏，请先点击左上角的菜单图标。）">
+                  In the left sidebar, click <strong>API keys</strong>.
+                  If you do not see the sidebar, click the menu icon at the top left first.
+                </li>
+                <!-- Screenshot needed: docs/assets/api-keys/openai_01_api_keys_nav.png
+                     Show: platform.openai.com left sidebar with "API keys" item visible -->
+                <div class="img-placeholder" data-en="Screenshot: OpenAI Platform sidebar — 'API keys' navigation item" data-zh="截图：OpenAI 平台侧边栏 — "API keys"导航项">
+                  Screenshot: OpenAI Platform sidebar — "API keys" navigation item
+                </div>
+                <li data-en="Click + Create new secret key. Give it a name (e.g. UACRAgent) so you can recognise it later." data-zh="点击 + Create new secret key，为密钥命名（例如 UACRAgent），方便日后识别。">
+                  Click <strong>+ Create new secret key</strong>. Give it a name (e.g. <em>UACRAgent</em>) so you can recognise it later.
+                </li>
+                <li data-en="Important: copy the key immediately using the copy button. OpenAI shows the full key only once — if you close this dialog without copying it, you will need to create a new key." data-zh="重要提示：请立即使用复制按钮复制密钥。OpenAI 只会完整显示一次密钥——如果关闭此对话框而未复制，你需要重新创建新密钥。">
+                  <strong>Important:</strong> copy the key immediately using the copy button.
+                  OpenAI shows the full key <strong>only once</strong> — closing this dialog without
+                  copying means you will need to create a new key.
+                </li>
+                <!-- Screenshot needed: docs/assets/api-keys/openai_02_copy_key.png
+                     Show: The "Save your key" dialog with the one-time copy warning and copy button -->
+                <div class="img-placeholder" data-en="Screenshot: OpenAI 'Save your key' dialog — copy button and one-time-display warning" data-zh="截图：OpenAI "Save your key"对话框 — 复制按钮及密钥仅显示一次的提示">
+                  Screenshot: OpenAI "Save your key" dialog — copy button and one-time-display warning
+                </div>
+                <li data-en="If you have not added billing, go to Settings → Billing → Add payment method and add a small amount of credit. The app will not work without it." data-zh="如果尚未添加付款方式，请前往 Settings → Billing → Add payment method 并充值少量金额。未充值将无法使用。">
+                  If you have not added billing yet, go to
+                  <strong>Settings → Billing → Add payment method</strong> and add a small amount of credit.
+                </li>
+              </ol>
+              <div class="api-key-where">
+                <strong data-en="Where to paste it in UACRAgent" data-zh="在 UACRAgent 中粘贴到哪里">Where to paste it in UACRAgent</strong>
+                <span data-en="App Settings → Provider tab → set Provider to OpenAI → paste the key into the API Key field → Save." data-zh="App Settings → Provider 标签 → 将 Provider 设置为 OpenAI → 将密钥粘贴到 API Key 字段 → 点击 Save。">App Settings → Provider tab → set Provider to <strong>OpenAI</strong> → paste the key into the <strong>API Key</strong> field → Save.</span>
+              </div>
+              <a class="provider-link" href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer" data-en="Open OpenAI Platform →" data-zh="打开 OpenAI 平台 →">Open OpenAI Platform →</a>
+            </article>
+
+            <!-- ── DeepSeek ──────────────────────────────────────────────── -->
+            <article class="provider-card">
+              <div class="provider-header">
+                <h3 data-en="DeepSeek" data-zh="DeepSeek">DeepSeek</h3>
+                <span class="provider-tag paid" data-en="Pay as you go" data-zh="按用量付费">Pay as you go</span>
+              </div>
+              <p class="provider-desc" data-en="Accessed through the DeepSeek Platform. Very low cost per token compared to other providers. Note: DeepSeek does not support image vision inputs — text-only chat and document generation." data-zh="通过 DeepSeek 平台访问。与其他提供商相比，每 token 费用极低。注意：DeepSeek 不支持图像视觉输入——仅支持纯文本对话和文档生成。">
+                Accessed through the DeepSeek Platform. Very low cost per token compared to
+                other providers. Note: DeepSeek does not support image vision inputs —
+                text-only chat and document generation only.
+              </p>
+              <ol class="install-steps">
+                <li data-en="Go to the DeepSeek Platform and sign in (or create an account): platform.deepseek.com" data-zh="前往 DeepSeek 平台并登录（或注册账户）：platform.deepseek.com">
+                  Go to the DeepSeek Platform and sign in:
+                  <a href="https://platform.deepseek.com" target="_blank" rel="noreferrer">platform.deepseek.com</a>
+                </li>
+                <li data-en="In the left sidebar, click API keys." data-zh="在左侧侧边栏中点击 API keys。">
+                  In the left sidebar, click <strong>API keys</strong>.
+                </li>
+                <!-- Screenshot needed: docs/assets/api-keys/deepseek_01_api_keys.png
+                     Show: platform.deepseek.com left sidebar with "API keys" section visible -->
+                <div class="img-placeholder" data-en="Screenshot: DeepSeek Platform sidebar — 'API keys' section" data-zh="截图：DeepSeek 平台侧边栏 — "API keys"区域">
+                  Screenshot: DeepSeek Platform sidebar — "API keys" section
+                </div>
+                <li data-en="Click Create new API key, give it a name (e.g. UACRAgent)." data-zh="点击 Create new API key，为密钥命名（例如 UACRAgent）。">
+                  Click <strong>Create new API key</strong>, give it a name (e.g. <em>UACRAgent</em>).
+                </li>
+                <li data-en="Copy the key immediately — it is shown only once. Close the dialog and the full key will no longer be visible." data-zh="请立即复制密钥——仅显示一次。关闭对话框后将无法再查看完整密钥。">
+                  Copy the key immediately — it is shown <strong>only once</strong>.
+                  Close the dialog and the full key will no longer be visible.
+                </li>
+                <!-- Screenshot needed: docs/assets/api-keys/deepseek_02_copy_key.png
+                     Show: DeepSeek key creation dialog with key and copy button visible -->
+                <div class="img-placeholder" data-en="Screenshot: DeepSeek key creation dialog — copy the key before closing" data-zh="截图：DeepSeek 密钥创建对话框 — 关闭前请复制密钥">
+                  Screenshot: DeepSeek key creation dialog — copy the key before closing
+                </div>
+                <li data-en="Add credit to your account under Billing if you have not already done so." data-zh="如果尚未充值，请在 Billing 页面为账户充值。">
+                  Add credit to your account under <strong>Billing</strong> if you have not
+                  already done so.
+                </li>
+              </ol>
+              <div class="api-key-where">
+                <strong data-en="Where to paste it in UACRAgent" data-zh="在 UACRAgent 中粘贴到哪里">Where to paste it in UACRAgent</strong>
+                <span data-en="App Settings → Provider tab → set Provider to DeepSeek → paste the key into the API Key field → Save." data-zh="App Settings → Provider 标签 → 将 Provider 设置为 DeepSeek → 将密钥粘贴到 API Key 字段 → 点击 Save。">App Settings → Provider tab → set Provider to <strong>DeepSeek</strong> → paste the key into the <strong>API Key</strong> field → Save.</span>
+              </div>
+              <a class="provider-link" href="https://platform.deepseek.com" target="_blank" rel="noreferrer" data-en="Open DeepSeek Platform →" data-zh="打开 DeepSeek 平台 →">Open DeepSeek Platform →</a>
+            </article>
+
+          </div><!-- /.provider-grid -->
+
+          <p class="api-keys-tip" style="margin-top: 20px; margin-bottom: 0;" data-en="🔒 Security reminder: treat your API key like a password. Never share it, never paste it into a chat, and never commit it to a public repository. If a key is accidentally exposed, delete it from the provider dashboard immediately and create a new one." data-zh="🔒 安全提醒：请像对待密码一样保护你的 API 密钥。切勿分享、不要粘贴到聊天中，也不要提交到公开仓库。如果密钥意外泄露，请立即在提供商控制台删除该密钥并重新创建。">
+            🔒 <strong>Security reminder:</strong> treat your API key like a password.
+            Never share it, never paste it into a chat, and never commit it to a public repository.
+            If a key is accidentally exposed, delete it from the provider dashboard immediately
+            and create a new one.
+          </p>
+
+        </section>
+
       </main>
 
       <footer class="site-footer">
