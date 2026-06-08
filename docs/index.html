@@ -542,7 +542,53 @@ uvicorn uacragent.api.main:app --reload</code></pre>
         </p>
       </footer>
     </div>
+    <!-- Lightbox overlay (populated by JS) -->
+    <div class="lightbox-overlay" id="lightbox" role="dialog" aria-modal="true" aria-label="Image preview">
+      <button class="lightbox-close" id="lightbox-close" aria-label="Close">&times;</button>
+      <img id="lightbox-img" src="" alt="">
+    </div>
+
     <script>
+      // ── Lightbox ────────────────────────────────────────────────────────
+      (function () {
+        var overlay  = document.getElementById("lightbox");
+        var img      = document.getElementById("lightbox-img");
+        var closeBtn = document.getElementById("lightbox-close");
+
+        function open(src, alt) {
+          img.src = src;
+          img.alt = alt || "";
+          overlay.classList.add("is-open");
+          document.body.style.overflow = "hidden";
+        }
+
+        function close() {
+          overlay.classList.remove("is-open");
+          document.body.style.overflow = "";
+          img.src = "";
+        }
+
+        // Open on any provider-card img click
+        document.querySelectorAll(".provider-card img").forEach(function (el) {
+          el.addEventListener("click", function () {
+            open(el.src, el.alt);
+          });
+        });
+
+        // Close on overlay background click (but not on the image itself)
+        overlay.addEventListener("click", function (e) {
+          if (e.target === overlay) close();
+        });
+
+        // Close button
+        closeBtn.addEventListener("click", close);
+
+        // Close on Escape
+        document.addEventListener("keydown", function (e) {
+          if (e.key === "Escape") close();
+        });
+      }());
+
       (function () {
         const STORAGE_KEY = "uacragent-site-lang";
         const root = document.documentElement;
@@ -592,7 +638,7 @@ uvicorn uacragent.api.main:app --reload</code></pre>
           ? "zh-Hans"
           : "en";
         applyLanguage(saved || browserLang);
-      }());
+      }()); // end language IIFE
     </script>
   </body>
 </html>
