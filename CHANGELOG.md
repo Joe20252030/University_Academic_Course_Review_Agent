@@ -57,24 +57,43 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   *"Appearance changes preview instantly. Click Save to confirm all changes,
   or Cancel to revert."* Available in English and Simplified Chinese.
 
-- **Comprehensive updater test suite** — 84 tests across 11 sections covering
+- **Comprehensive updater test suite** — 89 tests across 11 sections covering
   `_parse_version`, all `check_for_update` branches (newer/same/older/skipped/
-  no asset/network error/non-dict JSON), `download_update` (success, progress,
-  no Content-Length, failure cleanup), `apply_update` (macOS keeps running,
-  Windows exits, unsupported platform raises), skip-version persistence
-  round-trip, macOS/Windows window-behaviour invariants,
-  `_pending_update_path` cleanup in `_on_close`, two-layer dialog-closed guard
-  (Guard 1: before download done; Guard 2: during settle delay), and
-  `_on_download_failed` widget-call robustness. Total: **510 tests, all
-  passing**.
+  no asset/network error/non-list JSON/pre-release included/draft excluded/
+  multi-release best-candidate selection/skipped-version fall-through),
+  `download_update` (success, progress, no Content-Length, failure cleanup),
+  `apply_update` (macOS keeps running, Windows exits, unsupported platform
+  raises), skip-version persistence round-trip, macOS/Windows window-behaviour
+  invariants, `_pending_update_path` cleanup in `_on_close`, two-layer
+  dialog-closed guard (Guard 1: before download done; Guard 2: during settle
+  delay), and `_on_download_failed` widget-call robustness. Total: **515 tests,
+  all passing**.
 
 ### Fixed
 
-- **`check_for_update()` crash on non-dict GitHub API response** — if the
-  GitHub Releases API returned a JSON array, `null`, or any non-dict value
-  (e.g. a network proxy's error page), calling `.get()` on the result raised
-  an uncaught `AttributeError`. Fixed with an `isinstance(data, dict)` guard
-  immediately after JSON parsing; returns `None` on unexpected payloads.
+- **`check_for_update()` crash on non-list GitHub API response** — the updater
+  now uses the `/releases?per_page=20` list endpoint (see Changed section), which
+  returns a JSON array. An `isinstance(data, list)` guard immediately after JSON
+  parsing returns `None` on unexpected payloads (proxy error pages, etc.) instead
+  of crashing with an `AttributeError`.
+
+- **Auto-updater skipped all pre-releases** — the previous `/releases/latest`
+  endpoint is documented by GitHub to exclude pre-releases; it returns HTTP 404
+  when every release in the repository is a pre-release. Switched to the
+  `/releases?per_page=20` list endpoint, which returns all releases including
+  pre-releases. Draft releases (never publicly visible) are still excluded.
+  Among all valid candidates, the highest-versioned one that carries a
+  platform-specific installer asset is selected.
+
+- **`CERTIFICATE_VERIFY_FAILED` in frozen macOS build during update check** —
+  PyInstaller-frozen apps on macOS cannot reach the system certificate store
+  through the standard `ssl` module, causing every HTTPS request from `urllib`
+  to raise `ssl.SSLCertVerificationError`. Fixed by adding `_make_ssl_context()`,
+  which creates an `ssl.SSLContext` backed by `certifi`'s bundled CA bundle
+  (`certifi.where()`), and passing that context to every `urlopen` call in the
+  updater. Falls back to the default context when `certifi` is unavailable (e.g.
+  running from source without it installed). `certifi` is added to
+  `requirements.txt` and collected into both PyInstaller specs.
 
 - **Silent failure when `.pptx` chat attachment had extraction errors** —
   `_extract_file_text()` previously returned a bare string for all outcomes.
@@ -161,6 +180,21 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `pyproject.toml` needs to change per release.
 
 ### Changed
+
+- **`check_for_update()` endpoint** — switched from
+  `GET /repos/{owner}/{repo}/releases/latest` to
+  `GET /repos/{owner}/{repo}/releases?per_page=20`. The list endpoint returns
+  all releases including pre-releases; the `/latest` endpoint silently excludes
+  them and returns 404 when the repository has no non-pre-release. The new
+  implementation scans all returned releases and returns the highest-versioned
+  candidate that has a platform-specific installer asset.
+
+- **`certifi` added as a runtime dependency** — listed in `requirements.txt`
+  and collected into both `UACRAgent_mac.spec` and `UACRAgent_win.spec` via
+  `collect_data_files("certifi")`. Required for `_make_ssl_context()` to provide
+  a CA bundle in frozen macOS builds where the system certificate store is
+  unreachable. Windows frozen apps use SChannel (unaffected) but certifi is
+  bundled for consistency.
 
 - **`_safe_rmtree` consolidated into `workspace.py`** — `workspace_manager.py`
   and `vectorstore.py` both contained identical `_safe_rmtree` implementations.

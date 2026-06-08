@@ -20,6 +20,8 @@ The app now checks for new GitHub releases silently 4 seconds after launch. When
 
 Any network or API error during the check is handled silently — the updater never blocks launch or crashes the app.
 
+The check uses the `/releases` list endpoint so **pre-releases are included**. The highest-versioned release that carries a platform-specific installer asset is offered. Draft releases are always excluded.
+
 ### PPTX embedded-image vision extraction
 
 When you attach a `.pptx` file in the desktop chat, embedded image shapes (photos, diagrams, charts) are now extracted and sent to the LLM as base64-encoded vision inputs. The model can now *see* slide images rather than receiving silence where images were.
@@ -68,9 +70,17 @@ A failed ownership-marker write during `save_session()` rolled back `session.jso
 
 Embedded image blobs extracted from `.pptx` attachments were appended as `image_url` parts inside `_build_human_message()`, completely bypassing the non-vision provider guard in `ConversationAgent.chat()`. Text-only providers received multimodal content they cannot handle. Fixed: `_provider_supports_vision()` is checked before adding PPTX image parts; non-vision providers receive a `ui_warning` instead.
 
-### `check_for_update()` crash on non-dict GitHub API response
+### Auto-updater skipped all pre-releases
 
-If the GitHub Releases API returned a JSON array, `null`, or any non-dict value (such as a network proxy error page), calling `.get()` on the result raised an uncaught `AttributeError`. Fixed with an `isinstance(data, dict)` guard immediately after JSON parsing.
+The `/releases/latest` endpoint is documented by GitHub to exclude pre-releases and returns HTTP 404 when every release in the repository is a pre-release. The updater now calls `/releases?per_page=20`, which returns all releases including pre-releases. Draft releases are still excluded. Among all valid candidates, the one with the highest version number that carries a platform-specific installer asset is selected.
+
+### `CERTIFICATE_VERIFY_FAILED` in frozen macOS builds
+
+PyInstaller-frozen apps on macOS cannot reach the system certificate store through the standard `ssl` module, causing every HTTPS request from `urllib` to raise `ssl.SSLCertVerificationError`. Fixed by introducing `_make_ssl_context()`, which builds an `ssl.SSLContext` backed by `certifi`'s bundled CA bundle (`certifi.where()`). The context is passed to every `urlopen` call in the updater. Falls back to the default context when `certifi` is unavailable. `certifi` is added to `requirements.txt` and bundled via `collect_data_files("certifi")` in both PyInstaller specs.
+
+### `check_for_update()` unexpected-response guard updated
+
+Now that the endpoint returns a JSON list, the type guard after JSON parsing checks `isinstance(data, list)` instead of `isinstance(data, dict)`. Non-list payloads (proxy error pages, etc.) return `None` with a warning log.
 
 ### Output panel `stat()` TOCTOU
 
@@ -84,6 +94,9 @@ The bare-source fallback `__version__ = "0.3.2"` required manual editing on ever
 
 ## Internal changes
 
+- **`check_for_update()` endpoint** — switched from `/releases/latest` to `/releases?per_page=20`. The new implementation iterates all returned releases and picks the highest-versioned candidate with a matching asset.
+- **`certifi` added as runtime dependency** — listed in `requirements.txt`; collected into both `UACRAgent_mac.spec` and `UACRAgent_win.spec`. Windows frozen apps use SChannel and don't require it, but it is bundled for consistency.
+- **`_make_ssl_context()` helper** — new internal function in `updater.py` that returns a `certifi`-backed SSL context. Used by both `urlopen` calls (API check and asset download).
 - **`workspace_manager.py` import ordering** — the `_safe_rmtree` import is now positioned above `logger = logging.getLogger(__name__)`, following standard module-level import ordering with no `# noqa` override.
 - **`_safe_rmtree` consolidated** — `workspace_manager.py` and `vectorstore.py` previously both carried identical copies. The canonical implementation now lives in `workspace.py`; both callers import from there.
 - **`_extract_file_text()` return type** — changed from `str` to `tuple[str, str | None]`. The second element is a user-facing warning string on extraction failure, or `None` on success.
@@ -92,6 +105,6 @@ The bare-source fallback `__version__ = "0.3.2"` required manual editing on ever
 
 ## Test coverage
 
-**510 tests, all passing** — up from 426 in v0.3.1.
+**515 tests, all passing** — up from 426 in v0.3.1.
 
-84 new updater-specific tests span 11 sections: `_parse_version`, all `check_for_update` branches (newer / same / older / skipped / no asset / network error / non-dict JSON), `download_update` (success, progress, no `Content-Length`, failure cleanup), `apply_update` (macOS stays running, Windows exits, unsupported platform raises), skip-version persistence round-trip, macOS/Windows window-behaviour invariants, `_pending_update_path` cleanup on close, two-layer dialog-closed guard (Guard 1 before download done; Guard 2 during settle delay), and `_on_download_failed` widget-call robustness.
+89 new updater-specific tests span 11 sections: `_parse_version`, all `check_for_update` branches (newer / same / older / skipped / no asset / network error / non-list JSON / pre-release included / draft excluded / multi-release best-candidate / skipped-version fall-through), `download_update` (success, progress, no `Content-Length`, failure cleanup), `apply_update` (macOS stays running, Windows exits, unsupported platform raises), skip-version persistence round-trip, macOS/Windows window-behaviour invariants, `_pending_update_path` cleanup on close, two-layer dialog-closed guard (Guard 1 before download done; Guard 2 during settle delay), and `_on_download_failed` widget-call robustness.
