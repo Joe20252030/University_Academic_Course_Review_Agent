@@ -58,11 +58,11 @@ def _make_release_json(
         assets = [
             {
                 "name": f"UACRAgent-{tag}-macOS-AppleSilicon.dmg",
-                "browser_download_url": f"https://example.com/dl/{tag}.dmg",
+                "browser_download_url": f"https://objects.githubusercontent.com/releases/assets/{tag}.dmg",
             },
             {
                 "name": f"UACRAgent-{tag}-windows-x64-setup.exe",
-                "browser_download_url": f"https://example.com/dl/{tag}.exe",
+                "browser_download_url": f"https://objects.githubusercontent.com/releases/assets/{tag}.exe",
             },
         ]
     release = {
@@ -283,6 +283,20 @@ class TestCheckForUpdate:
 
     # ── missing / bad asset ──────────────────────────────────────────────
 
+    def test_non_github_download_url_rejected(self, monkeypatch):
+        """A release whose browser_download_url is not on a GitHub domain is skipped."""
+        self._urlopen(
+            _make_release_json("v2.0.0", assets=[
+                {"name": "UACRAgent-v2.0.0-macOS-AppleSilicon.dmg",
+                 "browser_download_url": "https://example.com/dl/v2.0.0.dmg"},
+            ]),
+            monkeypatch,
+        )
+        monkeypatch.setattr(upd_mod, "_running_version", lambda: "1.0.0")
+        monkeypatch.setattr(sys, "platform", "darwin")
+
+        assert check_for_update() is None
+
     def test_no_asset_for_platform_returns_none(self, monkeypatch):
         # Release exists but only has a Linux .tar.gz — no dmg/exe
         self._urlopen(
@@ -341,7 +355,7 @@ class TestCheckForUpdate:
                 "body": "",
                 "assets": [
                     {"name": "UACRAgent-v1.3.0-macOS-AppleSilicon.dmg",
-                     "browser_download_url": "https://example.com/dl/v1.3.0.dmg"},
+                     "browser_download_url": "https://objects.githubusercontent.com/releases/assets/v1.3.0.dmg"},
                 ],
                 "prerelease": False,
                 "draft": False,
@@ -352,7 +366,7 @@ class TestCheckForUpdate:
                 "body": "",
                 "assets": [
                     {"name": "UACRAgent-v1.5.0-macOS-AppleSilicon.dmg",
-                     "browser_download_url": "https://example.com/dl/v1.5.0.dmg"},
+                     "browser_download_url": "https://objects.githubusercontent.com/releases/assets/v1.5.0.dmg"},
                 ],
                 "prerelease": True,
                 "draft": False,
@@ -363,7 +377,7 @@ class TestCheckForUpdate:
                 "body": "",
                 "assets": [
                     {"name": "UACRAgent-v1.4.0-macOS-AppleSilicon.dmg",
-                     "browser_download_url": "https://example.com/dl/v1.4.0.dmg"},
+                     "browser_download_url": "https://objects.githubusercontent.com/releases/assets/v1.4.0.dmg"},
                 ],
                 "prerelease": True,
                 "draft": False,
@@ -389,7 +403,7 @@ class TestCheckForUpdate:
                 "body": "",
                 "assets": [
                     {"name": "UACRAgent-v2.0.0-macOS-AppleSilicon.dmg",
-                     "browser_download_url": "https://example.com/dl/v2.0.0.dmg"},
+                     "browser_download_url": "https://objects.githubusercontent.com/releases/assets/v2.0.0.dmg"},
                 ],
                 "prerelease": True,
                 "draft": False,
@@ -400,7 +414,7 @@ class TestCheckForUpdate:
                 "body": "",
                 "assets": [
                     {"name": "UACRAgent-v1.5.0-macOS-AppleSilicon.dmg",
-                     "browser_download_url": "https://example.com/dl/v1.5.0.dmg"},
+                     "browser_download_url": "https://objects.githubusercontent.com/releases/assets/v1.5.0.dmg"},
                 ],
                 "prerelease": True,
                 "draft": False,

@@ -1414,10 +1414,35 @@ class ChatMixin:
                     # Release busy lock since the completion handler won't run.
                     self.after(0, lambda: self._set_busy(False))
                 else:
+                    if not response.history_appended:
+                        # LLM call failed before append_turn() was reached —
+                        # preserve the human turn in history so it is not lost.
+                        from langchain_core.messages import HumanMessage
+                        _att = [{"name": a["name"], "mime": a.get("mime", ""),
+                                 "path": a.get("path", "")}
+                                for a in captured_attachments]
+                        captured_session.chat_history.append_human_only(
+                            HumanMessage(
+                                content=message,
+                                additional_kwargs={"attachments": _att} if _att else {},
+                            )
+                        )
                     self.after(0, lambda r=response, f=export_fmt, s=captured_session:
                                self._on_chat_response(r, f, s))
             except Exception as exc:
                 if not self._cancel_event.is_set() and self._request_token == captured_token:
+                    # chat() raised before append_turn() — preserve the human
+                    # turn so the question survives in history.
+                    from langchain_core.messages import HumanMessage
+                    _att = [{"name": a["name"], "mime": a.get("mime", ""),
+                             "path": a.get("path", "")}
+                            for a in captured_attachments]
+                    captured_session.chat_history.append_human_only(
+                        HumanMessage(
+                            content=message,
+                            additional_kwargs={"attachments": _att} if _att else {},
+                        )
+                    )
                     self.after(0, lambda e=str(exc), s=captured_session:
                                self._on_chat_error(e, s))
                 else:
@@ -1446,10 +1471,10 @@ class ChatMixin:
 
         try:
             threading.Thread(target=_work, daemon=True).start()
-        except Exception:
+        except Exception as _thr_exc:
             # Thread failed to start (e.g. OS resource exhaustion).  The
             # _work finally block will never run, so clean up temp paste files
-            # here before re-raising so they don't leak into paste_tmp/.
+            # here so they don't leak into paste_tmp/.
             import os as _os_thr
             for _tp in _tmp_paste_paths:
                 try:
@@ -1457,7 +1482,10 @@ class ChatMixin:
                 except OSError:
                     pass
             self._set_busy(False)
-            raise
+            self._append_chat(
+                "system",
+                self._t("chat_error").format(error=str(_thr_exc)),
+            )
 
     def _send_message(self, message: str) -> None:
         self._input_text.delete("1.0", tk.END)

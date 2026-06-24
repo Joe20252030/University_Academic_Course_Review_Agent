@@ -383,8 +383,19 @@ _STRINGS: dict[str, dict[str, str]] = {
             "access to your documents.\n"
             "Open Settings → Apply to download the model and index them first."
         ),
+        # Session-load warnings for unrecognised saved settings
+        "warn_unknown_embed_provider": (
+            "⚠️ The saved embedding provider {provider!r} is not recognised. "
+            "The previously active provider will be used. "
+            "Open Session Settings to choose a valid provider and click Apply."
+        ),
+        "warn_unknown_rate_tier": (
+            "⚠️ The saved request frequency tier {tier!r} is not recognised — "
+            "reverted to Free tier. "
+            "Open Session Settings to restore your tier and click Apply."
+        ),
         # Shown in the settings status bar when Apply is clicked while busy
-        "busy_cannot_apply":  "⚠ Cannot apply while a background operation is running — please wait.",
+        "busy_cannot_apply":  "⚠️ Cannot apply while a background operation is running — please wait.",
         # File-picker dialog titles (F-17 / F-18)
         "pick_exam_info_title":  "Select exam information sheet file",
         "pick_workspace_title":  "Select workspace folder",
@@ -392,7 +403,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "btn_download":          "Download",
         # Warning when the exam info file is very large and will be truncated (F-12)
         "exam_info_too_large":   (
-            "⚠ The exam info file is very large — only the first 8 000 characters "
+            "⚠️ The exam info file is very large — only the first 8 000 characters "
             "will be sent to the AI. Consider trimming it down for best results."
         ),
         # Document generation / export labels in chat
@@ -803,7 +814,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         # Inline pre-flight warnings
         "warn_no_api_key":    (
             "⚠️ 未配置 {label}。"
-            "请在 ⚙ 设置 → API Key 中输入，然后点击应用。"
+            "请在 ⚙ 设置 → API 密钥 中输入，然后点击应用。"
         ),
         "warn_no_embed_key":  (
             "⚠️ 需要嵌入密钥。"
@@ -840,7 +851,15 @@ _STRINGS: dict[str, dict[str, str]] = {
             "⚠️ 您的文件已添加，但尚未完成索引——本次回复无法访问您的文档。\n"
             "请打开设置 → 应用，先下载模型并完成索引。"
         ),
-        "busy_cannot_apply":  "⚠ 后台操作正在运行，无法应用设置——请稍候。",
+        "warn_unknown_embed_provider": (
+            "⚠️ 已保存的嵌入提供商 {provider!r} 无法识别，将使用上次激活的提供商。"
+            "请打开会话设置选择有效提供商，然后点击应用。"
+        ),
+        "warn_unknown_rate_tier": (
+            "⚠️ 已保存的请求频率层级 {tier!r} 无法识别——已恢复为免费层级。"
+            "请打开会话设置恢复您的层级，然后点击应用。"
+        ),
+        "busy_cannot_apply":  "⚠️ 后台操作正在运行，无法应用设置——请稍候。",
         # File-picker dialog titles (F-17 / F-18)
         "pick_exam_info_title":  "选择考试信息表文件",
         "pick_workspace_title":  "选择工作区文件夹",
@@ -848,7 +867,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "btn_download":          "下载",
         # Warning when the exam info file is very large and will be truncated (F-12)
         "exam_info_too_large":   (
-            "⚠ 考试信息文件过大——只有前 8 000 个字符会发送给 AI。"
+            "⚠️ 考试信息文件过大——只有前 8 000 个字符会发送给 AI。"
             "建议精简文件内容以获得最佳效果。"
         ),
         # Document generation / export labels in chat

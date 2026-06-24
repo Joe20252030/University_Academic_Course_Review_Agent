@@ -267,6 +267,19 @@ def check_for_update() -> UpdateInfo | None:
             )
             continue
 
+        # Defence-in-depth: reject URLs that don't come from GitHub's own
+        # domains, even though the API response was already fetched over
+        # cert-validated HTTPS.  This guards against a hypothetical API
+        # response containing a redirect to a third-party host.
+        _ALLOWED_HOSTS = ("https://github.com/", "https://objects.githubusercontent.com/")
+        if not any(download_url.startswith(h) for h in _ALLOWED_HOSTS):
+            logger.warning(
+                "Update %s: download URL '%s' is not from a recognised "
+                "GitHub domain — skipping this release.",
+                tag, download_url,
+            )
+            continue
+
         # Keep the highest-versioned candidate found so far.
         if best is None or _parse_version(remote_version) > _parse_version(best.version):
             best = UpdateInfo(

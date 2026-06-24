@@ -968,8 +968,12 @@ class ConversationAgent:
                 assistant_text = str(content)
         except Exception as exc:  # noqa: BLE001
             error_msg = f"LLM call failed: {exc}"
+            # append_turn() is called only AFTER the LLM succeeds (step 7).
+            # We never reached it, so history_appended must be False so that
+            # the UI layer can add the human turn via append_human_only().
             return ChatResponse(
                 text=error_msg, error=error_msg,
+                history_appended=False,
                 attachment_warnings=all_warnings,
             )
 

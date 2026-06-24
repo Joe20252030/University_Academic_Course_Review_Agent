@@ -274,9 +274,7 @@ class SessionMixin:
                 )
                 self._append_chat(
                     "system",
-                    f"⚠️ The saved embedding provider {emb_provider!r} is not "
-                    "recognised. The previously active provider will be used. "
-                    "Open Session Settings to choose a valid provider and click Apply.",
+                    self._t("warn_unknown_embed_provider").format(provider=emb_provider),
                 )
         else:
             # If somehow busy (e.g. rapid session switching), defer the write.
@@ -301,9 +299,7 @@ class SessionMixin:
             )
             self._append_chat(
                 "system",
-                f"⚠️ The saved request frequency tier {rate_tier_id!r} is not "
-                "recognised — reverted to Free tier. "
-                "Open Session Settings to restore your tier and click Apply.",
+                self._t("warn_unknown_rate_tier").format(tier=rate_tier_id),
             )
             rate_tier_id = "free"
         os.environ["RATE_TIER"] = rate_tier_id
