@@ -313,16 +313,16 @@ def _extract_file_text(path: str, mime: str) -> tuple[str, str | None]:
 
 
 def _provider_supports_vision(provider_id: str, model: str = "") -> bool:
-    """Return True if the given provider+model supports image/file attachments.
+    """Return True if the given provider+model supports image/vision inputs.
 
-    Some models within a vision-capable provider do not accept image inputs —
-    notably OpenAI's search-preview variants (gpt-4o-search-preview,
-    gpt-4o-mini-search-preview) which only accept text.  Check the model name
-    before consulting the provider-level flag.
+    Checks the provider-level ``supports_vision`` flag, then applies any
+    model-level overrides:
+    - OpenAI search-preview variants do not accept image inputs even though
+      the provider generally does.
     """
     if "search-preview" in model.lower():
         return False
-    return get_provider(provider_id).supports_files
+    return get_provider(provider_id).supports_vision
 
 
 _MAX_ATTACHMENTS: int = 5           # cap on number of files per message

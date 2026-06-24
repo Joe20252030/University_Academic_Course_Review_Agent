@@ -73,6 +73,17 @@ class ChatMixin:
             model = getattr(self._session, "llm_model", "") or ""
         return "search-preview" not in model
 
+    def _provider_supports_vision(self) -> bool:
+        """Return True when the active provider+model accepts image/vision inputs."""
+        model: str = ""
+        try:
+            model = self._llm_model_var.get()
+        except Exception:
+            model = getattr(self._session, "llm_model", "") or ""
+        if "search-preview" in model:
+            return False
+        return get_provider(self._session.llm_provider or "gemini").supports_vision
+
     def _update_tool_btns(self) -> None:
         """Enable/disable search and upload buttons based on active provider capabilities."""
         can_search = self._provider_supports_search()
@@ -231,15 +242,25 @@ class ChatMixin:
         if not self._provider_supports_files():
             return
         from tkinter import filedialog
-        paths = filedialog.askopenfilenames(
-            title=self._t("attach_files_title"),
-            filetypes=[
+        can_vision = self._provider_supports_vision()
+        if can_vision:
+            filetypes = [
                 (self._t("attach_supported"), "*.png *.jpg *.jpeg *.gif *.webp *.bmp *.pdf *.docx *.pptx *.ppt *.txt *.md *.py *.csv *.json *.xml *.html"),
                 (self._t("attach_images"),    "*.png *.jpg *.jpeg *.gif *.webp *.bmp"),
                 (self._t("attach_docs"),      "*.pdf *.docx *.pptx *.ppt"),
                 (self._t("attach_text"),      "*.txt *.md *.py *.csv *.json"),
                 (self._t("attach_all"),       "*.*"),
-            ],
+            ]
+        else:
+            filetypes = [
+                (self._t("attach_supported"), "*.pdf *.docx *.pptx *.ppt *.txt *.md *.py *.csv *.json *.xml *.html"),
+                (self._t("attach_docs"),      "*.pdf *.docx *.pptx *.ppt"),
+                (self._t("attach_text"),      "*.txt *.md *.py *.csv *.json"),
+                (self._t("attach_all"),       "*.*"),
+            ]
+        paths = filedialog.askopenfilenames(
+            title=self._t("attach_files_title"),
+            filetypes=filetypes,
         )
         from uacragent.agent.conversation import _MIME_MAP
         for p in paths:
@@ -267,6 +288,8 @@ class ChatMixin:
         if not self._provider_supports_files():
             return None  # no attachment support → let text paste through
 
+        can_vision = self._provider_supports_vision()
+
         # ── 1. Check for a file list first ───────────────────────────────
         # When a file is copied in Explorer/Finder the OS places both a file
         # list (CF_HDROP / NSFilenamesPboardType) AND a preview thumbnail
@@ -277,12 +300,14 @@ class ChatMixin:
         # path — and therefore its correct format — is always preferred.
         file_list: list[str] = self._clipboard_file_list()
         if file_list:
-            from uacragent.agent.conversation import _MIME_MAP
+            from uacragent.agent.conversation import _MIME_MAP, _IMAGE_MIMES
             added = False
             for p in file_list:
                 if Path(p).is_file():
                     suffix = Path(p).suffix.lower()
                     mime = _MIME_MAP.get(suffix, "application/octet-stream")
+                    if mime in _IMAGE_MIMES and not can_vision:
+                        continue  # silently skip images for non-vision providers
                     self._pending_attachments.append({
                         "path": p,
                         "name": Path(p).name,
@@ -296,6 +321,7 @@ class ChatMixin:
         # ── 2. Try PIL clipboard grab (raw image — screenshot, browser copy) ──
         # Only reached when the clipboard holds image data with no accompanying
         # file list (e.g. a screenshot or an image copied from a web browser).
+        # Skip entirely for providers that do not support vision inputs.
         #
         # IMPORTANT: PIL.ImageGrab.grabclipboard() on macOS runs
         #   osascript -e "get the clipboard as «class PNGf»"
@@ -307,7 +333,7 @@ class ChatMixin:
         # clipboard actually contains image data before invoking PIL.  Each
         # platform check completes in < 1 ms and never spawns a subprocess.
         cb = None
-        if self._clipboard_has_image():
+        if can_vision and self._clipboard_has_image():
             try:
                 from PIL import ImageGrab
                 cb = ImageGrab.grabclipboard()

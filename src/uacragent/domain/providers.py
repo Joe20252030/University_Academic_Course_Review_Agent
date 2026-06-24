@@ -49,7 +49,8 @@ class ProviderConfig:
     # account to obtain an API key → "standard" is the realistic floor.
     default_rate_tier: str = "free"
     supports_search: bool = False   # provider has a built-in web-search API
-    supports_files: bool = False    # provider accepts multimodal file attachments
+    supports_files: bool = False    # provider accepts file attachments (text extraction)
+    supports_vision: bool = False   # provider accepts image/vision inputs (image_url parts)
     privacy_policy_url: str = ""    # link shown in the per-provider privacy reminder
 
 
@@ -89,6 +90,7 @@ PROVIDERS: dict[str, ProviderConfig] = {
         default_rate_tier="free",
         supports_search=True,
         supports_files=True,
+        supports_vision=True,
         privacy_policy_url="https://policies.google.com/privacy",
     ),
     "openai": ProviderConfig(
@@ -132,11 +134,12 @@ PROVIDERS: dict[str, ProviderConfig] = {
         # Tier 2 (5 000 RPM) → switch to "pro"; Tier 4–5 (10 000–15 000 RPM) → "unlimited".
         default_rate_tier="standard",
         supports_search=True,
-        # NOTE: supports_files is a provider-level flag. The search-preview model
-        # variants (gpt-4o-search-preview, gpt-4o-mini-search-preview) do NOT
-        # accept file/vision inputs — the upload button should be disabled when
-        # one of those models is selected, regardless of this flag.
+        # NOTE: supports_files / supports_vision are provider-level flags. The
+        # search-preview model variants (gpt-4o-search-preview, etc.) do NOT
+        # accept file/vision inputs even though the provider does — the upload
+        # button is disabled for those specific models via _provider_supports_files().
         supports_files=True,
+        supports_vision=True,
         privacy_policy_url="https://openai.com/policies/privacy-policy",
     ),
     "deepseek": ProviderConfig(
@@ -160,6 +163,11 @@ PROVIDERS: dict[str, ProviderConfig] = {
         # Practical ceiling is ~300 RPM for standard accounts; heavy paid usage can
         # reach 1 500+ RPM.  "standard" (0.5 s delay) is a safe conservative default.
         default_rate_tier="standard",
+        # DeepSeek V4 models support text file attachments (PDF, DOCX, etc. via
+        # text extraction) but do NOT support image/vision inputs (no image_url
+        # parts in their API).  supports_vision remains False until DeepSeek adds
+        # native image support to their API.
+        supports_files=True,
     ),
 }
 
