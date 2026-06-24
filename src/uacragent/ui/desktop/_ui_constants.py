@@ -1218,7 +1218,31 @@ def _strip_markdown(text: str) -> str:
     Strips bold/italic markers, ATX headings, bullet/horizontal-rule lines,
     inline code backticks, and link syntax.  Intentionally simple — the goal
     is legibility in a monospaced plain-text box, not perfect round-tripping.
+
+    Math blocks ($...$, $$...$$, \\(...\\), \\[...\\]) are extracted before
+    stripping and restored afterward so LaTeX subscripts, superscripts, and
+    starred environments are never mangled.
     """
+    # ── Protect math blocks with placeholder tokens ───────────────────────
+    # Order matters: match $$...$$ before $...$ to avoid consuming the
+    # opening $$ as two single-$ expressions.
+    math_blocks: list[str] = []
+
+    def _save_math(m: "re.Match[str]") -> str:
+        placeholder = f"\x00MATH{len(math_blocks)}\x00"
+        math_blocks.append(m.group(0))
+        return placeholder
+
+    # Display math: $$...$$  (possibly multi-line)
+    text = re.sub(r'\$\$[\s\S]*?\$\$', _save_math, text)
+    # Display math: \[...\]  (possibly multi-line)
+    text = re.sub(r'\\\[[\s\S]*?\\\]', _save_math, text)
+    # Inline math: \(...\)
+    text = re.sub(r'\\\(.*?\\\)', _save_math, text)
+    # Inline math: $...$  (no newlines inside; avoid matching lone $)
+    text = re.sub(r'\$[^\$\n]+\$', _save_math, text)
+
+    # ── Strip Markdown ────────────────────────────────────────────────────
     # Bold / italic: **, __, *, _ (keep content, drop markers).
     # Use [^\n] instead of . so the pattern cannot span across line boundaries,
     # which would cause a standalone bullet asterisk to consume the next line's
@@ -1240,6 +1264,11 @@ def _strip_markdown(text: str) -> str:
     # Bullet/numbered list markers: leading "- ", "* ", "1. "
     text = re.sub(r'^(\s*)[-*]\s+', r'\1• ', text, flags=re.MULTILINE)
     text = re.sub(r'^(\s*)\d+\.\s+', r'\1', text, flags=re.MULTILINE)
+
+    # ── Restore math blocks ───────────────────────────────────────────────
+    for i, block in enumerate(math_blocks):
+        text = text.replace(f"\x00MATH{i}\x00", block)
+
     return text
 
 
