@@ -1069,4 +1069,4 @@ Thanks to the volunteer test users who helped exercise the desktop assistant,
 retrieval flow, workspace handling, and study-support UX during development.
 Their feedback helped make this agent better.
 
-- Test-user credits will be listed here once they are confirmed for public acknowledgement.
+- Bob Bao
